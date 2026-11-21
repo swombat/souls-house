@@ -30,8 +30,6 @@ class CommsSendGrantConcurrencyTest < ActiveSupport::TestCase
   WAIT = 5
 
   setup do
-    @previous_send_providers = ENV[CommsSending::PROVIDERS_ENV]
-    ENV[CommsSending::PROVIDERS_ENV] = "whatsapp"
     @owner = users(:user_1)
     @other_user = users(:regular_user)
     @agent = agents(:research_assistant)
@@ -40,7 +38,6 @@ class CommsSendGrantConcurrencyTest < ActiveSupport::TestCase
 
   teardown do
     remove_committed_whatsapp_fixture(@connection)
-    ENV[CommsSending::PROVIDERS_ENV] = @previous_send_providers
   end
 
   test "disable that loaded the row before a concurrent grant committed still ends with no grant" do

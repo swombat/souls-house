@@ -65,6 +65,8 @@ export function createReplyReader({
     discarded(current) {
       resume(current);
     },
+    // What is leaving the speaker now ({ playing, level }), for barge-in.
+    heard: () => player.heard(),
     committed(current) {
       resume(current);
     },
@@ -107,6 +109,7 @@ export function createEngineReader(
     take: (list) => reader.take(list),
     replay: (id) => reader.replay(id),
     speechStarted: () => reader.speechStarted(),
+    heard: () => reader?.heard?.() ?? { playing: false, level: null },
     discarded: (list) => reader.discarded(list),
     committed: (list) => reader.committed(list),
     close() {

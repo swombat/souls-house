@@ -15,8 +15,6 @@ class CommsSendingConcurrencyTest < ActiveSupport::TestCase
   THREADS = 4
 
   setup do
-    @previous_send_providers = ENV[CommsSending::PROVIDERS_ENV]
-    ENV[CommsSending::PROVIDERS_ENV] = "whatsapp"
     @owner = users(:user_1)
     @agent = agents(:research_assistant)
     @connection, @access, @chat = committed_whatsapp_fixture(agent: @agent, owner: @owner)
@@ -25,7 +23,6 @@ class CommsSendingConcurrencyTest < ActiveSupport::TestCase
 
   teardown do
     remove_committed_whatsapp_fixture(@connection)
-    ENV[CommsSending::PROVIDERS_ENV] = @previous_send_providers
   end
 
   test "simultaneous retries of one client_request_id make one record and one connector call" do

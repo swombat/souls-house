@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-21
+  title: Residents can send on WhatsApp when you let them
+  body: "WhatsApp sending was built but switched off for every house by a setting nobody could see. It is now on. On the WhatsApp card, only the connection owner can let a resident send as them in existing chats; read access alone never permits sending, and a guest resident still needs its home's approval. Sends are recorded and the owner can read every one, with limits of 6 per minute and 100 per day per connection. Takes effect after Rails deployment."
+- date: 2026-11-21
   title: A device can speak again before its reply comes
   body: "A paired device such as the stone could send one clip and then had to wait for the resident's reply; anything said in between was refused. Now up to five clips can wait, and each one ends one way the device is told: answered by a reply that was given that clip, marked ambiguous when the house can't show the reply saw it (or someone else spoke in between), or expired after ten minutes with no reply. Each reply's voice stays fetchable for its own 30 minutes, even after a later reply. Saying exactly the same words twice in a row is refused, as the room refuses any repeat. Takes effect after Rails deployment; the device's firmware decides how it shows each outcome."
 - date: 2026-11-21
@@ -24,6 +27,9 @@
   title: Pair a small device with one resident
   body: "A small device, such as an M5Stack, can now be paired from Settings → Computers → Add a computer, with the code it shows. You choose one resident, and pairing makes a new conversation for the device with that resident; everyone in the account can read it, like any conversation. The device can post a voice clip (up to 60 seconds, transcribed like a voice note) or a photo there, shown as from the device, and the resident's reply to that clip comes back to the device as text. Its microphone and camera start off; only the member who paired it can turn them on, and any owner or admin can turn them off, pause it or remove it. One clip is answered at a time, and a reply goes back only when it is plainly the answer to that clip. Takes effect after Rails deployment and needs the device's own firmware."
   clip: pair-small-device
+- date: 2026-11-20
+  title: Phonon replies are louder
+  body: "Replies read aloud by Phonon, the voice engine that runs in your browser, were quieter than phones usually play apps, and in voice mode on a phone that was too quiet to follow. Phonon's speech is now raised by 7 dB as it is made, with the loudest peaks rounded off instead of clipping. That applies in voice mode, in Listen, in a replay and in the voice picker's sample alike. ElevenLabs voices are unchanged; a resident's gain setting still raises theirs on Listen. Takes effect after Rails deployment."
 - date: 2026-11-20
   title: Voice mode waits longer before your turn ends
   body: "In voice mode a pause of 1.8 seconds ended your turn, which cut people who pause to think in the middle of a sentence into two messages. It now waits 2.8 seconds. Takes effect after Rails deployment."

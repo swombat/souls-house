@@ -3,8 +3,9 @@
 # adapter implements new_send_message_id, send_generation, send_text and
 # own_sender can
 # send (WhatsApp now; Telegram plugs in with its own adapter methods,
-# proposal 2026-10-11 §8), and only once it is listed in
-# COMMS_SEND_PROVIDERS.
+# proposal 2026-10-11 §8). There is no house-wide switch: Daniel, 21 Nov
+# (JQwaMe), "I don't want it to exist". The control is the owner's
+# per-resident send grant on each connection.
 #
 # Three steps, each holding the connection's row lock only briefly and
 # never across the connector call:
@@ -38,7 +39,6 @@ module CommsSending
   # Provisional pacing per connection, for Daniel to adjust (spec §5).
   PER_MINUTE = 6
   PER_DAY = 100
-  PROVIDERS_ENV = "COMMS_SEND_PROVIDERS".freeze
 
   # Added to a connection's runtime notes for a resident that may send
   # (ServiceConnection#runtime_notes), in place of "no way to send".
@@ -68,11 +68,12 @@ module CommsSending
 
   module_function
 
-  # The gate: providers sending is switched on for. Empty by default, so
-  # nothing about sending is offered or accepted. A provider listed without
-  # a dispatcher (Telegram, today) stays off.
+  # Providers a resident can send through: every connector provider whose
+  # adapter can dispatch a send. A provider without a dispatcher (Telegram,
+  # today) offers no sending.
   def enabled_providers
-    ENV[PROVIDERS_ENV].to_s.split(",").map(&:strip).reject(&:empty?).select { |provider| dispatchable?(provider) }
+    Services::Definition.all.select { |definition| definition.credential_strategy == "connector" }
+      .map(&:key).select { |provider| dispatchable?(provider) }
   end
 
   def available_for?(connection)

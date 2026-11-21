@@ -1,13 +1,11 @@
 # Shared setup for the comms sending tests (WhatsApp spec §5): a team account
 # whose WhatsApp is owned by users(:admin), with users(:owner) as an account
 # admin who does not own it; a resident with read access; a chat; sending
-# switched on for WhatsApp (COMMS_SEND_PROVIDERS); and a fake connector that
+# and a fake connector that
 # records every send_text call and answers as told.
 module CommsSendHelpers
 
   def setup_comms_send
-    @previous_send_providers = ENV[CommsSending::PROVIDERS_ENV]
-    ENV[CommsSending::PROVIDERS_ENV] = "whatsapp"
     @account = accounts(:team)
     @owner = users(:admin)
     @account_admin = users(:owner)
@@ -19,16 +17,12 @@ module CommsSendHelpers
     @chat = @connection.comms_chats.create!(provider_chat_id: "447700900123@s.whatsapp.net", name: "Alice", kind: "direct")
   end
 
-  def teardown_comms_send
-    ENV[CommsSending::PROVIDERS_ENV] = @previous_send_providers
-  end
+  def teardown_comms_send; end
 
-  def with_send_providers(value)
-    previous = ENV[CommsSending::PROVIDERS_ENV]
-    ENV[CommsSending::PROVIDERS_ENV] = value
-    yield
-  ensure
-    ENV[CommsSending::PROVIDERS_ENV] = previous
+  # Sending unavailable for every provider, as for a provider with no
+  # dispatcher: what the house does when it cannot send.
+  def without_sending(&block)
+    CommsSending.stub(:enabled_providers, [], &block)
   end
 
   def build_whatsapp_connection(account, owner, status: "connected")

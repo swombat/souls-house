@@ -6,16 +6,18 @@
 // phrase. The browser glue (microphone, AudioContext) is in voice-mode-capture.js.
 
 // Turn detection by energy, with an adaptive noise floor. Frames of PCM samples
-// (mono, any rate) come in through feed(); events come out:
-//   { type: 'start', level, threshold }    speech began (after `attackMs` of it);
-//                                          level is the mean of the frames that
-//                                          proved it, threshold the bar they beat
+// (mono, any rate) come in through feed(chunk, sound); events come out:
+//   { type: 'start', level, threshold, barge }
+//                                          speech began; level is the mean of the
+//                                          frames that proved it, threshold the bar
+//                                          they beat, barge true when a reply was
+//                                          being heard
 //   { type: 'end', samples, durationMs }   speech ended: the utterance with `preRollMs`
 //                                          of audio before its first frame
 //   { type: 'discard', durationMs }        a burst shorter than `minSpeechMs` (a cough, a door)
 // With `streamFrames`, for a transcriber that listens while the person speaks:
-//   'start' also carries `samples`, the pre-roll and attack frames, and every
-//   later frame of the turn arrives at once as { type: 'audio', samples }.
+//   'start' also carries `samples`, the pre-roll and the frames that proved it,
+//   and every later frame of the turn arrives at once as { type: 'audio', samples }.
 // Silence is `silenceMs` of frames below the threshold. The threshold is the
 // larger of an absolute floor and a multiple of the running noise level, which
 // is learnt from the quiet frames, so a noisy street raises it and a quiet room
@@ -27,6 +29,36 @@
 // sentence. It was 1.8 s for walking outdoors (#756), where Daniel found 2–3 s
 // before the transcript acceptable. Fixed, not learnt per speaker: one phone
 // is often two people.
+//
+// Barge-in (YXDkBY). `sound` is the player's word on what is leaving the
+// speaker right now: { playing, level }, where playing is true only while
+// samples are actually being rendered (not while a reply is being made,
+// queued, buffering or paused), and level is the RMS of the reply's own
+// samples at that moment, or null when the player can't read them (a reply
+// replayed through the audio element). While nothing plays, a turn starts as
+// above. While a reply plays the microphone also hears it, however well the
+// phone cancels it, and starting a turn pauses the reply, so then:
+//   - With a level, the echo is predicted from the reply itself: `coupling`
+//     times the loudest reply level of the last `echoLagMs` (the way from the
+//     speaker to the mic takes time). A frame is a person's when it is over
+//     `bargeRatio` times that prediction (and over the start bar). The
+//     coupling is learnt from frames that turned out to be the reply, and
+//     forgotten at every playback start, so one reply's echo never sets the
+//     bar for the next.
+//   - Before the coupling has anything to go on, there is no warm-up and no
+//     blind interval: a candidate opens on the start bar at once, and its own
+//     frames give the coupling (their median ratio to the reply's level). The
+//     reply's echo follows the reply into its dips between words; a person's
+//     voice does not. So a "wait" over the very first word proves itself in the
+//     reply's first dip, and leakage, however loud, never does.
+//   - Without a level, the bar is `bargeRatio` times the echo heard so far in
+//     this playback (rising fast, falling slowly), and the start bar before
+//     any of it, and proof takes `bargeAttackMs`. That path cannot tell
+//     leakage from a person at onset.
+// A candidate proves itself with `bargeProofMs` of person frames within
+// `bargeWindowMs`; it is dropped, and its frames learnt as the reply, after
+// `bargeGapMs` under the start bar or when the window runs out. The turn it
+// starts keeps the whole candidate, so the first word is not lost.
 export function createTurnDetector({
   sampleRate,
   frameMs = 20,
@@ -38,16 +70,34 @@ export function createTurnDetector({
   noiseRatio = 3,
   maxTurnMs = 90_000,
   streamFrames = false,
+  bargeRatio = 2,
+  bargeProofMs = 60,
+  bargeAttackMs = 300,
+  bargeWindowMs = 1500,
+  bargeGapMs = 100,
+  echoLagMs = 60,
+  minCouplingMs = 200,
+  echoRise = 0.1,
+  echoFall = 0.002,
 } = {}) {
   if (!sampleRate) throw new Error('createTurnDetector needs a sampleRate');
   const frameSamples = Math.max(1, Math.round((sampleRate * frameMs) / 1000));
   const attackFrames = Math.max(1, Math.round(attackMs / frameMs));
   const silenceFrames = Math.max(1, Math.round(silenceMs / frameMs));
   const preRollFrames = Math.max(0, Math.round(preRollMs / frameMs));
+  const proofFrames = Math.max(1, Math.round(bargeProofMs / frameMs));
+  const blindProofFrames = Math.max(1, Math.round(bargeAttackMs / frameMs));
+  const windowFrames = Math.max(proofFrames, Math.round(bargeWindowMs / frameMs));
+  const gapFrames = Math.max(1, Math.round(bargeGapMs / frameMs));
+  const lagFrames = Math.max(1, Math.round(echoLagMs / frameMs) + 1);
+  const minCouplingFrames = Math.max(1, Math.round(minCouplingMs / frameMs));
 
   let noise = floor;
   let pending = new Float32Array(0);
-  let preRoll = [];
+  // Frames heard before a turn, newest last. Only the `preRollFrames` before
+  // the frames that prove a start are kept with it.
+  let history = [];
+  const energyOf = new WeakMap(); // each frame's RMS, for counting a turn's speech
   let speaking = false;
   let loudRun = 0;
   let loudSum = 0;
@@ -55,6 +105,17 @@ export function createTurnDetector({
   let turn = [];
   let turnFrames = 0;
   let level = 0;
+  // Per playback (reset whenever sound starts or stops).
+  let playing = false;
+  let recent = [];
+  let coupling = 0;
+  let couplingFrames = 0;
+  let echo = 0;
+  let echoFrames = 0;
+  let candidate = null;
+  // Frames left of the echo tail after the sound stops (the lag window): the
+  // room still holds the reply's last syllable for that long.
+  let tail = 0;
 
   const startBar = () => Math.max(floor, noise * noiseRatio);
 
@@ -74,6 +135,9 @@ export function createTurnDetector({
     return out;
   }
 
+  // The last `n` items, and none when n is 0 (slice(-0) is the whole array).
+  const last = (items, n) => (n > 0 ? items.slice(-n) : []);
+
   function finish(events) {
     const durationMs = turnFrames * frameMs;
     const samples = concat(turn);
@@ -86,38 +150,196 @@ export function createTurnDetector({
     else events.push({ type: 'end', samples, durationMs: Math.round((samples.length / sampleRate) * 1000) });
   }
 
-  function frameIn(frame, events) {
-    const energy = rms(frame);
+  // A turn opens on `proof` (the frames that proved it, oldest first) with the
+  // pre-roll heard before them.
+  function begin(before, proof, events, { level: proofLevel, threshold, barge, counted }) {
+    speaking = true;
+    quietRun = 0;
+    loudRun = 0;
+    loudSum = 0;
+    candidate = null;
+    const kept = last(before, preRollFrames);
+    turn = [...kept, ...proof];
+    history = [];
+    // Speech just before the proof, unbroken up to it, is part of the turn's
+    // speech too: a "wait" whose first syllables were under the reply's
+    // predicted echo, or a word that began in the echo tail.
+    let lead = 0;
+    for (let i = kept.length - 1; i >= 0 && (energyOf.get(kept[i]) ?? 0) > startBar(); i -= 1) lead += 1;
+    turnFrames = counted + lead;
+    const start = { type: 'start', level: proofLevel, threshold, barge };
+    if (streamFrames) start.samples = concat(turn);
+    events.push(start);
+  }
+
+  function remember(frame) {
+    history.push(frame);
+    if (history.length > preRollFrames + attackFrames) history.shift();
+  }
+
+  function resetPlayback(next) {
+    playing = next;
+    tail = 0;
+    recent = [];
+    coupling = 0;
+    couplingFrames = 0;
+    echo = 0;
+    echoFrames = 0;
+    // A candidate in progress when sound starts or stops is dropped; its
+    // frames stay in the history as ordinary sound.
+    if (candidate) for (const frame of candidate.frames) remember(frame);
+    candidate = null;
+    loudRun = 0;
+    loudSum = 0;
+  }
+
+  function learnEcho(energy) {
+    const rate = echoFrames === 0 ? 1 : energy > echo ? echoRise : echoFall;
+    echo = echo * (1 - rate) + energy * rate;
+    echoFrames += 1;
+  }
+
+  // Frames that turned out to be the reply teach the coupling: the largest
+  // ratio of what the mic heard to what the reply was playing, falling slowly
+  // so one loud syllable is not forgotten in the next pause.
+  function learnReply(energy, reference) {
+    if (reference === null) return learnEcho(energy);
+    if (reference <= 0 || energy <= 0) return;
+    const ratio = energy / reference;
+    // Rising at echoRise, not in one jump, so the frames of a person who
+    // stayed under the bar can't ratchet it up on their own.
+    if (couplingFrames === 0) coupling = ratio;
+    else coupling = coupling * (1 - (ratio > coupling ? echoRise : echoFall)) + ratio * (ratio > coupling ? echoRise : echoFall);
+    couplingFrames += 1;
+  }
+
+  function median(values) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  // The coupling a candidate is judged by: what this playback has learnt,
+  // and before that (or if the reply got louder in the mic) the candidate's
+  // own median ratio, over its frames where the reply was at least half as
+  // loud as its loudest.
+  function couplingFor(c) {
+    const peak = Math.max(...c.references, 0);
+    const ratios = [];
+    c.energies.forEach((energy, i) => {
+      const reference = c.references[i];
+      if (reference > 0 && reference >= peak / 2) ratios.push(energy / reference);
+    });
+    return Math.max(couplingFrames >= minCouplingFrames ? coupling : 0, median(ratios));
+  }
+
+  function barFor(reference, k) {
+    if (reference === null) return Math.max(startBar(), echoFrames ? echo * bargeRatio : 0);
+    return Math.max(startBar(), bargeRatio * k * reference);
+  }
+
+  function playbackFrame(frame, energy, soundLevel, events) {
+    const hasLevel = typeof soundLevel === 'number' && Number.isFinite(soundLevel);
+    recent.push(hasLevel ? soundLevel : 0);
+    if (recent.length > lagFrames) recent.shift();
+    const reference = hasLevel ? Math.max(...recent) : null;
+
+    if (!candidate) {
+      const k = couplingFrames >= minCouplingFrames ? coupling : 0;
+      // With a level, a candidate opens on the start bar and is judged once
+      // its frames say what the reply sounds like in the mic; frames under
+      // the learnt prediction are the reply and are not candidates at all.
+      const over = reference === null ? energy > barFor(null) : energy > startBar() && energy > bargeRatio * k * reference;
+      if (!over) {
+        learnReply(energy, reference);
+        remember(frame);
+        return;
+      }
+      candidate = { before: history.slice(), frames: [], energies: [], references: [], quiet: 0 };
+    }
+
+    const c = candidate;
+    c.frames.push(frame);
+    c.energies.push(energy);
+    c.references.push(reference === null ? -1 : reference);
+    c.quiet = energy > startBar() ? 0 : c.quiet + 1;
+
+    const k = reference === null ? 0 : couplingFor(c);
+    let proofs = 0;
+    let sum = 0;
+    let threshold = startBar();
+    c.energies.forEach((e, i) => {
+      const r = c.references[i];
+      const bar = r < 0 ? barFor(null) : barFor(r, k);
+      if (e > bar) {
+        proofs += 1;
+        sum += e;
+        threshold = Math.max(threshold, bar);
+      }
+    });
+    if (proofs >= (reference === null ? blindProofFrames : proofFrames)) {
+      // What counts toward minSpeechMs: the candidate's frames over the start
+      // bar from the start of the unbroken run that holds its first proof. A
+      // "wait" over a word is all of its frames; a cough in a gap between the
+      // reply's words is only itself, so it is still discarded.
+      const bars = c.energies.map((e, i) => (c.references[i] < 0 ? barFor(null) : barFor(c.references[i], k)));
+      let first = c.energies.findIndex((e, i) => e > bars[i]);
+      while (first > 0 && c.energies[first - 1] > startBar()) first -= 1;
+      const counted = c.energies.slice(first).filter((e) => e > startBar()).length;
+      begin(c.before, c.frames, events, { level: sum / proofs, threshold, barge: true, counted });
+      return;
+    }
+    if (c.quiet >= gapFrames || c.frames.length >= windowFrames) {
+      candidate = null;
+      // Learnt as the reply, but only its frames at or under the candidate's
+      // own median ratio: a person who didn't prove themselves (a "wait"
+      // with no gap in the reply under it) must not raise the bar for the
+      // next try.
+      const k = c.references.some((r) => r >= 0) ? couplingFor(c) : Infinity;
+      c.energies.forEach((e, i) => {
+        const r = c.references[i];
+        if (r < 0) learnReply(e, null);
+        else if (r === 0 || e <= k * r) learnReply(e, r);
+      });
+      for (const f of c.frames) remember(f);
+    }
+  }
+
+  function frameIn(frame, energy, sound, events) {
     level = energy;
 
-    const threshold = startBar();
-    const loud = energy > threshold;
-
     if (!speaking) {
+      const nowPlaying = Boolean(sound?.playing);
+      if (nowPlaying && (!playing || tail > 0)) resetPlayback(true); // a new start, even mid-tail
+      else if (!nowPlaying && playing && tail === 0) tail = lagFrames + 1; // the sound just stopped
+      if (playing && tail > 0) {
+        tail -= 1;
+        if (tail === 0) resetPlayback(false);
+        else return playbackFrame(frame, energy, 0, events);
+      }
+      if (playing) return playbackFrame(frame, energy, sound.level, events);
+
+      const threshold = startBar();
+      const loud = energy > threshold;
       // Learn the room from quiet frames only, slowly down and faster up.
       if (!loud) noise = energy < noise ? noise * 0.95 + energy * 0.05 : noise * 0.8 + energy * 0.2;
-      preRoll.push(frame);
-      if (preRoll.length > preRollFrames) preRoll.shift();
+      remember(frame);
       loudRun = loud ? loudRun + 1 : 0;
       loudSum = loud ? loudSum + energy : 0;
       if (loudRun >= attackFrames) {
-        speaking = true;
-        quietRun = 0;
-        turn = preRoll.slice();
-        preRoll = [];
-        turnFrames = 0;
-        const start = { type: 'start', level: loudSum / loudRun, threshold };
-        if (streamFrames) start.samples = concat(turn);
-        loudRun = 0;
-        loudSum = 0;
-        events.push(start);
+        const proof = history.slice(-attackFrames);
+        const before = history.slice(0, history.length - attackFrames);
+        begin(before, proof, events, { level: loudSum / loudRun, threshold, barge: false, counted: 0 });
       }
       return;
     }
 
+    // A turn that opened while sound played forgets that playback: the
+    // player pauses the reply, and the next sound is a new start.
+    if (playing && !sound?.playing) resetPlayback(false);
     turn.push(frame);
     if (streamFrames) events.push({ type: 'audio', samples: frame.slice() });
-    if (loud) {
+    if (energy > startBar()) {
       turnFrames += 1;
       quietRun = 0;
     } else {
@@ -127,13 +349,17 @@ export function createTurnDetector({
   }
 
   return {
-    // Returns the events this chunk produced, oldest first.
-    feed(chunk) {
+    // Returns the events this chunk produced, oldest first. `sound` is the
+    // player's { playing, level } while this chunk was heard (see above).
+    feed(chunk, sound = null) {
       const events = [];
       let buffer = pending.length ? concat([pending, chunk]) : chunk;
       let offset = 0;
       while (buffer.length - offset >= frameSamples) {
-        frameIn(buffer.subarray(offset, offset + frameSamples), events);
+        const frame = buffer.subarray(offset, offset + frameSamples);
+        const energy = rms(frame);
+        energyOf.set(frame, energy);
+        frameIn(frame, energy, sound, events);
         offset += frameSamples;
       }
       pending = buffer.subarray(offset).slice();
@@ -154,6 +380,14 @@ export function createTurnDetector({
     },
     get threshold() {
       return startBar();
+    },
+    // What this playback has learnt (0 before anything): mic level per unit
+    // of reply level, and the echo level when the player gives no level.
+    get coupling() {
+      return couplingFrames ? coupling : 0;
+    },
+    get echo() {
+      return echo;
     },
   };
 }

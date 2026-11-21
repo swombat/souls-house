@@ -213,3 +213,67 @@ test('every cut-off brings it back, so a reply whose own echo keeps cutting it o
   // It never reaches its end. One possible reading of 20 Nov, not a proven
   // one: that session left no trace of its starts. The trace now records them.
 });
+
+// Barge-in listens to sound, not to "a reply is current" (YXDkBY): playing is
+// true only while samples are actually being rendered.
+test('a streamed reply is heard only while its samples are rendered: not while made, buffering, paused or ended', async () => {
+  const { source, reader, messages } = setup();
+  await flush();
+  expect(playing).toBe('r'); // current, but nothing made yet
+  expect(reader.heard().playing).toBe(false);
+  source.making.r.chunk(1);
+  expect(reader.heard().playing).toBe(false); // scheduled LEAD ahead, not yet heard
+  ctx.advance(0.1);
+  expect(reader.heard().playing).toBe(true);
+  ctx.advance(1.1); // the second of speech is over and nothing more is made: an underrun
+  expect(reader.heard().playing).toBe(false);
+  source.making.r.chunk(1);
+  ctx.advance(0.1);
+  expect(reader.heard().playing).toBe(true);
+  reader.speechStarted(); // paused for the person
+  expect(reader.heard().playing).toBe(false);
+  reader.discarded(messages); // a cough: it comes back (from the top: under RESTART_UNDER)
+  await flush();
+  expect(reader.heard().playing).toBe(false); // asked for again, being made
+  source.making.r.chunk(1);
+  ctx.advance(0.1);
+  expect(reader.heard().playing).toBe(true);
+  source.making.r.done();
+  await flush();
+  ctx.advance(2);
+  expect(reader.heard().playing).toBe(false);
+});
+
+test('a reply replayed through the element is heard only between its playing event and a pause, wait or end, with no level', async () => {
+  const audio = fakeAudio();
+  audio.paused = true;
+  audio.play = vi.fn(() => {
+    audio.paused = false;
+    return Promise.resolve();
+  });
+  audio.pause = vi.fn(() => (audio.paused = true));
+  const source = fakeSource();
+  source.made.set('r', 'blob:r');
+  const reader = createReplyReader({ messages: opened, source, audio, onchange: () => {} });
+  const messages = [...opened, message('r')];
+  reader.take(messages);
+  await flush();
+  expect(audio.play).toHaveBeenCalled();
+  expect(reader.heard().playing).toBe(false); // asked to play, no sound yet
+  audio.dispatchEvent(new Event('playing'));
+  expect(reader.heard()).toEqual({ playing: true, level: null });
+  audio.dispatchEvent(new Event('waiting'));
+  expect(reader.heard().playing).toBe(false);
+  audio.dispatchEvent(new Event('playing'));
+  expect(reader.heard().playing).toBe(true);
+  reader.speechStarted();
+  expect(reader.heard().playing).toBe(false);
+  reader.discarded(messages);
+  await flush();
+  expect(reader.heard().playing).toBe(false); // resumed, not yet playing again
+  audio.dispatchEvent(new Event('playing'));
+  expect(reader.heard().playing).toBe(true);
+  audio.ended = true;
+  audio.end();
+  expect(reader.heard().playing).toBe(false);
+});

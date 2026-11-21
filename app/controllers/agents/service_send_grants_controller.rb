@@ -1,8 +1,8 @@
 # Lets a resident send through a comms connection as its owner, or stops it
 # (WhatsApp spec §5). Only the connection's owner can grant; anyone who can
 # manage the connection can withdraw. Granting needs the resident's access
-# enabled first and sending switched on for the provider
-# (COMMS_SEND_PROVIDERS; otherwise 404). Every change is recorded in the
+# enabled first, and a provider the house can send through (404 otherwise;
+# Telegram has no dispatcher yet). Every change is recorded in the
 # owner's grant history (CommsSendGrantEvent) as well as the audit log.
 class Agents::ServiceSendGrantsController < ApplicationController
 

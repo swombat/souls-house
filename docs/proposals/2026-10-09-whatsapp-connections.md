@@ -209,6 +209,8 @@ provider-neutral (`CommsSending`, `comms_sends`): Telegram's sending
 (proposal 2026-10-11 §8) adds only a dispatcher on its adapter, no parallel
 path.
 
+*Superseded 21 Nov 2026 (#1084): the `COMMS_SEND_PROVIDERS` switch was removed at Daniel's request; sending is offered wherever the provider's adapter can dispatch, and the owner's per-resident grant is the only control.*
+
 **Off until switched on.** `COMMS_SEND_PROVIDERS` (comma-separated, empty by
 default) lists the providers sending is offered for; a provider whose adapter
 has no dispatcher (Telegram today) is ignored. Unlisted, the grant control is
