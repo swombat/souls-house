@@ -76,7 +76,7 @@ class AgentsController < ApplicationController
   def edit
     interaction_data = nil
     load_interactions = -> {
-      interaction_data ||= pagy(:offset, @agent.agent_runtime_interactions.includes(:chat).recent, limit: 25)
+      interaction_data ||= pagy(:offset, viewer_runtime_interactions.includes(:chat).recent, limit: 25)
     }
     catalog = nil
     load_catalog = -> { catalog ||= @agent.subagent_catalog }
@@ -175,6 +175,14 @@ class AgentsController < ApplicationController
     @away_seats ||= Agents::AwaySeats.new(away_memberships, user: Current.user, routes: helpers)
   end
 
+  # A private conversation's runs are left out before pagination for anyone
+  # outside it (eKmnrJ, Mira #1089), so this page's rows, counts and
+  # pagination are what they would be without the conversation.
+  def viewer_runtime_interactions
+    runs = @agent.agent_runtime_interactions
+    runs.where(chat_id: nil).or(runs.where(chat_id: Chat.visible_to(Current.user).select(:id)))
+  end
+
   # Sessions with the reflexes their posts were judged against: the ones
   # offered (name, score, the post) and a count of the rest. Whether the
   # resident then acted on an offer is not recorded, so it is not shown.
@@ -188,12 +196,13 @@ class AgentsController < ApplicationController
       interaction.as_session_json.merge(
         reflexes: {
           judged_count: rows.size,
-          offered: offered.map do |j|
+          # A post in a conversation the viewer can't see is left out
+          # entirely, even if the run itself is visible (eKmnrJ).
+          offered: offered.select { |j| j.message.chat.visible_to?(Current.user) }.map do |j|
             {
               id: j.to_param, name: j.reflex.name, reminder: j.reflex.reminder, score: j.score,
-              # No excerpt from a private conversation on this account-wide page (eKmnrJ).
               message_id: j.message.obfuscated_id,
-              excerpt: j.message.chat.private? ? nil : j.message.content.to_s.squish.truncate(140),
+              excerpt: j.message.content.to_s.squish.truncate(140),
               created_at: j.created_at&.iso8601
             }
           end

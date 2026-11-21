@@ -523,6 +523,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       reflexes["offered"].map { |o| o.values_at("name", "reminder", "score", "message_id", "excerpt") }
   end
 
+  test "a private conversation's runs don't change the edit page for someone outside it" do
+    chat = @account.chats.create!(title: "Open", model_id: "openrouter/auto")
+    @agent.agent_runtime_interactions.create!(chat: chat, trigger_kind: "conversation", started_at: 1.hour.ago)
+    get edit_account_agent_path(@account, @agent)
+    before = inertia_shared_props.values_at("interactions", "interactions_pagination")
+
+    secret = @account.chats.create!(title: "Secret", model_id: "openrouter/auto", private: true)
+    @agent.agent_runtime_interactions.create!(chat: secret, trigger_kind: "conversation", started_at: Time.current)
+    refute secret.visible_to?(@user)
+
+    get edit_account_agent_path(@account, @agent)
+    assert_equal before, inertia_shared_props.values_at("interactions", "interactions_pagination")
+  end
+
   test "edit says whether the account's plan includes sub-agents" do
     get edit_account_agent_path(@account, @agent)
     assert_equal false, inertia_shared_props["subagents_available"], "Companions has none"

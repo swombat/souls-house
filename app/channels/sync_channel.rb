@@ -172,30 +172,31 @@ class SyncChannel < ApplicationCable::Channel
   end
 
   # A private conversation's streams (the chat and each of its messages) are
-  # checked again at delivery, not only at subscribe (eKmnrJ, Mira #1089):
-  # once the person loses the account or their place, nothing more goes
-  # down an already-open subscription. Rechecked at most every
-  # PRIVATE_RECHECK, so a streaming reply isn't a query per chunk.
-  PRIVATE_RECHECK = 2.seconds
-
+  # checked again at every delivery, not only at subscribe (eKmnrJ, Mira
+  # #1089): once the person loses the account or their place, nothing more
+  # goes down an already-open subscription. No allow is cached; a denial is
+  # sticky for the life of the subscription, so a lost place is never
+  # re-admitted by a stale connection. Private chats are few, so a query per
+  # delivery is the price.
   def stream_guarded(identifier, record)
     chat = record.is_a?(Chat) ? record : (record.is_a?(Message) ? record.chat : nil)
     return stream_from(identifier) unless chat&.private?
 
-    chat_id = chat.id
-    stream_from(identifier, coder: ActiveSupport::JSON) do |message|
-      transmit(message) if private_chat_still_visible?(chat_id)
-    end
+    stream_from(identifier, private_delivery(chat.id), coder: ActiveSupport::JSON)
+  end
+
+  # The callback each private stream delivers through.
+  def private_delivery(chat_id)
+    ->(message) { transmit(message) if private_chat_still_visible?(chat_id) }
   end
 
   def private_chat_still_visible?(chat_id)
-    @private_checks ||= {}
-    checked_at, visible = @private_checks[chat_id]
-    return visible if checked_at && checked_at > PRIVATE_RECHECK.ago
+    @private_denied ||= {}
+    return false if @private_denied[chat_id]
 
     visible = Chat.kept.where(id: chat_id, account_id: current_user.confirmed_accounts.select(:id))
       .visible_to(current_user).exists?
-    @private_checks[chat_id] = [ Time.current, visible ]
+    @private_denied[chat_id] = true unless visible
     visible
   end
 

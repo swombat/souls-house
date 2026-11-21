@@ -22,16 +22,24 @@ class SyncChannelPrivateTest < ActionCable::Channel::TestCase
     assert subscription.rejected?
   end
 
-  test "an open subscription stops delivering once the person loses the account" do
+  test "an open subscription stops delivering the moment the person loses the account" do
     stub_connection current_user: @creator, current_app_session: nil
     subscribe model: "Chat", id: @chat.obfuscated_id
     assert subscription.confirmed?
-    assert subscription.send(:private_chat_still_visible?, @chat.id)
+    deliver = subscription.send(:private_delivery, @chat.id)
 
+    deliver.call({ "n" => 1 })
+    assert_equal [ { "n" => 1 } ], transmissions
+
+    # Straight after the loss, with no time passing: nothing more goes down.
     @account.memberships.find_by!(user: @creator).update_columns(confirmed_at: nil)
-    travel SyncChannel::PRIVATE_RECHECK + 1.second do
-      refute subscription.send(:private_chat_still_visible?, @chat.id)
-    end
+    deliver.call({ "n" => 2 })
+    assert_equal [ { "n" => 1 } ], transmissions
+
+    # A denial is sticky for the life of the subscription.
+    @account.memberships.find_by!(user: @creator).update_columns(confirmed_at: Time.current)
+    deliver.call({ "n" => 3 })
+    assert_equal [ { "n" => 1 } ], transmissions
   end
 
 end
