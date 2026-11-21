@@ -13,7 +13,7 @@ import threading
 import time
 import urllib.request
 
-from gate import ROOT, OPERATIONS, TERMINAL, atomic
+from gate import ROOT, OPERATIONS, TERMINAL, atomic, exited
 
 CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
@@ -68,31 +68,86 @@ def runtime_source():
     return newest[1] if newest else None
 
 
-def remove_checkout(directory):
+def mounted_sources():
+    """Every host path bind-mounted into a container on this host, running or
+    stopped, or None when Docker doesn't give a clean answer. A container
+    whose client timed out (Kamal, the runtime check) can outlive the run
+    that started it, still holding its clone (Mira, #1080)."""
+    try:
+        ids = subprocess.run(["docker", "ps", "-aq", "--no-trunc"], capture_output=True,
+                             text=True, timeout=60)
+        if ids.returncode:
+            return None
+        names = ids.stdout.split()
+        if not names:
+            return set()
+        mounts = subprocess.run(["docker", "inspect", "--format",
+                                 "{{range .Mounts}}{{println .Source}}{{end}}", *names],
+                                capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if mounts.returncode:
+        # Also when a container went between the two calls: ask next time.
+        return None
+    return {line.strip() for line in mounts.stdout.splitlines() if line.strip()}
+
+
+def in_use(repo, mounted):
+    path = str(repo)
+    return any(source == path or source.startswith(path + "/") for source in mounted)
+
+
+def remove_checkout(directory, mounted):
     """Delete one run's clone of master (runs/<id>/repo), keeping status.json,
     private.log and every other small file the run wrote. True if it removed
-    something. A symlink in repo's place is unlinked, never followed."""
+    something. Kept while any container mounts it. A symlink in repo's place
+    is unlinked, never followed."""
     repo = directory / "repo"
     if repo.is_symlink():
         repo.unlink()
         return True
-    if not repo.exists():
+    if not repo.exists() or in_use(repo, mounted):
         return False
     shutil.rmtree(repo)
     return True
 
 
-def prune_checkouts():
+def latched_runs():
+    """The runs current.json and runtime-latch.json name, by id: operation."""
+    runs = {}
+    for name in ("current.json", "runtime-latch.json"):
+        try:
+            data = json.loads((ROOT / name).read_text())
+            runs[data["id"]] = data["operation"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return runs
+
+
+def unit_exited(operation):
+    try:
+        return exited(operation)
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def prune_checkouts(mounted=None):
     """Remove the clone from every finished run (#1057).
 
     Each run clones master into runs/<id>/repo for Kamal and the image builds,
     and nothing reads it once the run has ended: the gate, the sweep and
     runtime_source() read status.json alone. Until 21 Nov 2026 nothing removed
-    them (898 runs since 4 Oct, 168 GB). A run whose status.json is not in a
-    terminal state keeps its clone, whatever its age: it may still be running,
-    and the gate marks a dead one interrupted only when asked. Idempotent; a
-    clone that can't be removed is skipped and tried again next time. Returns
-    the ids whose clone went."""
+    them (898 runs since 4 Oct, 168 GB). A clone is kept when its run is not
+    in a terminal state, when the run is the one current.json or
+    runtime-latch.json names and its service hasn't positively exited (the
+    gate writes interrupted for a deactivating one too), or when a container
+    still mounts it. When Docker can't say, everything is kept. Idempotent; a
+    clone that can't be removed is tried again next time. Returns the ids
+    whose clone went."""
+    mounted = mounted_sources() if mounted is None else mounted
+    if mounted is None:
+        return []
+    latched = latched_runs()
     removed = []
     for status in sorted((ROOT / "runs").glob("*/status.json")):
         directory = status.parent
@@ -104,8 +159,10 @@ def prune_checkouts():
             continue
         if state not in TERMINAL:
             continue
+        if directory.name in latched and not unit_exited(latched[directory.name]):
+            continue
         try:
-            if remove_checkout(directory):
+            if remove_checkout(directory, mounted):
                 removed.append(directory.name)
         except OSError:
             continue
@@ -910,11 +967,17 @@ class Worker:
         finally:
             # This run is over whatever its state (#1057): its clone goes,
             # then any other finished run's that is still on disk.
+            # A container this run started and couldn't confirm gone keeps it.
             try:
-                remove_checkout(self.directory)
-                pruned = prune_checkouts()
-                if pruned:
-                    self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
+                mounted = mounted_sources()
+                if mounted is None:
+                    self.log.write("\ncheckouts kept: Docker could not list mounts\n")
+                else:
+                    if not remove_checkout(self.directory, mounted) and self.repo.exists():
+                        self.log.write("\ncheckout kept: a container still mounts it\n")
+                    pruned = prune_checkouts(mounted)
+                    if pruned:
+                        self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
             except OSError as error:
                 self.log.write(f"\ncheckout cleanup incomplete: {type(error).__name__}\n")
             self.log.close()
@@ -1220,8 +1283,14 @@ if __name__ == "__main__":
         print(Sweeper().sweep())
         sys.exit(0)
     if sys.argv[1:] == ["prune"]:
-        # Host root, by hand: the one-time sweep of the clones left before #1057.
-        print(json.dumps({"removed": len(prune_checkouts())}))
+        # Host root, by hand: the one-time sweep of the clones left before
+        # #1057. Never alongside a deploy or a sweep pass.
+        with (ROOT / "deployment.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                sys.exit("A deploy or sweep holds the deployment lock; try again")
+            print(json.dumps({"removed": len(prune_checkouts())}))
         sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)
