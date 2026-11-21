@@ -84,6 +84,7 @@ areas:
       - messages
       - tool_calls
       - chat_agents
+      - chat_participants
       - agent_bookmarks
       - rooms
       - room_model_defaults

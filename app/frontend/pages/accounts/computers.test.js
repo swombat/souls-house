@@ -269,6 +269,8 @@ const stone = {
     camera: false,
     chat_id: 'chat9',
     chat_title: 'Stone talk',
+    chat_private: false,
+    conversation_choices: [],
   },
 };
 
@@ -299,4 +301,15 @@ test('the owner can turn a capture on', async () => {
     { control: 'capture', capability: 'camera', value: 'true' },
     expect.any(Object)
   );
+});
+
+test('the owner can point the stone at a new private conversation; nobody else sees the picker', async () => {
+  const mine = { ...stone, pocket: { ...stone.pocket, owned_by_you: true } };
+  const { unmount } = render(Computers, { ...props, devices: [stone] });
+  expect(screen.queryByTestId('pocket-conversation')).toBeNull();
+  unmount();
+
+  render(Computers, { ...props, devices: [mine] });
+  const picker = screen.getByTestId('pocket-conversation');
+  expect(picker.textContent).toContain('A new conversation');
 });

@@ -257,7 +257,9 @@ module Accounts::Portability
     end
 
     def export_conversations
-      chats = @account.chats.kept.order(:id)
+      # Private conversations stay out of the account's archive entirely, not
+      # even counted (eKmnrJ): whoever asks for it may not be in them.
+      chats = @account.chats.kept.where(private: false).order(:id)
       total = chats.count
       keys = []
       chats.find_each.with_index do |chat, i|

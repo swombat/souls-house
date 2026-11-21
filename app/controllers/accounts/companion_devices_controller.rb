@@ -34,6 +34,8 @@ class Accounts::CompanionDevicesController < ApplicationController
       change_authority(device)
     elsif params[:control] == "volume"
       change_volume(device)
+    elsif params[:control] == "conversation"
+      change_conversation(device)
     elsif CompanionDevice::CONTROLS.include?(params[:control])
       control = params[:control]
       device.apply_control!(control) { audit("companion_#{control}", device) }
@@ -44,6 +46,29 @@ class Accounts::CompanionDevicesController < ApplicationController
   end
 
   private
+
+  # The stone's conversation (eKmnrJ): pick one the owner can see, or start
+  # a new one, private if asked. Only the owner; the model enforces it too.
+  def change_conversation(device)
+    return redirect_to(account_companion_devices_path(@account), alert: "Only the stone's owner can change its conversation") unless device.owned_by?(Current.user)
+
+    if params[:new_conversation] == "true"
+      chat = device.start_pocket_conversation!(title: params[:title].to_s.strip.first(200),
+        private: params[:private] == "true", actor: Current.user)
+      notice = chat.private? ? "The stone now talks in a new private conversation" : "The stone now talks in a new conversation"
+    else
+      chat = visible_chats.kept.find_by(id: Chat.decode_id(params[:chat_id].to_s))
+      device.retarget_pocket!(chat: chat, actor: Current.user)
+      notice = "The stone now talks in #{chat.title_or_default}"
+    end
+    audit("companion_conversation", device, chat_id: chat.to_param)
+    redirect_to account_companion_devices_path(@account), notice: notice
+  rescue CompanionDevice::Pocket::Refused => e
+    message = e.code == "resident_not_in_conversation" ? "That conversation doesn't have the stone's resident in it" : "That conversation isn't available"
+    redirect_to account_companion_devices_path(@account), alert: message
+  rescue Hashids::InputError
+    redirect_to account_companion_devices_path(@account), alert: "That conversation isn't available"
+  end
 
   def change_authority(device)
     # One switch per request: the page names the permission it changes and
@@ -168,9 +193,25 @@ class Accounts::CompanionDevicesController < ApplicationController
       capabilities: device.offered_capabilities,
       mic: device.mic_enabled,
       camera: device.camera_enabled,
-      chat_id: device.chat&.to_param,
-      chat_title: device.chat&.title_or_default
+      # A private conversation's name and link only for someone in it.
+      chat_id: device.chat&.visible_to?(Current.user) ? device.chat.to_param : nil,
+      chat_title: if device.chat.nil? then nil
+                  elsif device.chat.visible_to?(Current.user) then device.chat.title_or_default
+                  else "A private conversation"
+                  end,
+      chat_private: device.chat&.private? || false,
+      conversation_choices: device.owned_by?(Current.user) ? pocket_conversation_choices(device) : []
     }
+  end
+
+  # Where the owner could point the stone: their visible conversations that
+  # seat its resident, most recent first.
+  def pocket_conversation_choices(device)
+    agent_id = Agent.decode_id(device.bound_resident_id.to_s)
+    visible_chats.kept.active.joins(:chat_agents).where(chat_agents: { agent_id: agent_id })
+      .latest.limit(30).map { |chat| { id: chat.to_param, title: chat.title_or_default, private: chat.private? } }
+  rescue Hashids::InputError
+    []
   end
 
   def resident_ids(device)

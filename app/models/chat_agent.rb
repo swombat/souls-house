@@ -11,6 +11,9 @@ class ChatAgent < ApplicationRecord
 
   validates :agent_id, uniqueness: { scope: :chat_id }
   validate :agent_takes_part_in_account, on: :create
+  # A private conversation's residents are chosen when it is made; nobody
+  # is seated later, so its audience can't grow (eKmnrJ).
+  validate :private_chat_seats_open, on: :create
   # A new seat starts on the room's model for this resident, if it has one.
   before_create :seed_model_from_room
 
@@ -88,6 +91,13 @@ class ChatAgent < ApplicationRecord
     return if GuestMembership.where(account_id: chat.account_id, agent_id: agent.id).lock("FOR SHARE").exists?
 
     errors.add(:agent, "is not a resident or guest of this account")
+  end
+
+  def private_chat_seats_open
+    return unless chat&.private?
+    return if chat.new_record? || chat.opening_seats
+
+    errors.add(:base, "Residents can't be added to a private conversation after it starts")
   end
 
 end

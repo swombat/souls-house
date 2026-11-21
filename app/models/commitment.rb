@@ -85,6 +85,9 @@ class Commitment < ApplicationRecord
   validate :resident_in_source, on: :create
   validate :source_message_in_source, on: :create
   validate :room_valid
+  # A commitment made in a private conversation wakes there and nowhere else
+  # (eKmnrJ): its words must not reach a wider room.
+  validate :private_source_stays_home
   validate :text_unique_while_scheduled, if: -> { scheduled? && (new_record? || will_save_change_to_text?) }
 
   before_validation :set_account, on: :create
@@ -267,7 +270,7 @@ class Commitment < ApplicationRecord
       resident_id: agent.to_param,
       resident_name: agent.name,
       source_conversation_id: source_chat&.to_param,
-      source_conversation_title: source_chat&.title_or_default,
+      source_conversation_title: source_chat&.private? ? "A private conversation" : source_chat&.title_or_default,
       source_message_id: source_message&.to_param,
       waiting_reason: waiting_reason,
       last_attempted_at: last_attempted_at&.iso8601,
@@ -439,6 +442,12 @@ class Commitment < ApplicationRecord
     errors.add(:source_message, "must be in the source conversation") unless source_message.chat_id == source_chat_id
   end
 
+  def private_source_stays_home
+    return unless source_chat&.private? && destination != "same_conversation"
+
+    errors.add(:destination, "must be this conversation for a commitment made in a private conversation")
+  end
+
   def room_valid
     if new_conversation?
       return unless new_record? || will_save_change_to_room_id? || will_save_change_to_destination?
@@ -506,7 +515,12 @@ class Commitment < ApplicationRecord
     origin = if chat.id == source_chat_id
       "#{made} here" + (source_message ? " (message #{source_message.to_param})" : "")
     else
-      "#{made} in [#{source_chat.title_or_default}](/accounts/#{account.to_param}/chats/#{source_chat.to_param})" +
+      # A private source is never named in another room (eKmnrJ).
+      (if source_chat.private?
+         "#{made} in a private conversation"
+       else
+         "#{made} in [#{source_chat.title_or_default}](/accounts/#{account.to_param}/chats/#{source_chat.to_param})"
+       end) +
         (source_message ? " (message #{source_message.to_param})" : "")
     end
     "**Commitment due:** #{headline}\n\n#{agent.name} · #{when_line} · #{origin}"

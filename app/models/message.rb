@@ -69,14 +69,24 @@ class Message < ApplicationRecord
   validates :content, presence: true, unless: -> { role.in?(%w[assistant tool]) || skip_content_validation }
   validate :not_duplicate_of_last_message, on: :create
   validate :submission_identity_unchanged, on: :update
+  validate :author_is_in_private_chat, on: :create
+
+  # Live per-message streams (SyncChannel) answer the chat's rule, so a
+  # private chat's messages stream to nobody outside it, site admins included.
+  def accessible_by?(user)
+    chat.present? && chat.accessible_by?(user)
+  end
 
   scope :sorted, -> { order(created_at: :asc) }
 
-  def self.search_in_account(account, query)
+  # viewer: whose search this is. Private conversations they aren't in are
+  # left out entirely (Chat.visible_to); without a viewer, private ones are.
+  def self.search_in_account(account, query, viewer: nil)
     return none if query.blank?
 
     joins(:chat)
       .where(chats: { account_id: account.id, discarded_at: nil })
+      .merge(viewer ? Chat.visible_to(viewer) : Chat.where(private: false))
       .where(discarded_at: nil)
       .where("messages.content ILIKE ?", "%#{sanitize_sql_like(query)}%")
       .where(role: %w[user assistant])
@@ -511,6 +521,17 @@ class Message < ApplicationRecord
     %w[client_message_id submission_digest].each do |attribute|
       errors.add(attribute, "cannot change once sent") if attribute_changed?(attribute)
     end
+  end
+
+  # A private chat can't be posted into from outside it, by any path: posting
+  # never makes anyone a participant (eKmnrJ). System lines have no author.
+  def author_is_in_private_chat
+    return unless chat&.private?
+
+    author = agent || user
+    return if author.nil? || chat.visible_to?(author)
+
+    errors.add(:base, "This conversation is private")
   end
 
   def not_duplicate_of_last_message

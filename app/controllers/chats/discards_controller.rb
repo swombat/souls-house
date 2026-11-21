@@ -23,7 +23,7 @@ class Chats::DiscardsController < ApplicationController
   # Only the discard/restore operation reaches discarded parents. Ordinary
   # conversation controllers must never expose their retained children.
   def set_chat
-    @chat = current_account.chats.with_discarded.find(params[:chat_id])
+    @chat = visible_chats.with_discarded.find(params[:chat_id])
   end
 
   def require_admin

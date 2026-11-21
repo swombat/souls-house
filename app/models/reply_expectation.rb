@@ -28,6 +28,7 @@ class ReplyExpectation < ApplicationRecord
   scope :visible_to, ->(user) {
     joins(message: :chat).where(user: user, messages: { discarded_at: nil },
       chats: { discarded_at: nil, archived_at: nil, account_id: user.confirmed_accounts.select(:id) })
+      .merge(Chat.visible_to(user))
   }
 
   after_commit -> { self.class.refresh_for(user_id) }
@@ -94,6 +95,7 @@ class ReplyExpectation < ApplicationRecord
   # same guard, including late results, retries and message edits.
   def self.record!(message:, user:, score:, classifier_version: ReplyExpectationClassifier::VERSION)
     return unless user.confirmed_accounts.exists?(id: message.chat.account_id)
+    return unless message.chat.visible_to?(user)
     expectation = find_or_initialize_by(message: message, user: user)
     return expectation if expectation.persisted? && !expectation.state_open?
 

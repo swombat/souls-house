@@ -8,7 +8,7 @@
     shortDate,
   } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
-  import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
+  import { Archive, ChatText, LockSimple, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
@@ -52,6 +52,13 @@
       <div class="pl-8 font-medium text-sm truncate flex items-center gap-2 md:pr-7">
         {#if chat.archived}
           <Archive size={12} class="text-muted-foreground flex-shrink-0" />
+        {/if}
+        {#if chat.private}
+          <LockSimple
+            size={12}
+            class="shrink-0 text-muted-foreground"
+            aria-label="Private: only the people in it can see it"
+            data-testid="chat-private-lock" />
         {/if}
         <span class="truncate">{chat.title_or_default || chat.title || 'New Chat'}</span>
         {#if !chat.title && chat.message_count > 0}

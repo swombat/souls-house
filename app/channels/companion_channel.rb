@@ -66,6 +66,10 @@ class CompanionChannel < ApplicationCable::Channel
       # A consent that a later change has overtaken never goes down, so a
       # late "on" can't follow an "off" (Mira, jLQOLG).
       return if message["type"] == "consent" && message["consent_revision"] != device.consent_revision
+      # A reply or its voice goes down only while it is still one of the
+      # stone's current replies, in the conversation it points at now, with
+      # its owner still able to read that conversation (eKmnrJ, Mira #1089).
+      return if device.pocket? && %w[reply audio].include?(message["type"]) && !device.pocket_reply(message["message_id"])
     end
     transmit(message)
   end

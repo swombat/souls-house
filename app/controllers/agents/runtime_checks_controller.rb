@@ -11,7 +11,7 @@ class Agents::RuntimeChecksController < ApplicationController
 
   def send_test_request
     @agent.require_conversation_runtime!
-    chat = current_account.chats.find_or_create_by!(title: "system: agent test for #{@agent.name}") do |record|
+    chat = visible_chats.find_or_create_by!(title: "system: agent test for #{@agent.name}") do |record|
       record.model_id = "openrouter/auto"
       record.manual_responses = true
       record.agent_ids = [ @agent.id ]

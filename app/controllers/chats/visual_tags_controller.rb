@@ -5,7 +5,7 @@ class Chats::VisualTagsController < ApplicationController
   # JSON gets the stored tag and the row's updated_at (the picker
   # reconciles list snapshots against it), not a redirect that would re-render the whole page.
   def update
-    chat = current_account.chats.kept.find(params[:chat_id])
+    chat = visible_chats.kept.find(params[:chat_id])
     unless params.key?(:visual_tag_id)
       return respond_with_errors(chat, visual_tag_id: "must be provided (or null to clear)")
     end

@@ -3,7 +3,7 @@
 class Chats::RoomsController < ApplicationController
 
   def update
-    chat = current_account.chats.kept.find(params[:chat_id])
+    chat = visible_chats.kept.find(params[:chat_id])
     unless params.key?(:room_id)
       redirect_back_or_to chat_view_path(chat),
         inertia: { errors: { room_id: "must be provided (or null for Main)" } }

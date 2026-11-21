@@ -131,7 +131,7 @@ module IntegrationConnectionProps
 
   # Armed watches first, then the latest others.
   def recent_watches(repository)
-    repository.repository_watches
+    repository.repository_watches.where.not(chat_id: Chat.where(private: true).select(:id))
       .includes(:chat, :created_by_agent, :created_by_user, :watched_repository)
       .order(Arel.sql("CASE WHEN repository_watches.state = 'armed' THEN 0 ELSE 1 END"), id: :desc)
       .limit(WATCHES_PER_REPOSITORY)

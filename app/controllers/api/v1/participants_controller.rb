@@ -48,6 +48,10 @@ module Api
           return render json: { error: "Conversation is archived or deleted" }, status: :unprocessable_entity
         end
 
+        if chat.private?
+          return render json: { error: "Residents can't be added to a private conversation after it starts" }, status: :unprocessable_entity
+        end
+
         agent = chat.account.conversation_agents.eligible_for_conversation.find_by(id: Agent.decode_id(params[:agent_id]))
         unless agent
           return render json: { error: "Resident not found or inactive" }, status: :not_found

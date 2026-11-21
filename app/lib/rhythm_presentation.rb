@@ -103,7 +103,7 @@ class RhythmPresentation
   def recent_runs
     return [] unless @rhythm.persisted?
 
-    occurrences = @rhythm.occurrences.joins(:chat).merge(Chat.kept).includes(:chat)
+    occurrences = @rhythm.occurrences.joins(:chat).merge(Chat.kept).where(chats: { private: false }).includes(:chat)
       .order(created_at: :desc).limit(RECENT_RUNS).to_a
     quiet = Chat.quiet_rhythm_runs.where(id: occurrences.map(&:chat_id)).pluck(:id).to_set
     occurrences.map do |occurrence|

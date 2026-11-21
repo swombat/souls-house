@@ -15,7 +15,9 @@ class RoomActivity
   def self.summary_for(account)
     return EMPTY unless account
 
-    chats = account.chats.kept.listed
+    # Private conversations don't spin anyone's room (eKmnrJ): the totals
+    # are account-wide, so they can't show who is working where in one.
+    chats = account.chats.kept.listed.where(private: false)
     runs = AgentRuntimeInteraction.working.where(chat_id: chats.select(:id))
       .group(:chat_id, :agent_id).pluck(:chat_id, :agent_id, Arel.sql("MAX(agent_runtime_interactions.started_at)"))
     return EMPTY if runs.empty?

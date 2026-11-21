@@ -18,12 +18,17 @@ class CommitmentPresentation
   # for a resident hosted here, those made in any house the viewer belongs
   # to; for a guest, only those made here. Nothing else about a guest is
   # opened by this.
+  #
+  # Never one made in a private conversation the viewer isn't in (eKmnrJ):
+  # its text, summary and links stay with the people in it.
   def self.visible_scope(agent:, account:, viewer:)
-    if agent.account_id == account.id
+    scope = if agent.account_id == account.id
       agent.commitments.where(account_id: viewer.confirmed_accounts.select(:id))
     else
       agent.commitments.where(account_id: account.id)
     end
+    hidden = Chat.where(private: true).where.not(id: ChatParticipant.where(user_id: viewer.id).select(:chat_id)).select(:id)
+    scope.where("commitments.source_chat_id IS NULL OR commitments.source_chat_id NOT IN (#{hidden.to_sql})")
   end
 
   def initialize(agent:, account:, viewer:, routes:)

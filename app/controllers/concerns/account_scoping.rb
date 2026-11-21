@@ -17,6 +17,13 @@ module AccountScoping
     end
   end
 
+  # The account's conversations this person may see: private ones only if
+  # they are in them (Chat.visible_to). Every human-facing chat lookup goes
+  # through here, so a chat outside it is simply not found (404).
+  def visible_chats
+    current_account.chats.visible_to(Current.user)
+  end
+
   def current_membership
     @current_membership ||= if current_account && Current.user
       Current.user.confirmed_memberships.find_by(account: current_account)

@@ -13,9 +13,9 @@ class Messages::BaseController < ApplicationController
   def set_message_and_chat
     @message = Message.kept.find(params[:message_id])
     @chat = if Current.user.site_admin
-      Chat.kept.find(@message.chat_id)
+      Chat.kept.visible_to(Current.user).find(@message.chat_id)
     else
-      Chat.kept.where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
+      Chat.kept.visible_to(Current.user).where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
     end
   end
 

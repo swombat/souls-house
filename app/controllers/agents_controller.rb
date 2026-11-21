@@ -76,7 +76,7 @@ class AgentsController < ApplicationController
   def edit
     interaction_data = nil
     load_interactions = -> {
-      interaction_data ||= pagy(:offset, @agent.agent_runtime_interactions.includes(:chat).recent, limit: 25)
+      interaction_data ||= pagy(:offset, viewer_runtime_interactions.includes(:chat).recent, limit: 25)
     }
     catalog = nil
     load_catalog = -> { catalog ||= @agent.subagent_catalog }
@@ -175,12 +175,29 @@ class AgentsController < ApplicationController
     @away_seats ||= Agents::AwaySeats.new(away_memberships, user: Current.user, routes: helpers)
   end
 
+  # A private conversation's runs are left out before pagination for anyone
+  # outside it (eKmnrJ, Mira #1089), so this page's rows, counts and
+  # pagination are what they would be without the conversation. Inside it
+  # means a participant row *and* current confirmed membership in the
+  # chat's own account: a resident's runs in a guest house stay hidden from
+  # someone who has since lost that house.
+  def viewer_runtime_interactions
+    runs = @agent.agent_runtime_interactions
+    runs.where(chat_id: nil).or(runs.where(chat_id: viewer_readable_chats.select(:id)))
+  end
+
+  def viewer_readable_chats
+    Chat.where(private: false).or(
+      Chat.visible_to(Current.user).where(account_id: Current.user.confirmed_accounts.select(:id))
+    )
+  end
+
   # Sessions with the reflexes their posts were judged against: the ones
   # offered (name, score, the post) and a count of the rest. Whether the
   # resident then acted on an offer is not recorded, so it is not shown.
   def interactions_props(interactions)
     judgments = Reflex::Judgment.joins(:message)
-      .where(messages: { runtime_interaction_id: interactions.map(&:id) })
+      .where(messages: { runtime_interaction_id: interactions.map(&:id), chat_id: viewer_readable_chats.select(:id) })
       .includes(:reflex, message: :chat).order(:id).group_by { |j| j.message.runtime_interaction_id }
     interactions.map do |interaction|
       rows = judgments.fetch(interaction.id, [])
@@ -188,10 +205,13 @@ class AgentsController < ApplicationController
       interaction.as_session_json.merge(
         reflexes: {
           judged_count: rows.size,
+          # A post in a conversation the viewer can't read is left out of
+          # the judgments (and so the count) entirely (eKmnrJ).
           offered: offered.map do |j|
             {
               id: j.to_param, name: j.reflex.name, reminder: j.reflex.reminder, score: j.score,
-              message_id: j.message.obfuscated_id, excerpt: j.message.content.to_s.squish.truncate(140),
+              message_id: j.message.obfuscated_id,
+              excerpt: j.message.content.to_s.squish.truncate(140),
               created_at: j.created_at&.iso8601
             }
           end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -80,7 +80,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
     t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
-    t.check_constraint "plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "account_subscriptions_plan_paid"
+    t.check_constraint "plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "account_subscriptions_plan_paid"
   end
 
   create_table "accounts", force: :cascade do |t|
@@ -136,7 +136,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
-    t.check_constraint "chosen_plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "accounts_chosen_plan_known"
+    t.check_constraint "chosen_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_chosen_plan_known"
     t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_granted_plan_known"
   end
 
@@ -763,6 +763,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
   end
 
+  create_table "backup_pause_claims", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "container_id", null: false
+    t.string "token", null: false
+    t.datetime "created_at", null: false
+    t.index ["agent_id"], name: "index_backup_pause_claims_on_agent_id", unique: true
+  end
+
   create_table "bill_changes", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "requested_by_id"
@@ -809,14 +817,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["billing_code_redemption_id"], name: "index_billing_checkout_attempts_on_billing_code_redemption_id"
     t.index ["idempotency_key"], name: "index_billing_checkout_attempts_on_idempotency_key", unique: true
     t.index ["stripe_session_id"], name: "index_billing_checkout_attempts_on_stripe_session_id", unique: true
-  end
-
-  create_table "backup_pause_claims", force: :cascade do |t|
-    t.bigint "agent_id", null: false
-    t.string "container_id", null: false
-    t.datetime "created_at", null: false
-    t.string "token", null: false
-    t.index ["agent_id"], name: "index_backup_pause_claims_on_agent_id", unique: true
   end
 
   create_table "billing_code_redemptions", force: :cascade do |t|
@@ -912,6 +912,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["chat_id"], name: "index_chat_agents_on_chat_id"
   end
 
+  create_table "chat_participants", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.datetime "created_at", null: false
+    t.string "source", null: false
+    t.bigint "user_id", null: false
+    t.index ["chat_id", "user_id"], name: "index_chat_participants_on_chat_id_and_user_id", unique: true
+    t.index ["chat_id"], name: "index_chat_participants_on_chat_id"
+    t.index ["user_id"], name: "index_chat_participants_on_user_id"
+  end
+
   create_table "chats", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "active_whiteboard_id"
@@ -941,6 +951,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.boolean "web_access", default: false, null: false
     t.bigint "visual_tag_id"
     t.bigint "room_id"
+    t.boolean "private", default: false, null: false
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
     t.index ["account_id", "created_at"], name: "index_chats_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_chats_on_account_id"
@@ -1179,10 +1190,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.datetime "pocket_replied_at"
     t.jsonb "pocket_replies", default: [], null: false
     t.index ["account_id"], name: "index_companion_devices_on_account_id"
+    t.index ["chat_id"], name: "index_companion_devices_on_chat_id"
     t.index ["companion_enrollment_grant_id"], name: "index_companion_devices_on_companion_enrollment_grant_id", unique: true
     t.index ["credential_digest"], name: "index_companion_devices_on_credential_digest", unique: true
     t.index ["previous_credential_digest"], name: "index_companion_devices_on_previous_credential_digest", unique: true
-    t.index ["chat_id"], name: "index_companion_devices_on_chat_id"
     t.check_constraint "grant_revision > 0", name: "companion_device_positive_revision"
   end
 
@@ -1204,33 +1215,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.bigint "chat_id"
     t.jsonb "offered_capabilities"
     t.index ["account_id"], name: "index_companion_enrollment_grants_on_account_id"
+    t.index ["chat_id"], name: "index_companion_enrollment_grants_on_chat_id"
     t.index ["created_by_user_id"], name: "index_companion_enrollment_grants_on_created_by_user_id"
     t.index ["minting_agent_id"], name: "index_companion_enrollment_grants_on_minting_agent_id"
     t.index ["token_digest"], name: "index_companion_enrollment_grants_on_token_digest", unique: true
-    t.index ["chat_id"], name: "index_companion_enrollment_grants_on_chat_id"
-  end
-
-  create_table "companion_pairings", force: :cascade do |t|
-    t.bigint "account_id"
-    t.datetime "approved_at"
-    t.bigint "approved_by_user_id"
-    t.string "code_digest", limit: 64, null: false
-    t.bigint "companion_enrollment_grant_id"
-    t.datetime "created_at", null: false
-    t.string "device_request_id", limit: 128, null: false
-    t.text "enrollment_token"
-    t.datetime "expires_at", null: false
-    t.string "name", limit: 100, null: false
-    t.jsonb "offered_volumes"
-    t.string "poll_secret_digest", limit: 64, null: false
-    t.datetime "updated_at", null: false
-    t.string "kind", limit: 16, default: "computer", null: false
-    t.jsonb "offered_capabilities"
-    t.index ["account_id"], name: "index_companion_pairings_on_account_id"
-    t.index ["approved_by_user_id"], name: "index_companion_pairings_on_approved_by_user_id"
-    t.index ["code_digest"], name: "index_companion_pairings_on_code_digest", unique: true
-    t.index ["companion_enrollment_grant_id"], name: "index_companion_pairings_on_companion_enrollment_grant_id"
-    t.index ["expires_at"], name: "index_companion_pairings_on_expires_at"
   end
 
   create_table "companion_operation_bodies", force: :cascade do |t|
@@ -1269,6 +1257,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["agent_id"], name: "index_companion_operations_on_agent_id"
     t.index ["companion_device_id", "state"], name: "index_companion_operations_on_companion_device_id_and_state"
     t.index ["companion_device_id"], name: "index_companion_operations_on_companion_device_id"
+  end
+
+  create_table "companion_pairings", force: :cascade do |t|
+    t.bigint "account_id"
+    t.datetime "approved_at"
+    t.bigint "approved_by_user_id"
+    t.string "code_digest", limit: 64, null: false
+    t.bigint "companion_enrollment_grant_id"
+    t.datetime "created_at", null: false
+    t.string "device_request_id", limit: 128, null: false
+    t.text "enrollment_token"
+    t.datetime "expires_at", null: false
+    t.string "name", limit: 100, null: false
+    t.jsonb "offered_volumes"
+    t.string "poll_secret_digest", limit: 64, null: false
+    t.datetime "updated_at", null: false
+    t.string "kind", limit: 16, default: "computer", null: false
+    t.jsonb "offered_capabilities"
+    t.index ["account_id"], name: "index_companion_pairings_on_account_id"
+    t.index ["approved_by_user_id"], name: "index_companion_pairings_on_approved_by_user_id"
+    t.index ["code_digest"], name: "index_companion_pairings_on_code_digest", unique: true
+    t.index ["companion_enrollment_grant_id"], name: "index_companion_pairings_on_companion_enrollment_grant_id"
+    t.index ["expires_at"], name: "index_companion_pairings_on_expires_at"
   end
 
   create_table "conversation_compactions", force: :cascade do |t|
@@ -2240,6 +2251,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["chat_id", "revision"], name: "index_messages_on_chat_id_and_revision"
     t.index ["chat_id", "user_id", "client_message_id"], name: "index_messages_on_client_message_identity", unique: true, where: "(client_message_id IS NOT NULL)"
     t.index ["chat_id"], name: "index_messages_on_chat_id"
+    t.index ["companion_device_id"], name: "index_messages_on_companion_device_id"
     t.index ["discarded_at"], name: "index_messages_on_discarded_at"
     t.index ["reasoning_skip_reason"], name: "index_messages_on_reasoning_skip_reason", where: "(reasoning_skip_reason IS NOT NULL)"
     t.index ["runtime_interaction_id"], name: "index_messages_on_runtime_interaction_id"
@@ -2248,7 +2260,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["tool_call_id"], name: "index_messages_on_tool_call_id"
     t.index ["tools_used"], name: "index_messages_on_tools_used", using: :gin
     t.index ["user_id"], name: "index_messages_on_user_id"
-    t.index ["companion_device_id"], name: "index_messages_on_companion_device_id"
   end
 
   create_table "metered_action_events", force: :cascade do |t|
@@ -2656,7 +2667,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying, 'at_cost_hetzner'::character varying, 'included'::character varying]::text[])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_birth_orders_rate_known"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'born'::character varying::text, 'abandoned'::character varying::text, 'failed'::character varying::text])", name: "resident_birth_orders_state_known"
   end
 
@@ -2682,7 +2693,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying, 'at_cost_hetzner'::character varying, 'included'::character varying]::text[])", name: "resident_entitlements_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_fallback_calls", force: :cascade do |t|
@@ -2767,7 +2778,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying, 'at_cost_hetzner'::character varying, 'included'::character varying]::text[])", name: "resident_subscriptions_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|
@@ -3609,9 +3620,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
     t.index ["x_integration_id"], name: "index_x_posting_grants_on_x_integration_id"
   end
 
-  add_foreign_key "companion_devices", "chats"
-  add_foreign_key "companion_enrollment_grants", "chats"
-  add_foreign_key "messages", "companion_devices"
   add_foreign_key "account_exports", "accounts"
   add_foreign_key "account_exports", "users"
   add_foreign_key "account_imports", "accounts"
@@ -3661,6 +3669,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
   add_foreign_key "app_sessions", "users"
   add_foreign_key "audit_logs", "accounts"
   add_foreign_key "audit_logs", "users"
+  add_foreign_key "backup_pause_claims", "agents", on_delete: :cascade
   add_foreign_key "bill_changes", "accounts"
   add_foreign_key "bill_changes", "users", column: "requested_by_id"
   add_foreign_key "billing_checkout_attempts", "accounts"
@@ -3671,12 +3680,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
   add_foreign_key "billing_code_redemptions", "users", column: "redeemed_by_id"
   add_foreign_key "billing_code_redemptions", "users", column: "withdrawn_by_id"
   add_foreign_key "billing_codes", "users", column: "created_by_id"
-  add_foreign_key "backup_pause_claims", "agents", on_delete: :cascade
   add_foreign_key "billing_customers", "accounts"
   add_foreign_key "boat_procurement_operations", "agent_placements"
   add_foreign_key "boat_procurement_operations", "users", column: "requested_by_id"
   add_foreign_key "chat_agents", "agents"
   add_foreign_key "chat_agents", "chats"
+  add_foreign_key "chat_participants", "chats", on_delete: :cascade
+  add_foreign_key "chat_participants", "users", on_delete: :cascade
   add_foreign_key "chats", "accounts"
   add_foreign_key "chats", "agents", column: "initiated_by_agent_id"
   add_foreign_key "chats", "ai_models"
@@ -3710,9 +3720,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
   add_foreign_key "comms_sends", "service_connections"
   add_foreign_key "companion_cable_tickets", "companion_devices"
   add_foreign_key "companion_devices", "accounts"
+  add_foreign_key "companion_devices", "chats"
   add_foreign_key "companion_devices", "companion_enrollment_grants"
   add_foreign_key "companion_enrollment_grants", "accounts"
   add_foreign_key "companion_enrollment_grants", "agents", column: "minting_agent_id"
+  add_foreign_key "companion_enrollment_grants", "chats"
   add_foreign_key "companion_enrollment_grants", "users", column: "created_by_user_id"
   add_foreign_key "companion_operation_bodies", "companion_operations"
   add_foreign_key "companion_operation_inputs", "companion_operations"
@@ -3813,6 +3825,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
   add_foreign_key "messages", "agents"
   add_foreign_key "messages", "ai_models"
   add_foreign_key "messages", "chats"
+  add_foreign_key "messages", "companion_devices"
   add_foreign_key "messages", "safeguard_detections"
   add_foreign_key "messages", "users"
   add_foreign_key "metered_action_events", "accounts"

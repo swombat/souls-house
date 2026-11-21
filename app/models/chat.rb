@@ -30,6 +30,7 @@ class Chat < ApplicationRecord
 
   has_many :chat_agents, dependent: :destroy
   has_many :agents, through: :chat_agents
+  has_many :chat_participants, dependent: :delete_all
   has_many :agent_runtime_interactions, dependent: :nullify
   validates :agents, length: { minimum: 1, message: "must include at least one resident" },
     if: -> { new_record? && manual_responses? }
@@ -59,7 +60,8 @@ class Chat < ApplicationRecord
         "visual_tag",
         "room_id",
         "archived",
-        "discarded"
+        "discarded",
+        "private"
       )
     end
     hash
@@ -134,7 +136,59 @@ class Chat < ApplicationRecord
   scope :hidden_from_list, -> { joins(:visual_tag).where(visual_tags: { hides_from_list: true }) }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
-  scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
+  scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)).visible_to(user) }
+
+  # Private conversations (eKmnrJ). The one audience rule every read path
+  # uses, on top of whatever account access it already checks: a chat that
+  # isn't private is visible as before; a private one only to a human who
+  # created or posted in it (chat_participants) or a resident seated in it.
+  # No account-admin or site-admin widening. Anything else sees nothing.
+  scope :visible_to, ->(actor) {
+    case actor
+    when User
+      where("chats.private = FALSE OR chats.id IN (SELECT chat_id FROM chat_participants WHERE user_id = ?)", actor.id)
+    when Agent
+      where("chats.private = FALSE OR chats.id IN (SELECT chat_id FROM chat_agents WHERE agent_id = ?)", actor.id)
+    else
+      none
+    end
+  }
+
+  # For counts with no particular viewer: private conversations never count.
+  scope :visible_to_or_unprivate, ->(viewer) { viewer ? visible_to(viewer) : where(private: false) }
+
+  # True while the conversation's first residents are being seated (creation
+  # and forks); a private chat refuses any seat after that (ChatAgent).
+  attr_accessor :opening_seats
+
+  def visible_to?(actor)
+    return true unless private?
+
+    case actor
+    when User then chat_participants.exists?(user_id: actor.id)
+    when Agent then chat_agents.exists?(agent_id: actor.id)
+    else false
+    end
+  end
+
+  # Raised where a private chat is asked for by someone outside it; callers
+  # answer as if it didn't exist (404), never with a 403 that confirms it.
+  class NotVisible < StandardError; end
+
+  def ensure_visible_to!(actor)
+    raise NotVisible unless visible_to?(actor)
+  end
+
+  # SyncAuthorizable's check, with the private rule first: a site admin's
+  # widening doesn't reach a private chat (live sync subscriptions use this).
+  def accessible_by?(user)
+    return false unless user
+    # Confirmed membership, never Account#accessible_by?'s site-admin widening.
+    return visible_to?(user) && account.memberships.confirmed.exists?(user: user) if private?
+    return true if user.site_admin
+
+    account.accessible_by?(user)
+  end
 
   def activity_at
     last_message_at || created_at
@@ -161,8 +215,11 @@ class Chat < ApplicationRecord
   def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil, automatic_response: true)
     transaction do
       chat = new(attributes)
+      chat.opening_seats = true
       chat.agent_ids = agent_ids if agent_ids.present?
       chat.save!(context: :conversation_creation)
+      chat.opening_seats = false
+      ChatParticipant.record!(chat: chat, user: user, source: "creator")
 
       if message_content.present? || (files.present? && files.any?)
         message = chat.messages.create!({

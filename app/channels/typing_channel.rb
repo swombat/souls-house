@@ -24,7 +24,13 @@ class TypingChannel < ApplicationCable::Channel
     @chat = Chat.find_by_obfuscated_id(params[:chat_id].to_s)
     return reject unless @chat && !@chat.discarded? && @chat.accessible_by?(current_user)
 
-    stream_from self.class.stream_for_chat(@chat)
+    return stream_from(self.class.stream_for_chat(@chat)) unless @chat.private?
+
+    # A private conversation's typing names stop once the person's place or
+    # membership does, even on an open subscription (eKmnrJ).
+    stream_from(self.class.stream_for_chat(@chat), coder: ActiveSupport::JSON) do |message|
+      transmit(message) if @chat.reload.accessible_by?(current_user)
+    end
   end
 
   def typing(data)

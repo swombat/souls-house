@@ -96,11 +96,14 @@ module ApiAuthentication
   # Rooms a person may act in. An account key reaches its account's rooms; an
   # OAuth token reaches every enabled account the person currently belongs to,
   # or only the one named by account_id.
+  # Private conversations the person isn't in are never among them.
   def human_chats
-    return current_api_account.chats unless app_token_request?
-    return current_api_account.chats if params[:account_id].present?
-
-    Chat.where(account_id: current_api_user.confirmed_accounts.select(:id))
+    scope = if !app_token_request? || params[:account_id].present?
+      current_api_account.chats
+    else
+      Chat.where(account_id: current_api_user.confirmed_accounts.select(:id))
+    end
+    scope.visible_to(current_api_user)
   end
 
 end

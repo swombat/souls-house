@@ -29,10 +29,10 @@ module Api
 
         acted = if raw
           cutoffs = ConversationBulk.decode_cutoffs(raw.is_a?(ActionController::Parameters) ? raw.to_unsafe_h : nil)
-          ConversationBulk.mark_read!(chats: account.chats.kept, user: current_api_user, cutoffs: cutoffs)
+          ConversationBulk.mark_read!(chats: account.chats.visible_to(current_api_user).kept, user: current_api_user, cutoffs: cutoffs)
         else
           ids = ConversationBulk.decode_ids(conversation_ids_param)
-          ConversationBulk.mark_read!(chats: account.chats.kept.where(id: ids), user: current_api_user)
+          ConversationBulk.mark_read!(chats: account.chats.visible_to(current_api_user).kept.where(id: ids), user: current_api_user)
         end
         audit_human_action("bulk_dismiss_reply_expectations", nil, account: account, conversation_ids: acted)
         render json: { conversation_ids: acted }
@@ -48,7 +48,7 @@ module Api
 
         ids = ConversationBulk.decode_ids(conversation_ids_param)
         tag = VisualTag.resolve_for(account, params[:visual_tag_id])
-        changed = ConversationBulk.set_tag!(chats: account.chats.kept.where(id: ids), tag: tag, by: current_api_user)
+        changed = ConversationBulk.set_tag!(chats: account.chats.visible_to(current_api_user).kept.where(id: ids), tag: tag, by: current_api_user)
         audit_human_action("bulk_set_visual_tag", nil, account: account, conversation_ids: changed, visual_tag_id: tag&.to_param)
         render json: { conversation_ids: changed, visual_tag: tag&.as_json }
       rescue ActiveRecord::InvalidForeignKey
