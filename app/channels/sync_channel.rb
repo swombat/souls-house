@@ -178,16 +178,28 @@ class SyncChannel < ApplicationCable::Channel
   # sticky for the life of the subscription, so a lost place is never
   # re-admitted by a stale connection. Private chats are few, so a query per
   # delivery is the price.
+  #
+  # A conversation can also be made private while someone has it open (#1092),
+  # so every conversation or message stream delivers through the check, not
+  # only the ones private at subscribe: one primary-key read of the flag, and
+  # the full rule once it is set.
   def stream_guarded(identifier, record)
-    chat = record.is_a?(Chat) ? record : (record.is_a?(Message) ? record.chat : nil)
-    return stream_from(identifier) unless chat&.private?
+    chat_id = record.is_a?(Chat) ? record.id : (record.is_a?(Message) ? record.chat_id : nil)
+    return stream_from(identifier) unless chat_id
 
-    stream_from(identifier, private_delivery(chat.id), coder: ActiveSupport::JSON)
+    stream_from(identifier, chat_delivery(chat_id), coder: ActiveSupport::JSON)
   end
 
-  # The callback each private stream delivers through.
-  def private_delivery(chat_id)
-    ->(message) { transmit(message) if private_chat_still_visible?(chat_id) }
+  # The callback each conversation or message stream delivers through.
+  def chat_delivery(chat_id)
+    ->(message) { transmit(message) if chat_still_visible?(chat_id) }
+  end
+
+  def chat_still_visible?(chat_id)
+    return false if @private_denied&.dig(chat_id)
+    return true unless Chat.where(id: chat_id).pick(:private)
+
+    private_chat_still_visible?(chat_id)
   end
 
   def private_chat_still_visible?(chat_id)

@@ -61,4 +61,16 @@ class Chats::PrivaciesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "made_private", @chat.chat_participants.find_by!(user: @member).source
   end
 
+  test "a published stone has to be withdrawn first" do
+    stone = @chat.stones.create!
+    sign_in @member
+    post account_chat_privacy_path(@account, @chat)
+    assert_equal "Withdraw this conversation's published stones first", flash[:alert]
+    refute @chat.reload.private?
+
+    stone.update_columns(withdrawn_at: Time.current)
+    post account_chat_privacy_path(@account, @chat)
+    assert @chat.reload.private?
+  end
+
 end

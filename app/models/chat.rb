@@ -169,6 +169,8 @@ class Chat < ApplicationRecord
     transaction do
       lock!
       return false if private?
+      # Every stone is a public page; a private conversation can't have one up.
+      raise PublishedStones, "Withdraw this conversation's published stones first" if stones.available.exists?
 
       update!(private: true)
       now = Time.current
@@ -193,6 +195,7 @@ class Chat < ApplicationRecord
   # Raised where a private chat is asked for by someone outside it; callers
   # answer as if it didn't exist (404), never with a 403 that confirms it.
   class NotVisible < StandardError; end
+  class PublishedStones < StandardError; end
 
   def ensure_visible_to!(actor)
     raise NotVisible unless visible_to?(actor)

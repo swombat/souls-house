@@ -11,6 +11,8 @@ class Chats::PrivaciesController < ApplicationController
     else
       redirect_back_or_to chat_view_path(@chat)
     end
+  rescue Chat::PublishedStones => error
+    redirect_back_or_to chat_view_path(@chat), alert: error.message
   end
 
 end
