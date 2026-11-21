@@ -6,7 +6,7 @@
   import { Label } from '$lib/components/shadcn/label/index.js';
   import DeviceControls from '$lib/components/accounts/DeviceControls.svelte';
 
-  let { account, device, state, manages = false, busy = false, onsend, onremove } = $props();
+  let { account, device, state: deviceState, manages = false, busy = false, onsend, onremove } = $props();
 
   const statusLabel = { online: 'Online', paused: 'Paused', offline: 'Offline' };
   const captureLabel = { mic: 'Microphone', camera: 'Camera' };
@@ -31,7 +31,7 @@
   }
 </script>
 
-<article class="overflow-hidden rounded-2xl border bg-card shadow-sm" data-testid="pocket" data-status={state}>
+<article class="overflow-hidden rounded-2xl border bg-card shadow-sm" data-testid="pocket" data-status={deviceState}>
   <div class="p-4 sm:px-5">
     <div class="flex items-start gap-3 sm:gap-4">
       <div
@@ -40,7 +40,7 @@
         <span class="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-card">
           <span
             class={`size-2.5 rounded-full ${
-              state === 'online' ? 'bg-emerald-500' : state === 'paused' ? 'bg-amber-500' : 'bg-zinc-400'
+              deviceState === 'online' ? 'bg-emerald-500' : deviceState === 'paused' ? 'bg-amber-500' : 'bg-zinc-400'
             }`}></span>
         </span>
       </div>
@@ -50,13 +50,13 @@
           <span
             data-testid="computer-status"
             class={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              state === 'online'
+              deviceState === 'online'
                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                : state === 'paused'
+                : deviceState === 'paused'
                   ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
                   : 'bg-muted text-muted-foreground'
             }`}>
-            {statusLabel[state]}
+            {statusLabel[deviceState]}
           </span>
         </div>
         <p class="mt-1 text-sm text-muted-foreground" data-testid="pocket-owner">Owner: {pocket.owner_name}</p>
@@ -80,7 +80,7 @@
     {#if manages}
       <DeviceControls
         {device}
-        {state}
+        state={deviceState}
         {busy}
         offline="The device isn't connected right now."
         online="Connected."
@@ -97,7 +97,7 @@
           bind:value={choice}
           disabled={busy}>
           <option value="">Keep the current one</option>
-          {#each pocket.conversation_choices as option (option.id)}
+          {#each pocket.conversation_choices ?? [] as option (option.id)}
             {#if option.id !== pocket.chat_id}
               <option value={option.id}>{option.title}{option.private ? ' (private)' : ''}</option>
             {/if}
@@ -123,7 +123,8 @@
           disabled={busy || !choice}
           onclick={changeConversation}>Move the stone here</button>
         <p class="text-xs text-muted-foreground">
-          Only the conversation changes. Its history stays where it is, and a reply still on its way lands in the old one.
+          Only the conversation changes. Its history stays where it is, and a reply still on its way lands in the old
+          one.
         </p>
       </section>
     {/if}

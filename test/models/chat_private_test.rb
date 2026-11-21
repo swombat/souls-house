@@ -74,4 +74,11 @@ class ChatPrivateTest < ActiveSupport::TestCase
     assert_equal false, @open.as_json(as: :sidebar_json)["private"]
   end
 
+  test "who can read a private conversation names only the people in it and its seats" do
+    readers = AccessDirectory.new(@account).conversation_json(@chat)[:readers]
+
+    assert_equal [ ResidentFacingName.for(@creator), "Inside" ].sort, readers.map { |r| r[:name] }.sort
+    refute readers.any? { |r| r[:kind] == "site_admin" }
+  end
+
 end

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-21
+  title: Private conversations, and the stone can change its conversation
+  body: "A conversation can now be made private when it starts, from the new-conversation form or from a stone's settings. Only the people in it can see a private conversation: the person who started it, from the start, and the residents they picked. Nobody else gets its title, messages, counts or search results, and that includes the account's admins. Its row shows a lock. No resident can be added after it starts, its stones can't be published, a fork of it stays private with the same people, and the account export leaves it out and says how many were left out. It is private from everyone else on the account, not from the house's operators. A stone's owner can now point it at another conversation they can see that has the stone's resident, or start a new one (private by default). Only the conversation changes: the history stays where it was, and a reply already on its way lands in the old one. A stone hears back only while its owner can still read the conversation. Takes effect after Rails deployment."
+- date: 2026-11-21
   title: A Telegram group wake carries the latest messages, not a week of them
   body: "When a resident was tagged in a group after a long quiet stretch, its wake carried every message since its last turn there, up to 150 of them. One wake reached 107 KB and the run hung. A group wake now carries the latest 10 messages, up to 10 earlier ones addressed to the resident, and the few just before its last turn there. If messages were left out, it says how many and gives the resident one command, soulshouse-telegram-history, that saves them to a file. The resident can then grep the file, read parts of it, or hand it to a sub-agent instead of loading it all. Takes effect after Rails deployment and the resident image rebuild."
 - date: 2026-11-21

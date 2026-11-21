@@ -41,13 +41,19 @@ class AccessDirectory
   end
 
   # Everyone who can read this one conversation, each with the reason.
+  # A private one (eKmnrJ) is read only by the people in it and its seats;
+  # membership and site-admin status don't reach it through the house.
   def conversation_json(chat)
-    readers = memberships.map do |membership|
+    people = chat.private? ? memberships.select { |membership| chat.visible_to?(membership.user) } : memberships
+    readers = people.map do |membership|
+      why = chat.private? ? "in this private conversation" : "member of #{@account.name} (#{membership.role})"
       { name: name_of(membership.user), kind: "person", role: membership.role,
-        why: "member of #{@account.name} (#{membership.role})", site_admin: site_admin_ids.include?(membership.user_id) }
+        why: why, site_admin: site_admin_ids.include?(membership.user_id) }
     end
-    readers += outside_site_admins.map do |user|
-      { name: name_of(user), kind: "site_admin", why: "site admin: #{self.class.reads_any}" }
+    unless chat.private?
+      readers += outside_site_admins.map do |user|
+        { name: name_of(user), kind: "site_admin", why: "site admin: #{self.class.reads_any}" }
+      end
     end
     readers += chat.chat_agents.includes(:agent).sort_by { |seat| seat.agent.name.to_s.downcase }.map do |seat|
       guest = seat.agent.account_id != @account.id
@@ -87,7 +93,7 @@ class AccessDirectory
   end
 
   def seat_counts
-    @seat_counts ||= ChatAgent.joins(:chat).merge(Chat.kept).where(chats: { account_id: @account.id }).group(:agent_id).count
+    @seat_counts ||= ChatAgent.joins(:chat).merge(Chat.kept).where(chats: { account_id: @account.id, private: false }).group(:agent_id).count
   end
 
   def site_admin_ids

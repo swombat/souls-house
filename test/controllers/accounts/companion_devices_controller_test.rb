@@ -275,7 +275,9 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     card = inertia_shared_props.fetch("devices").find { |d| d["id"] == stone.to_param }
     assert_equal "pocket", card["kind"]
     assert_equal({ "capabilities" => %w[mic], "mic" => false, "camera" => false, "owned_by_you" => true,
-      "chat_id" => stone.chat.to_param, "chat_title" => "The stone" }, card["pocket"].except("owner_name"))
+      "chat_id" => stone.chat.to_param, "chat_title" => "The stone", "chat_private" => false,
+      "conversation_choices" => [ { "id" => stone.chat.to_param, "title" => "The stone", "private" => false } ] },
+      card["pocket"].except("owner_name"))
 
     patch account_companion_device_path(@account, stone), params: { control: "capture", capability: "mic", value: "true" }
     assert stone.reload.mic_enabled
