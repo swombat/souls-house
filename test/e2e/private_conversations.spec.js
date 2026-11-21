@@ -5,6 +5,8 @@ import { expect, test } from '@playwright/test';
 // who aren't in it get no row, no search hit and a 404 on its address.
 
 const WORD = 'quartzlantern';
+// Positive control: an ordinary chat every member sees, so a blanket denial can't pass.
+const OPEN_WORD = 'plainmarble';
 
 async function signIn(page, email, password) {
   await page.goto('/login');
@@ -24,8 +26,18 @@ test('a private conversation is seen only by the people in it', async ({ browser
   expect(response.ok()).toBe(true);
   const setup = await response.json();
   try {
-    // The creator starts it from the new-conversation form, ticking Private.
     await signIn(page, setup.primary_user.email, setup.password);
+    // First an ordinary conversation, the control.
+    await page.goto(`/accounts/${setup.account_id}/chats`);
+    await page.getByTitle('Edit chat title').click();
+    await page.locator('header input[type="text"]').fill('Open room');
+    await page.locator('header input[type="text"]').press('Enter');
+    await page.getByTestId('message-composer').locator('textarea').fill(`A ${OPEN_WORD} for everyone`);
+    await page.getByRole('button', { name: 'Start conversation' }).click();
+    await expect(page).toHaveURL(/\/chats\/[^/]+$/);
+    const openUrl = new URL(page.url()).pathname;
+
+    // The creator starts the private one from the same form, ticking Private.
     await page.goto(`/accounts/${setup.account_id}/chats`);
     await page.getByTitle('Edit chat title').click();
     await page.locator('header input[type="text"]').fill('Stone room');
@@ -53,12 +65,18 @@ test('a private conversation is seen only by the people in it', async ({ browser
       const other = await context.newPage();
       await signIn(other, outsider.email, setup.password);
       await other.goto(`/accounts/${setup.account_id}/chats`);
+      await expect(other.getByText('Open room').first()).toBeAttached();
       await expect(other.getByText('Stone room')).toHaveCount(0);
       await expect(other.getByTestId('chat-private-lock')).toHaveCount(0);
+      await other.goto(`/accounts/${setup.account_id}/chats/search?q=${OPEN_WORD}`);
+      await expect(other.getByText('Open room').first()).toBeVisible();
       await other.goto(`/accounts/${setup.account_id}/chats/search?q=${WORD}`);
       await expect(other.getByText(/No results found/)).toBeVisible();
       await expect(other.getByText('Stone room')).toHaveCount(0);
       await expect(other.getByText('for the stone')).toHaveCount(0);
+      const control = await other.goto(openUrl);
+      expect(control.status()).toBe(200);
+      await expect(other.getByText(`A ${OPEN_WORD} for everyone`)).toBeVisible();
       const direct = await other.goto(chatUrl);
       expect(direct.status()).toBe(404);
       await expect(other.getByText('for the stone')).toHaveCount(0);
