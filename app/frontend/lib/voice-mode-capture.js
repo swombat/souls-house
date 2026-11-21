@@ -38,6 +38,9 @@ export function captureSupported(win = globalThis) {
 //                                 is gone and the mic must be reopened),
 //                                 'suspended' (the audio context stopped)
 //   onrestore()                   the track was unmuted or the context runs again
+//   sound()                       the player's { playing, level } now, read for
+//                                 every chunk, so a turn over a reply needs a
+//                                 person, not the reply's echo (YXDkBY)
 // All samples are mono Float32 at `outputRate`.
 // The handle: mute(on) keeps the mic open but feeds silence to the detector
 // (nothing is sent while muted); flush() ends the current utterance now;
@@ -52,6 +55,7 @@ export async function startCapture({
   ondiscard,
   oninterrupt,
   onrestore,
+  sound,
   outputRate = DEFAULT_OUTPUT_RATE,
   detectorOptions = {},
 } = {}) {
@@ -93,7 +97,7 @@ export async function startCapture({
   function emit(events) {
     for (const event of events) {
       if (event.type === 'start') {
-        onspeechstart?.(out(event.samples), { level: event.level, threshold: event.threshold });
+        onspeechstart?.(out(event.samples), { level: event.level, threshold: event.threshold, barge: event.barge });
       } else if (event.type === 'audio') onaudio?.(out(event.samples));
       else if (event.type === 'discard') ondiscard?.(event.durationMs);
       else if (event.type === 'end') onturn?.(event.durationMs);
@@ -103,7 +107,7 @@ export async function startCapture({
   function handle(samples) {
     if (stopped) return;
     if (muted) samples = new Float32Array(samples.length);
-    emit(detector.feed(samples));
+    emit(detector.feed(samples, sound?.() ?? null));
     const now = performance.now();
     if (now - lastLevelAt > 80) {
       lastLevelAt = now;

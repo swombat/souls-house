@@ -138,3 +138,19 @@ test('a player on a shared context (keepContext) never closes it', () => {
   player.stop();
   expect(ctx.close).not.toHaveBeenCalled();
 });
+
+test('heard() gives the level of the samples being rendered, after the output latency', () => {
+  ctx.outputLatency = 0.1;
+  player.push(new Float32Array([...Array(10).fill(0.5), ...Array(10).fill(0)]), RATE);
+  // Scheduled at LEAD; with 0.1 s of output latency the first sound is in the
+  // room at LEAD + 0.1.
+  ctx.currentTime = LEAD + 0.05;
+  expect(player.heard().playing).toBe(false);
+  ctx.currentTime = LEAD + 0.1 + 0.45;
+  expect(player.heard()).toEqual({ playing: true, level: 0.5 });
+  ctx.currentTime = LEAD + 0.1 + 1.5;
+  expect(player.heard()).toEqual({ playing: true, level: 0 });
+  player.pause();
+  ctx.state = 'suspended';
+  expect(player.heard().playing).toBe(false);
+});

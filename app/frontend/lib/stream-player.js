@@ -86,9 +86,28 @@ export function createStreamPlayer({
       sources.delete(node);
       if (mine === generation) finishIfHeard();
     };
+    node.from = at;
+    node.until = at + buffer.duration;
     sources.add(node);
     node.start(at);
     scheduledEnd = at + buffer.duration;
+  }
+
+  // RMS of the made samples within half a `window` of `second`.
+  function levelAt(second, window = 0.02) {
+    const from = Math.max(0, Math.floor((second - window / 2) * rate));
+    const to = Math.min(made, Math.ceil((second + window / 2) * rate));
+    let sum = 0;
+    let offset = 0;
+    for (const chunk of chunks) {
+      const end = offset + chunk.length;
+      if (end > from && offset < to) {
+        for (let i = Math.max(from, offset); i < Math.min(to, end); i += 1) sum += chunk[i - offset] * chunk[i - offset];
+      }
+      if (end >= to) break;
+      offset = end;
+    }
+    return to > from ? Math.sqrt(sum / (to - from)) : 0;
   }
 
   function close() {
@@ -187,6 +206,21 @@ export function createStreamPlayer({
     },
     get stopped() {
       return stopped;
+    },
+    // What is leaving the speaker now, for barge-in (YXDkBY): playing only
+    // while a scheduled chunk is being rendered on a running context (not
+    // before the first sound, in an underrun, paused, or after the end), and
+    // level the RMS of this reply's own samples there. The browser's output
+    // latency is taken off the clock, so it is the sound in the room, as best
+    // the page can know it, not the sound being queued.
+    heard() {
+      const silent = { playing: false, level: null };
+      if (stopped || ended || paused || anchor === null || ctx.state !== 'running') return silent;
+      const now = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
+      let rendering = false;
+      for (const node of sources) if (node.from <= now && now < node.until) rendering = true;
+      if (!rendering) return silent;
+      return { playing: true, level: levelAt(now - anchor) };
     },
   };
 }
