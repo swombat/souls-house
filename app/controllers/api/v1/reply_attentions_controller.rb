@@ -15,9 +15,9 @@ module Api
       def show
         account = human_account!(current_api_account)
         open = ReplyExpectation.open_message_ids_by_chat(current_api_user, account: account)
-        chats = account.chats.where(id: open.keys).index_by(&:id)
+        chats = account.chats.visible_to(current_api_user).where(id: open.keys).index_by(&:id)
         # Most recently flagged first.
-        conversations = open.sort_by { |_chat_id, message_ids| -message_ids.max }
+        conversations = open.select { |chat_id, _| chats.key?(chat_id) }.sort_by { |_chat_id, message_ids| -message_ids.max }
           .map { |chat_id, message_ids| reply_attention_json(chats.fetch(chat_id), message_ids) }
         render json: { total: conversations.size, conversations: conversations }
       end

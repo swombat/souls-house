@@ -1,7 +1,7 @@
 # Current titles for the conversation IDs written in a chat's messages, so
 # they can render as links (ConversationRef on the frontend). Only
 # conversations the reader could open answer: the same scope the chat page
-# uses (current_account.chats.kept). Another account's conversation, or a
+# uses (visible_chats.kept). Another account's conversation, or a
 # discarded one, is simply absent, so its title never leaves the server.
 class Accounts::ConversationTitlesController < ApplicationController
 
@@ -26,7 +26,7 @@ class Accounts::ConversationTitlesController < ApplicationController
     end.to_h
     return {} if decoded.empty?
 
-    chats = current_account.chats.kept.where(id: decoded.values).index_by(&:id)
+    chats = visible_chats.kept.where(id: decoded.values).index_by(&:id)
     decoded.filter_map do |public_id, id|
       chat = chats[id]
       [ public_id, chat.title_or_default ] if chat

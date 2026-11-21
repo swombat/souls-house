@@ -134,7 +134,7 @@ class MessagesController < ApplicationController
   private
 
   def set_chat
-    @chat = current_account.chats.kept.find(params[:chat_id])
+    @chat = visible_chats.kept.find(params[:chat_id])
   end
 
   def set_message
@@ -142,9 +142,9 @@ class MessagesController < ApplicationController
     @message = (action_name == "destroy" ? Message : Message.kept).find(params[:id])
     chats = action_name == "destroy" ? Chat.all : Chat.kept
     @chat = if Current.user.site_admin
-      chats.find(@message.chat_id)
+      chats.visible_to(Current.user).find(@message.chat_id)
     else
-      chats.where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
+      chats.visible_to(Current.user).where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
     end
   end
 

@@ -11,7 +11,7 @@ module Api
         # first, then archived, each most recently updated first.
         def index
           account = find_account!(params[:account_id])
-          chats = account.chats.kept.includes(:account, :agents)
+          chats = account.chats.visible_to(current_user).kept.includes(:account, :agents)
           render json: { conversations: (chats.active.latest + chats.archived.latest).map { |c| Presenter.conversation(c) } }
         end
 
@@ -37,7 +37,7 @@ module Api
           # A retry is judged against what was originally submitted, not
           # against who could join a new conversation today: a resident
           # deactivated since must not turn a retry into a refusal.
-          existing = account.chats.find_by(client_conversation_id: client_conversation_id)
+          existing = account.chats.visible_to(current_user).find_by(client_conversation_id: client_conversation_id)
           return render_retry(existing, digest) if existing
 
           agents = eligible_agents(account, agent_ids) or return
@@ -51,7 +51,7 @@ module Api
           render json: { conversation: Presenter.conversation(chat) }, status: :created
         rescue ActiveRecord::RecordNotUnique
           # A concurrent request with the same identity committed first.
-          existing = account.chats.find_by(client_conversation_id: client_conversation_id) or raise
+          existing = account.chats.visible_to(current_user).find_by(client_conversation_id: client_conversation_id) or raise
           render_retry(existing, digest)
         end
 

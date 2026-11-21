@@ -12,7 +12,7 @@ module ChatSidebarScope
   # unordered: the relation the Actions menu acts on. Deleted conversations
   # (the admin's show_deleted) are never in it.
   def sidebar_listing(room)
-    chats = filter_sidebar_by_tag(current_account.chats.in_room(room).kept).listed
+    chats = filter_sidebar_by_tag(visible_chats.in_room(room).kept).listed
     params[:show_archived] == "true" ? chats : chats.active
   end
 

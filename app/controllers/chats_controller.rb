@@ -142,7 +142,7 @@ class ChatsController < ApplicationController
   end
 
   def update
-    @chat = current_account.chats.kept.find(params[:id])
+    @chat = visible_chats.kept.find(params[:id])
 
     if @chat.update(chat_params)
       redirect_to chat_view_path(@chat)
@@ -155,7 +155,7 @@ class ChatsController < ApplicationController
     @query = params[:q].to_s.strip.first(500)
 
     if @query.present?
-      @pagy, @messages = pagy(:offset, Message.search_in_account(current_account, @query), limit: 20)
+      @pagy, @messages = pagy(:offset, Message.search_in_account(current_account, @query, viewer: Current.user), limit: 20)
     end
 
     render inertia: "chats/search", props: {
@@ -182,7 +182,7 @@ class ChatsController < ApplicationController
   end
 
   def sidebar_chats
-    base_scope = current_account.chats.in_room(selected_room).includes(:visual_tag)
+    base_scope = visible_chats.in_room(selected_room).includes(:visual_tag)
 
     if params[:show_deleted].present? && can_manage_account?
       chats = base_scope.with_discarded
@@ -205,11 +205,11 @@ class ChatsController < ApplicationController
   # the Filter menu can count the ones waiting on the viewer (the browser
   # never receives the hidden rows themselves).
   def sidebar_hidden_chat_ids
-    current_account.chats.in_room(selected_room).kept.listed.active.hidden_from_list.pluck(:id).map { |id| Chat.encode_id(id) }
+    visible_chats.in_room(selected_room).kept.listed.active.hidden_from_list.pluck(:id).map { |id| Chat.encode_id(id) }
   end
 
   def set_chat
-    @chat = current_account.chats.kept.find(params[:id])
+    @chat = visible_chats.kept.find(params[:id])
   end
 
   def conversation_commitment_json(commitment)
@@ -232,8 +232,9 @@ class ChatsController < ApplicationController
       .permit(:model_id, :web_access, :title)
   end
 
+  # private is set at creation only; nothing converts a chat later (eKmnrJ).
   def chat_create_params
-    params.fetch(:chat, {}).permit(:title)
+    params.fetch(:chat, {}).permit(:title, :private)
   end
 
   def available_models

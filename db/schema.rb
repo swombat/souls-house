@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -904,6 +904,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
     t.index ["chat_id"], name: "index_chat_agents_on_chat_id"
   end
 
+  create_table "chat_participants", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.datetime "created_at", null: false
+    t.string "source", null: false
+    t.bigint "user_id", null: false
+    t.index ["chat_id", "user_id"], name: "index_chat_participants_on_chat_id_and_user_id", unique: true
+    t.index ["chat_id"], name: "index_chat_participants_on_chat_id"
+    t.index ["user_id"], name: "index_chat_participants_on_user_id"
+  end
+
   create_table "chats", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "active_whiteboard_id"
@@ -933,6 +943,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
     t.boolean "web_access", default: false, null: false
     t.bigint "visual_tag_id"
     t.bigint "room_id"
+    t.boolean "private", default: false, null: false
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
     t.index ["account_id", "created_at"], name: "index_chats_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_chats_on_account_id"
@@ -3668,6 +3679,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
   add_foreign_key "boat_procurement_operations", "users", column: "requested_by_id"
   add_foreign_key "chat_agents", "agents"
   add_foreign_key "chat_agents", "chats"
+  add_foreign_key "chat_participants", "chats", on_delete: :cascade
+  add_foreign_key "chat_participants", "users", on_delete: :cascade
   add_foreign_key "chats", "accounts"
   add_foreign_key "chats", "agents", column: "initiated_by_agent_id"
   add_foreign_key "chats", "ai_models"

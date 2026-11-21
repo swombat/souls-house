@@ -86,6 +86,7 @@ module Api
 
         Chat.where(account_id: current_api_account.id)
           .or(Chat.where(id: current_api_agent.chat_agents.select(:chat_id)))
+          .visible_to(current_api_agent)
       end
 
     end

@@ -3,7 +3,7 @@ class Accounts::RoomsController < ApplicationController
   before_action :require_account_manager!, except: :index
 
   def index
-    counts = current_account.chats.kept.group(:room_id).count
+    counts = visible_chats.kept.group(:room_id).count
     render inertia: "accounts/rooms", props: {
       account: current_account.as_json,
       can_manage: current_account.manageable_by?(Current.user),

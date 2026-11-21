@@ -11,7 +11,7 @@ module ChatScoped
   private
 
   def set_chat
-    @chat = current_account.chats.kept.find(params[:chat_id])
+    @chat = visible_chats.kept.find(params[:chat_id])
   end
 
 end
