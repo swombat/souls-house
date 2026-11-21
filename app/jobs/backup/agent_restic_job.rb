@@ -172,7 +172,7 @@ module Backup
     end
 
     def docker_run_cmd(agent, *restic_args, graph_mounts: [])
-      [ "docker", "run", "--rm", *Backup::AgentRestic.backup_mounts(agent), *graph_mounts, *restic_args ]
+      [ "docker", "run", "--rm", *Backup::AgentRestic.backup_label(agent), *Backup::AgentRestic.backup_mounts(agent), *graph_mounts, *restic_args ]
     end
 
     def restic_env(agent)

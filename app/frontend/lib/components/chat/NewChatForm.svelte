@@ -193,14 +193,17 @@
             draft.edit({ selectedAgentIds: value });
           }
         } />
+      <!-- One line until ticked, so a short phone keeps room for the latest conversations below. -->
       <label class="mx-4 mt-2 flex items-start gap-2 text-sm" data-testid="new-chat-private">
         <input type="checkbox" class="mt-0.5" bind:checked={isPrivate} />
         <span>
           <span class="font-medium">Private</span>
-          <span class="block text-muted-foreground">
-            Only you and the residents you pick can see it. It stays out of everyone else's list and search, account
-            admins included. It isn't private from the house's operators.
-          </span>
+          {#if isPrivate}
+            <span class="block text-muted-foreground">
+              Only you and the residents you pick can see it. It stays out of everyone else's list and search, account
+              admins included. It isn't private from the house's operators.
+            </span>
+          {/if}
         </span>
       </label>
       <NewChatEmptyState {chats} accountId={account.id} />

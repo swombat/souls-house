@@ -108,7 +108,7 @@ module Backup
         events = []
         docker = lambda do |*command|
           case command[1]
-          when "inspect" then events << :inspect; [ "true false", "", ok ]
+          when "inspect" then events << :inspect; [ "cid-1 true false", "", ok ]
           when "pause" then events << :pause; [ "", "", ok ]
           when "unpause" then events << :unpause; [ "", "", ok ]
           when "volume" then [ "", "", ok ]
@@ -162,7 +162,7 @@ module Backup
         during = nil
         docker = lambda do |*command|
           case command[1]
-          when "inspect" then [ "true false", "", ok ]
+          when "inspect" then [ "cid-1 true false", "", ok ]
           when "pause", "unpause" then [ "", "", ok ]
           else flunk "unexpected docker #{command[1]}"
           end
@@ -239,13 +239,111 @@ module Backup
       end
     end
 
-    test "a container this backup did not pause is not touched" do
+    test "a container this backup did not pause is not touched, and is reported at once" do
       @agent.save!
       events = []
-      with_docker(own: "true true", events:, retry_calls: ->(*) { flunk "not this backup's pause" }) do
-        AgentRestic.with_quiesced(@agent) { :done }
+      assert_error_reported(ContainerPause::UnclaimedPause) do
+        with_docker(own: "cid-1 true true", events:, retry_calls: ->(*) { flunk "not this backup's pause" }) do
+          AgentRestic.with_quiesced(@agent) { :done }
+        end
       end
       assert_equal %w[inspect], events
+    end
+
+    # YEDvGJ, 21 Nov 2026: the claim is committed before the pause, and on a
+    # connection of its own, and goes once the resident is unpaused.
+    test "a backup claims the exact container before pausing it, and releases the claim after" do
+      @agent.save!
+      events = []
+      seen = []
+      docker = lambda do |*command|
+        events << command[1]
+        case command[1]
+        when "inspect" then [ "cid-1 true false", "", ok ]
+        when "pause"
+          seen << [ command[2], PauseClaim.find_by(agent_id: @agent.id)&.container_id ]
+          [ "", "", ok ]
+        when "unpause" then seen << [ command[2], nil ]; [ "", "", ok ]
+        else flunk "unexpected docker #{command[1]}"
+        end
+      end
+      Agents::Resources.stub(:new, verified_resources) do
+        Open3.stub(:capture3, docker) { AgentRestic.with_quiesced(@agent) { :done } }
+      end
+      assert_equal [ [ "cid-1", "cid-1" ], [ "cid-1", nil ] ], seen, "paused by id under a claim for that id, unpaused by id"
+      assert_nil PauseClaim.find_by(agent_id: @agent.id)
+    end
+
+    # Killed after the claim, before `docker pause` ran: the container is
+    # still running, so the old claim is dropped and the backup goes ahead.
+    test "a claim left by a worker killed before its pause does not stop the next backup" do
+      @agent.save!
+      PauseClaim.claim!(@agent, "cid-1")
+      with_docker { assert_equal :done, AgentRestic.with_quiesced(@agent) { :done } }
+      assert_nil PauseClaim.find_by(agent_id: @agent.id)
+    end
+
+    # A claim records intent, not custody (Mira, #1088): the row is the same
+    # whether the earlier worker died before or after `docker pause`. Here it
+    # died before, and someone else paused the same container later. The
+    # pause is reported, backed up as it is, never unpaused, and the claim
+    # is kept as evidence.
+    test "a claimed pause on the same container is reported and never unpaused" do
+      @agent.save!
+      PauseClaim.claim!(@agent, "cid-1")
+      events = []
+      assert_error_reported(ContainerPause::ClaimedPause) do
+        with_docker(own: "cid-1 true true", events:) do
+          assert_equal :done, AgentRestic.with_quiesced(@agent) { :done }
+        end
+      end
+      assert_equal %w[inspect ps], events
+      assert_equal "cid-1", PauseClaim.find_by(agent_id: @agent.id)&.container_id
+    end
+
+    test "a claimed pause is left alone while a labelled backup container still runs" do
+      @agent.save!
+      PauseClaim.claim!(@agent, "cid-1")
+      events = []
+      with_docker(own: "cid-1 true true", events:, ps: [ "abc123\n", "", nil ]) do
+        error = assert_raises(AgentRestic::ResidentBusy) { AgentRestic.with_quiesced(@agent) { flunk "must not run" } }
+        assert_equal "An earlier backup's Docker work is still running", error.message
+      end
+      assert_equal %w[inspect ps], events
+      assert PauseClaim.find_by(agent_id: @agent.id), "the claim stays for a later backup"
+    end
+
+    test "a claimed pause is left alone when Docker can't say whether backup work is running" do
+      @agent.save!
+      PauseClaim.claim!(@agent, "cid-1")
+      events = []
+      with_docker(own: "cid-1 true true", events:, ps: [ "", "daemon", failed ]) do
+        assert_raises(ArgumentError) { AgentRestic.with_quiesced(@agent) { flunk "must not run" } }
+      end
+      assert_equal %w[inspect ps], events
+    end
+
+    # The container was replaced (a roll, a deploy): a claim for the old id
+    # says nothing about the new container's pause.
+    test "a claim for a replaced container does not let a backup unpause the new one" do
+      @agent.save!
+      PauseClaim.claim!(@agent, "cid-old")
+      events = []
+      assert_error_reported(ContainerPause::UnclaimedPause) do
+        with_docker(own: "cid-new true true", events:, retry_calls: ->(*) { flunk "not this backup's pause" }) do
+          AgentRestic.with_quiesced(@agent) { :done }
+        end
+      end
+      assert_equal %w[inspect], events
+      assert_nil PauseClaim.find_by(agent_id: @agent.id), "the stale claim goes"
+    end
+
+    test "a claim whose unpause failed twice is kept" do
+      @agent.save!
+      with_docker(own_unpause_ok: false, retry_calls: docker_state("true true", unpause_ok: false)) do
+        assert_raises(ArgumentError) { AgentRestic.with_quiesced(@agent) { :done } }
+      end
+      assert_equal "cid-1", PauseClaim.find_by(agent_id: @agent.id)&.container_id
     end
 
     private
@@ -264,13 +362,14 @@ module Backup
 
     # The backup's own Docker calls (Open3) answer `own` for inspect; the
     # second try (ContainerPause.capture) is `retry_calls`.
-    def with_docker(own: "true false", own_unpause_ok: true, events: [], retry_calls: ->(*) { flunk "no second try" }, &block)
+    def with_docker(own: "cid-1 true false", ps: [ "", "", nil ], own_unpause_ok: true, events: [], retry_calls: ->(*) { flunk "no second try" }, &block)
       docker = lambda do |*command|
         events << command[1]
         case command[1]
         when "inspect" then [ own, "", ok ]
         when "pause" then [ "", "", ok ]
         when "unpause" then [ "", "", own_unpause_ok ? ok : failed ]
+        when "ps" then [ ps[0], ps[1], ps[2] || ok ]
         else flunk "unexpected docker #{command[1]}"
         end
       end

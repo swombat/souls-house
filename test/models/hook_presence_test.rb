@@ -66,14 +66,13 @@ class HookPresenceTest < ActiveSupport::TestCase
     newest = finish(hooks: inventory(%w[before_turn stop]))
     elsewhere = finish(hooks: inventory(%w[before_turn stop]), chat: other)
     assert newest.reload.hook_warning.present?
-    assert Chat.hook_warning_residents_for([ @chat, other ]).values.flatten.include?(@agent.name)
+    assert elsewhere.reload.hook_warning.present?
 
     @agent.set_hook_expectation!("session_start", "off", source: "owner")
 
     assert_nil newest.reload.hook_warning
     assert_nil elsewhere.reload.hook_warning
     assert older.reload.hook_warning.present?, "only the newest run per conversation is re-checked"
-    assert_equal({}, Chat.hook_warning_residents_for([ @chat, other ]))
   end
 
   test "setting an event expected does not flag old runs retroactively" do

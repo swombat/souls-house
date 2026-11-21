@@ -100,7 +100,7 @@
       {/if}
       {#if !isActive && interaction.hook_warning}
         <span class="text-xs text-yellow-700 dark:text-yellow-400" data-testid="hook-warning-hint">
-          · hook missing</span>
+          · hook warning</span>
       {/if}
       {#if healthStale && !silenceLabel}
         <span class="text-xs text-amber-700 dark:text-amber-400"> · Live updates interrupted</span>
