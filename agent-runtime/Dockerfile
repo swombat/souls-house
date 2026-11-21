@@ -256,6 +256,7 @@ COPY --chmod=0755 soulshouse-heartbeat-note /usr/local/bin/soulshouse-heartbeat-
 COPY --chmod=0755 soulshouse-reflex /usr/local/bin/soulshouse-reflex
 COPY --chmod=0755 soulshouse-commitment /usr/local/bin/soulshouse-commitment
 COPY --chmod=0755 soulshouse-plan /usr/local/bin/soulshouse-plan
+COPY --chmod=0755 soulshouse-telegram-history /usr/local/bin/soulshouse-telegram-history
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
 COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal
 COPY soulshouse-usage /usr/local/bin/soulshouse-usage
