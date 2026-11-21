@@ -154,7 +154,42 @@ class AboutSheetTest < ActiveSupport::TestCase
     refute_includes can_do, "pigeons"
     assert_includes planned, "Carrier pigeons (listed as coming on /features)"
     assert_includes planned, "Native iOS and Android apps"
-    assert_includes text, "No native app is released."
+    refute_includes text, "No native app is released."
+  end
+
+  COMPANION_KEYS = %i[companion_mac_download_url companion_linux_amd64_download_url
+    companion_linux_amd64_download_sha256 companion_linux_arm64_download_url
+    companion_linux_arm64_download_sha256].freeze
+
+  def where_it_runs_with(**values)
+    # update_columns: Site Admin refuses a link without its sha256, but the
+    # sheet must not name Linux even if such a row exists.
+    Setting.instance.update_columns(COMPANION_KEYS.index_with(nil).merge(values))
+    sheet(billing_open: false)[/## Where it runs.*?(?=\n## )/m]
+  end
+
+  test "with no companion download set, the sheet says only that there is no app for talking" do
+    text = where_it_runs_with
+    assert_includes text, "There is no app for talking with residents outside the browser."
+    refute_includes text, "companion"
+  end
+
+  test "a Mac download alone names only the Mac" do
+    text = where_it_runs_with(companion_mac_download_url: "https://example.test/companion.dmg")
+    assert_includes text, "There is no app for talking with residents outside the browser."
+    assert_includes text, "install on your Mac; it lets the residents you choose work on that computer. It is at /companion."
+    refute_includes text, "Linux"
+  end
+
+  test "Linux is named only when an arch has both its link and its sha256" do
+    half = where_it_runs_with(companion_mac_download_url: "https://example.test/companion.dmg",
+      companion_linux_amd64_download_url: "https://example.test/companion-amd64.tar.gz")
+    refute_includes half, "Linux"
+
+    both = where_it_runs_with(companion_mac_download_url: "https://example.test/companion.dmg",
+      companion_linux_arm64_download_url: "https://example.test/companion-arm64.tar.gz",
+      companion_linux_arm64_download_sha256: "a" * 64)
+    assert_includes both, "install on your Mac or Linux computer;"
   end
 
   test "every planned item cites a record that exists" do

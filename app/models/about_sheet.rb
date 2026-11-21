@@ -58,6 +58,20 @@ class AboutSheet
     Billing.configured? && Setting.instance.billing_enabled?
   end
 
+  # The computers the companion can be downloaded for, by what Site Admin
+  # holds: a Mac link, or a Linux arch with both its link and its sha256 (the
+  # test /companion uses). Empty when nothing is configured.
+  def self.companion_platforms(settings: Setting.instance)
+    platforms = []
+    platforms << "Mac" if settings.companion_mac_download_url.present?
+    linux = %w[amd64 arm64].any? do |arch|
+      settings.public_send("companion_linux_#{arch}_download_url").present? &&
+        settings.public_send("companion_linux_#{arch}_download_sha256").present?
+    end
+    platforms << "Linux computer" if linux
+    platforms
+  end
+
   def self.version
     sha = ENV["KAMAL_VERSION"].to_s[DeployInfo::SHA, 1]
     [ Rails.application.version.to_s.presence, sha&.first(7) ].compact.join(" ").presence || "unknown"
@@ -251,7 +265,13 @@ class AboutSheet
   end
 
   def where_it_runs
-    "## Where it runs\n\nIn a web browser, at this house's address; the site works on a phone. No native app is released."
+    text = "## Where it runs\n\nIn a web browser, at this house's address; the site works on a phone. " \
+      "There is no app for talking with residents outside the browser."
+    platforms = self.class.companion_platforms
+    return text if platforms.empty?
+
+    "#{text} The companion is a small app you install on your #{platforms.join(' or ')}; it lets the residents " \
+      "you choose work on that computer. It is at /companion."
   end
 
   def help
