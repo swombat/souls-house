@@ -91,4 +91,29 @@ class CompanionDevicePocketPrivateTest < ActiveSupport::TestCase
     assert_equal "unauthorized", error.code
   end
 
+  test "a clip whose upload began before a switch is refused, not posted in the new room" do
+    @device.pocket_intake_chat_id = @device.chat_id
+    @device.start_pocket_conversation!(title: "New", private: true, actor: @owner)
+
+    error = assert_raises(CompanionDevice::Pocket::Refused) { submit }
+    assert_equal "retargeted", error.code
+    assert_empty @device.reload.chat.messages.where(companion_device_id: @device.id)
+  end
+
+  test "once the owner loses the room, no reply or voice is reachable, and retarget drops what was queued" do
+    chat = @device.start_pocket_conversation!(title: "Just us", private: true, actor: @owner)
+    clip = submit.message
+    reply = reply_to(clip)
+    assert @device.reload.pocket_reply(reply.to_param), "the reply is current before access changes"
+
+    chat.chat_participants.where(user: @owner).delete_all
+    assert_nil @device.reload.pocket_reply(reply.to_param)
+    assert_empty @device.pocket_audio_payloads("epoch-1")
+
+    ChatParticipant.record!(chat: chat, user: @owner, source: "creator")
+    assert @device.reload.pocket_reply(reply.to_param)
+    @device.retarget_pocket!(chat: @first_chat, actor: @owner)
+    assert_nil @device.reload.pocket_reply(reply.to_param)
+  end
+
 end

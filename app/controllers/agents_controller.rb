@@ -191,7 +191,9 @@ class AgentsController < ApplicationController
           offered: offered.map do |j|
             {
               id: j.to_param, name: j.reflex.name, reminder: j.reflex.reminder, score: j.score,
-              message_id: j.message.obfuscated_id, excerpt: j.message.content.to_s.squish.truncate(140),
+              # No excerpt from a private conversation on this account-wide page (eKmnrJ).
+              message_id: j.message.obfuscated_id,
+              excerpt: j.message.chat.private? ? nil : j.message.content.to_s.squish.truncate(140),
               created_at: j.created_at&.iso8601
             }
           end

@@ -22,6 +22,11 @@ module Api
           request_id = params[:request_id]
           return refuse("invalid_request_id", :unprocessable_entity) unless request_id.is_a?(String) && REQUEST_ID.match?(request_id)
 
+          # Pin the clip to the conversation the stone points at now, and say
+          # nothing (not even a duplicate's id) unless its owner can read it.
+          device.pocket_intake_chat_id = device.chat_id
+          return refuse("unauthorized", :unauthorized) unless device.active? && device.pocket_owner_access?
+
           client_message_id = "pocket:#{device.to_param}:#{request_id}"
           if (existing = device.chat.messages.find_by(client_message_id: client_message_id, companion_device_id: device.id))
             return render json: { submission_id: existing.to_param, duplicate: true }, status: :ok

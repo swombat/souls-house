@@ -549,10 +549,12 @@ class AgentRuntimeInteraction < ApplicationRecord
   def as_cost_json
     {
       id: to_param,
-      chat_id: chat&.to_param,
-      chat_title: chat&.title_or_default,
+      # A private conversation's runs are listed on account-wide pages, so
+      # they say only that much there (eKmnrJ): no title, link or summary.
+      chat_id: private_chat? ? nil : chat&.to_param,
+      chat_title: private_chat? ? "A private conversation" : chat&.title_or_default,
       trigger_kind: trigger_kind,
-      summary: interaction_summary,
+      summary: private_chat? ? nil : interaction_summary,
       requested_by: requested_by,
       provider: provider,
       model: model,
@@ -576,15 +578,17 @@ class AgentRuntimeInteraction < ApplicationRecord
     }
   end
 
+  def private_chat? = chat&.private? || false
+
   def as_session_json
     as_cost_json.merge(
       session_id: session_id,
-      conversation_id: conversation_obfuscated_id,
+      conversation_id: private_chat? ? nil : conversation_obfuscated_id,
       transport_status: transport_status,
       runtime_status: runtime_status,
       runtime_returncode: runtime_returncode,
-      stdout: stdout,
-      stderr: stderr,
+      stdout: private_chat? ? nil : stdout,
+      stderr: private_chat? ? nil : stderr,
       stdout_chars: stdout.to_s.length,
       stderr_chars: stderr.to_s.length,
       output_capture_limit_chars: RUNTIME_OUTPUT_CAPTURE_LIMIT,

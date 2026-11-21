@@ -183,7 +183,8 @@ class Chat < ApplicationRecord
   # widening doesn't reach a private chat (live sync subscriptions use this).
   def accessible_by?(user)
     return false unless user
-    return visible_to?(user) && account.accessible_by?(user) if private?
+    # Confirmed membership, never Account#accessible_by?'s site-admin widening.
+    return visible_to?(user) && account.memberships.confirmed.exists?(user: user) if private?
     return true if user.site_admin
 
     account.accessible_by?(user)

@@ -55,7 +55,8 @@ module Api
       def visible_watches
         return RepositoryWatch.where(created_by_agent_id: current_api_agent.id) if current_api_agent
 
-        RepositoryWatch.where(account_id: human_account!.id)
+        # Watches in private conversations stay out of the account's list (eKmnrJ).
+        RepositoryWatch.where(account_id: human_account!.id).where.not(chat_id: Chat.where(private: true).select(:id))
       end
 
       # By owner/name or id, among the repositories this caller may watch.

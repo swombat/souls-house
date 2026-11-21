@@ -124,8 +124,13 @@ module CompanionDevice::Pocket
   # The replies this device was sent within AUDIO_WINDOW, oldest first, as
   # [reply message, submission message] pairs. Each keeps its voice
   # fetchable for its own window; a later reply supersedes nothing.
+  #
+  # Nothing at all while the owner can't read the stone's conversation now
+  # (eKmnrJ): this is the one gate for the socket relay, "ready", audio
+  # announcements and the audio fetch, so none outlives the owner's access.
+  # Replies are looked up only in the conversation the stone points at now.
   def pocket_recent_replies(now = Time.current)
-    return [] unless pocket?
+    return [] unless pocket? && pocket_owner_access?
 
     entries = current_pocket_reply_entries(now)
     messages = chat.messages.where(id: entries.flat_map { |e| [ e["reply_id"], e["submission_id"] ] }).index_by(&:id)
@@ -192,13 +197,25 @@ module CompanionDevice::Pocket
     end
   end
 
+  # The owner still belongs to the account and can see the stone's
+  # conversation, judged now. The stone is their delegate (eKmnrJ).
+  def pocket_owner_access?
+    owner_still_member? && owner_sees_chat?
+  end
+
+  # The conversation a clip was meant for, captured when its upload began.
+  # The write refuses if the stone has been pointed elsewhere since (Mira,
+  # #1089): a clip meant for one room never posts in another.
+  attr_accessor :pocket_intake_chat_id
+
   # Checks that need no lock, so a refused clip costs no transcription. The
   # same checks run again under the lock before anything is written.
   def pocket_precheck!(media_kind)
     spec = MEDIA[media_kind] or raise Refused.new("invalid_kind", :unprocessable_entity)
     raise Refused.new("not_pocket", :forbidden) unless pocket?
     raise Refused.new("paused", :locked) if paused?
-    raise Refused.new("unauthorized", :unauthorized) unless active? && owner_still_member? && owner_sees_chat?
+    raise Refused.new("unauthorized", :unauthorized) unless active? && pocket_owner_access?
+    raise Refused.new("retargeted", :conflict) if pocket_intake_chat_id && pocket_intake_chat_id != chat_id
     raise Refused.new("consent_off", :forbidden) unless self["#{spec[:capability]}_enabled"]
     raise Refused.new("awaiting_reply", :conflict) if pocket_submission_open? && pocket_open_clips.count >= MAX_QUEUED_CLIPS
     spec
@@ -211,6 +228,8 @@ module CompanionDevice::Pocket
     device = self
     with_lock do
       reload
+      raise Refused.new("unauthorized", :unauthorized) unless active? && pocket_owner_access?
+      raise Refused.new("retargeted", :conflict) if pocket_intake_chat_id && pocket_intake_chat_id != chat_id
       # A retry of an accepted clip is answered before the open-slot check,
       # which that same clip is holding.
       if (existing = chat.messages.find_by(client_message_id: client_message_id, companion_device_id: id))
@@ -246,7 +265,7 @@ module CompanionDevice::Pocket
       return :inactive unless active?
       # The stone hears back only while its owner could read the room
       # themselves, judged now, not when the clip went up (Mira, eKmnrJ).
-      return close_pocket_submission!(:ambiguous, pocket_open_clips.to_a) unless owner_still_member? && owner_sees_chat?
+      return close_pocket_submission!(:ambiguous, pocket_open_clips.to_a) unless pocket_owner_access?
 
       first = chat.messages.find_by(id: pocket_open_message_id)
       return close_pocket_submission!(:ambiguous, []) unless first

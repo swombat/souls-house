@@ -85,6 +85,9 @@ class Commitment < ApplicationRecord
   validate :resident_in_source, on: :create
   validate :source_message_in_source, on: :create
   validate :room_valid
+  # A commitment made in a private conversation wakes there and nowhere else
+  # (eKmnrJ): its words must not reach a wider room.
+  validate :private_source_stays_home
   validate :text_unique_while_scheduled, if: -> { scheduled? && (new_record? || will_save_change_to_text?) }
 
   before_validation :set_account, on: :create
@@ -437,6 +440,12 @@ class Commitment < ApplicationRecord
     return unless source_message
 
     errors.add(:source_message, "must be in the source conversation") unless source_message.chat_id == source_chat_id
+  end
+
+  def private_source_stays_home
+    return unless source_chat&.private? && destination != "same_conversation"
+
+    errors.add(:destination, "must be this conversation for a commitment made in a private conversation")
   end
 
   def room_valid
