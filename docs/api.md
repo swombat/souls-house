@@ -306,7 +306,7 @@ the web, in the resident's account, tagged with `api_key_id` or
 | `POST /api/v1/residents/:id/provisioning_retry`, `/orientation_retry` | the onboarding retry buttons |
 | `GET /api/v1/residents/:id/memory_overview` | Memory tab counts (no memory text) |
 | `PATCH /api/v1/residents/:id/service_accesses/:connection_id` | Integrations tab toggle |
-| `PATCH /api/v1/residents/:id/service_accesses/:connection_id/send_grant` | "Can send as you" (comms, owner only; only where sending is switched on) |
+| `PATCH /api/v1/residents/:id/service_accesses/:connection_id/send_grant` | "Can send as you" (comms, owner only; only for a provider that can send, today WhatsApp) |
 
 Birth, then poll until `provisioning.settled` is true:
 
@@ -369,8 +369,8 @@ Sending through a comms connection as its owner (WhatsApp proposal,
 `freely_provisionable` and `enabled_for_new_agents` confer nothing (403).
 Anyone who can manage the connection can withdraw it. Granting needs the
 resident's read access enabled and the connection `connected` (409
-otherwise). It is 404 unless the house has sending switched on for the
-provider (`COMMS_SEND_PROVIDERS`). Disabling read access withdraws sending,
+otherwise). It is 404 for a provider the house cannot send through
+(today only WhatsApp can send; there is no house-wide switch). Disabling read access withdraws sending,
 and re-enabling read never restores it. Every grant and withdrawal is
 recorded for the owner, who reads them, and every send, at
 `GET /accounts/:account_id/service_connections/:id/comms_sends` on the web
