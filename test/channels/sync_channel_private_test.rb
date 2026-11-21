@@ -7,10 +7,12 @@ class SyncChannelPrivateTest < ActionCable::Channel::TestCase
   # The test stub records stream names and drops their callbacks; keep the
   # callback the channel itself installs, so the test calls that one.
   module KeepInstalledCallbacks
+
     def stream_from(broadcasting, callback = nil, **options, &block)
       (@installed_callbacks ||= {})[broadcasting] = callback || block
       super
     end
+
   end
   ActionCable::Channel::ChannelStub.prepend(KeepInstalledCallbacks)
 
