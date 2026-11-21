@@ -33,7 +33,7 @@ inventory).
 1. **Exactly which resident and which container.**
 
    ```sh
-   docker ps --filter status=paused --format '{{.Names}} {{.Status}}'
+   docker ps --no-trunc --filter status=paused --format '{{.ID}} {{.Names}} {{.Status}}'
    echo "docker exit: $?"
    ```
 
@@ -49,23 +49,29 @@ inventory).
 
 2. **Why it was paused.** Look for the backup that paused it: the "since"
    time in the StillPaused report, that resident's latest
-   `Backup::AgentResticJob`, any running `FullBackupJob` or `Mnemodyne::FirstCheckpointJob`, and the
-   last restart of the jobs container. If you can't find what paused it, you
+   `Backup::AgentResticJob`, any running `FullBackupJob` or
+   `Mnemodyne::FirstCheckpointJob`, and the last restart of the jobs container. If you can't find what paused it, you
    don't know why it is paused: escalate.
 
-3. **Nothing can still reach it, and nothing new can start.** A full backup
+3. **Nothing can still reach it, and nothing new can start.** `FullBackupJob`
    calls `Backup::AgentResticJob.perform_now` inside its loop over residents,
-   (and `Mnemodyne::FirstCheckpointJob` calls it directly), so a `FullBackupJob` still in progress counts as active for this resident
-   even if there is no separate job for her. Check, and treat a failed check
+   and `Mnemodyne::FirstCheckpointJob` calls it directly, so either one still
+   in progress counts as active for this resident even without a separate
+   job for her. Check, and treat a failed check
    as a stop, not as empty:
 
    ```sh
-   out=$(docker ps --format '{{.Names}} {{.Image}}') || { echo "docker failed: stop"; exit 1; }
-   printf '%s\n' "$out" | grep -E 'restic|busybox' || echo "no backup containers"
+   docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Image}}'
+   echo "docker exit: $?"
    ```
 
+   A non-zero exit means stop. Otherwise read the whole listing for restic,
+   busybox or any other backup container that could touch this resident.
+
    ```ruby
-   SolidQueue::Job.where(finished_at: nil).where("class_name LIKE '%Backup%'").pluck(:class_name, :arguments)
+   SolidQueue::Job.where(finished_at: nil)
+     .where("class_name LIKE '%Backup%' OR class_name IN (?)", %w[FullBackupJob Mnemodyne::FirstCheckpointJob])
+     .pluck(:class_name, :arguments)
    Agent.where.not(backup_thinning_started_at: nil).pluck(:id)
    ```
 
@@ -75,18 +81,23 @@ inventory).
 
 ## Unpausing
 
-Inside that window, check the same container is still paused, then unpause
-it:
+Inside that window, take the container ID from step 1 and unpause only if
+Docker confirms, for that same ID, that it is running and paused:
 
 ```sh
-docker inspect --format '{{.State.Running}} {{.State.Paused}}' <container>   # expect: true true
-docker unpause <container>
+id=<container-id>
+if state=$(docker inspect --format '{{.State.Running}} {{.State.Paused}}' "$id") \
+   && [ "$state" = "true true" ]; then
+  docker unpause "$id"
+else
+  echo "not unpausing: inspect failed or state was '$state'"
+fi
 ```
 
 ## Checking it worked
 
 ```sh
-docker inspect --format '{{.State.Running}} {{.State.Paused}}' <container>   # want: true false
+docker inspect --format '{{.State.Running}} {{.State.Paused}}' "$id"   # want: true false
 ```
 
 Then the resident's health goes green within a few minutes and a new run
