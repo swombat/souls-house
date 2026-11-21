@@ -145,8 +145,18 @@ lists the resident ids. The limit is `backup_wait_seconds` in `settings.json`
 An answer the house could not give counts as unknown, never as idle. The wait
 is a best effort: after the last check Kamal still pulls the image and boots
 web before it stops the job worker, and a backup that starts in that time is
-cut off. Backups of residents on the house are not waited for: the nightly run
-continues by itself after a restart.
+cut off.
+
+Backups of residents on the house count too, but only through the pause claim
+(#1095): a house backup records a `Backup::PauseClaim` before it pauses a
+resident, and a claim younger than 30 minutes puts that resident in
+`backing_up`, so the deploy waits. The 30 minutes is a heuristic, not a proof:
+a live backup can hold a pause longer (a vault lock before the pause, a slow
+restic copy), and an older claim is then treated as idle. The nightly run
+picks the backup up again after a restart, but not the pause: a backup cut off
+mid-pause leaves the resident frozen (21 Nov 2026), and recovery is
+`docs/operations/paused-resident-recovery.md`. This is a mitigation; the
+cutover barrier that would close the start race is separate work.
 
 This lives in the root-installed worker, so it takes effect after
 `sudo ops/deploy/install` on the host, not on merge.

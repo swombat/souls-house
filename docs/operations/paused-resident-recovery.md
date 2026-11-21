@@ -11,7 +11,8 @@ containers running" can't say who owns the pause, so recovery is manual and
 follows the checks below. If any check can't be established, stop and
 escalate instead of guessing.
 
-Since #1095 a Rails deploy waits (up to its backup limit) while a house
+Once the host probe from #1095 is installed (`/opt/house-deploy/backup-in-flight.rb`,
+by `sudo ops/deploy/install`), a Rails deploy waits (up to its backup limit) while a house
 backup holds a pause claim younger than 30 minutes. That is a mitigation,
 not a guard. A backup can start after the deploy's last check and before
 the jobs worker stops. A claim older than 30 minutes isn't proof that its
