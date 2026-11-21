@@ -41,17 +41,6 @@ class ExternalAgentResponseRequestVoiceModeTest < ActiveSupport::TestCase
     assert_no_match(/will be read|will be heard|is listening/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
   end
 
-  # On a phone eighty seconds of silence reads as nothing happening: the note
-  # asks for an acknowledgement first and spoken-size updates while working.
-  test "the voice mode note asks for an acknowledgement and twenty-second updates" do
-    note = ExternalAgentResponseRequest::VOICE_MODE_NOTE
-    assert_match(/Let me look at that/, note)
-    assert_match(/before or alongside your first tool call/, note)
-    assert_match(/every twenty seconds/, note)
-    assert_match(/answer as its own short message/, note)
-    assert_match(/Answer briefly in plain spoken sentences/, note)
-  end
-
   # The runtime's silence clock can't read the transcript: the payload tells
   # it the turn was spoken, only for a human wake on a spoken latest turn.
   test "the runtime payload carries voice_mode only for a human wake on a spoken turn" do

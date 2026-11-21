@@ -90,13 +90,18 @@ class RichUiSpecTest < ActiveSupport::TestCase
     bad = spec.deep_dup
     bad["elements"]["main"]["children"] = [ "root" ]
     assert_invalid(bad, /cannot have children/)
-    %w[__proto__ prototype constructor a.b].each { |id| assert_invalid(spec.merge("root" => id)) }
+    # Each ID names a real element, so only the ID rule can refuse it (a root
+    # naming no element would be refused as missing anyway).
+    %w[__proto__ prototype constructor a.b].each do |id|
+      named = { "version" => 1, "root" => id, "elements" => { id => { "type" => "Text", "props" => { "text" => "x" } } } }
+      assert_invalid(named, /safe ID/)
+    end
     nested = { "version" => 1, "root" => "n0", "elements" => {} }
     11.times do |index|
       nested["elements"]["n#{index}"] = { "type" => "Stack", "props" => {}, "children" => index < 10 ? [ "n#{index + 1}" ] : [] }
     end
     assert_invalid(nested, /depth/)
-    assert_invalid(table.merge("elements" => (1..51).to_h { |i| [ "n#{i}", {} ] }), /elements/)
+    assert_invalid(table.merge("elements" => (1..51).to_h { |i| [ "n#{i}", {} ] }), /1\.\.50 elements/)
   end
 
   test "accepts cards text metrics but requires string metric values" do
