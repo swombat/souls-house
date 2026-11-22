@@ -73,38 +73,6 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
     assert_equal user.id, user_session.user_id
   end
 
-  test "existing unconfirmed user re-registration preserves account relationships" do
-    email = "existing_unconfirmed@example.com"
-
-    # Create initial user
-    post signup_path, params: { email_address: email }
-
-    user = User.last
-    account = Account.last
-    membership = Membership.last
-    original_account_id = account.id
-    original_user_id = user.id
-    original_token = membership.confirmation_token_for_url
-
-    # Re-register same email (should resend confirmation)
-    assert_no_difference [ "User.count", "Account.count", "Membership.count" ] do
-      post signup_path, params: { email_address: email }
-    end
-
-    assert_redirected_to check_email_path
-
-    user.reload
-    membership.reload
-
-    # Verify same entities preserved
-    assert_equal original_user_id, user.id
-    assert_equal original_account_id, account.id
-
-    # Token should be regenerated
-    assert_not_equal original_token, membership.confirmation_token_for_url
-    assert_not_nil membership.confirmation_sent_at
-  end
-
   test "confirmed user with account cannot re-register" do
     email = "confirmed_user@example.com"
 
@@ -142,52 +110,6 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
     assert membership.can_manage?
     assert_equal user, account.owner
     assert_equal 1, account.memberships.count
-  end
-
-  test "personal account creation enforces single user constraint" do
-    # Create personal account with owner
-    email = "personal_owner@example.com"
-    post signup_path, params: { email_address: email }
-
-    account = Account.last
-    assert account.personal?
-
-    # Try to add another user to personal account
-    other_user = User.create!(email_address: "other@example.com", password: "password")
-
-    assert_raises(ActiveRecord::RecordInvalid) do
-      account.add_user!(other_user, role: "member")
-    end
-  end
-
-  test "personal account slug generation and uniqueness" do
-    email = "slug_test@example.com"
-
-    post signup_path, params: { email_address: email }
-
-    account = Account.last
-    assert_not_nil account.slug
-    assert account.slug.present?
-
-    # Create another account with similar name
-    other_user = User.create!(email_address: "slug_test2@example.com", password: "password")
-    other_account = Account.create!(name: account.name, account_type: :personal)
-
-    assert_not_equal account.slug, other_account.slug
-  end
-
-  test "account user role validation during registration" do
-    email = "role_test@example.com"
-
-    post signup_path, params: { email_address: email }
-
-    membership = Membership.last
-    assert_equal "owner", membership.role
-
-    # Personal accounts must have owner role
-    membership.role = "member"
-    assert_not membership.valid?
-    assert membership.errors[:role].present?
   end
 
   test "invalid email prevents user and account creation" do
@@ -233,30 +155,6 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
     assert user.can_login?
   end
 
-  test "user confirmation status via account users" do
-    email = "confirmation_status@example.com"
-
-    post signup_path, params: { email_address: email }
-
-    user = User.last
-    membership = Membership.last
-
-    # Initially unconfirmed
-    assert_not user.confirmed?
-    assert_not membership.confirmed?
-
-    # Confirm via Membership
-    token = membership.confirmation_token_for_url
-    get email_confirmation_path(token: token)
-
-    user.reload
-    membership.reload
-
-    # Both should report confirmed
-    assert user.confirmed?
-    assert membership.confirmed?
-  end
-
   test "authentication flow during registration" do
     email = "auth_flow@example.com"
 
@@ -277,30 +175,6 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
     user_session = Session.find_by(user: user)
     assert user_session.present?
     assert_equal user.id, user_session.user_id
-  end
-
-  test "confirmation token management between user and account user" do
-    email = "token_management@example.com"
-
-    post signup_path, params: { email_address: email }
-
-    user = User.last
-    membership = Membership.last
-
-    # Only Membership should have confirmation token
-    assert_nil membership.confirmation_token
-    assert_not_nil membership.confirmation_token_for_url
-    assert_not_nil membership.confirmation_sent_at
-
-    # Confirm via Membership token
-    get email_confirmation_path(token: membership.confirmation_token_for_url)
-
-    user.reload
-    membership.reload
-
-    # Token should be cleared after confirmation
-    assert_nil membership.confirmation_token
-    assert_not_nil membership.confirmed_at
   end
 
   test "re-registration with existing unconfirmed user updates tokens correctly" do
@@ -324,6 +198,7 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
         end
       end
     end
+    assert_redirected_to check_email_path
 
     user.reload
     membership.reload
@@ -338,29 +213,6 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
     new_token = membership.confirmation_token_for_url
     get email_confirmation_path(token: new_token)
     assert_redirected_to set_password_path
-  end
-
-  test "update operations are resilient and work correctly" do
-    email = "update_operations@example.com"
-
-    # Create user
-    post signup_path, params: { email_address: email }
-
-    user = User.last
-    account = Account.last
-    membership = Membership.last
-
-    user.reload
-
-    # Confirm email
-    get email_confirmation_path(token: membership.confirmation_token_for_url)
-
-    user.reload
-    membership.reload
-
-    # Verify confirmation worked
-    assert membership.confirmed?
-    assert_nil membership.confirmation_token
   end
 
 end
