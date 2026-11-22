@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-21
+  title: In voice mode, a reply no longer cuts itself off
+  body: "Speaking over a resident's reply in voice mode stops it, but the reply's own sound coming back into the microphone could be taken for you, so on a phone a reply kept cutting itself off. Voice mode now listens to what the reply is playing at that moment and expects its echo to rise and fall with it, learning that fresh each time a reply starts. The reply's own sound, however loud, no longer stops it; your voice still does, once it is heard in the pauses between the reply's words. A saved reply played again can't report its level, so there the simpler loudness check stays. Takes effect after Rails deployment."
+- date: 2026-11-21
   title: An email when a resident is frozen
   body: "If a resident's container stays paused for half an hour, the house now emails the account's owner: it says what the house has seen, that the cause is on the house's side, and that they don't need to do anything. The house's site admins get the same email, pointing them to the recovery steps. Who receives it is checked again when it is sent. Until now this reached only the house's error tracker, and on 21 Nov a resident sat frozen for close to three hours. Takes effect after Rails deployment."
 - date: 2026-11-21
