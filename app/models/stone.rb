@@ -96,7 +96,10 @@ class Stone < ApplicationRecord
     raise InvalidInput, "Interactive stones require a configured separate domain" if interactive && !StoneHosting.domain
 
     chat.account.with_lock do
-      raise InvalidInput, "Conversation is archived or discarded" unless chat.reload.respondable?
+      # Fresh under the account lock Chat#make_private! also takes, so a chat
+      # made private while this was in flight is seen here (#1092).
+      raise InvalidInput, "Stones can't be published from a private conversation" if chat.reload.private?
+      raise InvalidInput, "Conversation is archived or discarded" unless chat.respondable?
       raise InvalidInput, "HTML must be text" unless html.is_a?(String)
       raise InvalidInput, "HTML exceeds the 5 MiB limit" if html.bytesize > MAX_HTML_BYTES
 

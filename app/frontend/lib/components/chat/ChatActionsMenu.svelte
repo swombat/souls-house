@@ -17,6 +17,7 @@
     CaretRight,
     ArrowLeft,
     CalendarCheck,
+    Lock,
   } from 'phosphor-svelte';
   import { tick } from 'svelte';
   import { page } from '@inertiajs/svelte';
@@ -41,6 +42,7 @@
     onFork = () => {},
     onWhiteboardOpen = () => {},
     onArchive = () => {},
+    onMakePrivate = () => {},
     rooms = [],
     onMoveToRoom = () => {},
     onDelete = () => {},
@@ -150,6 +152,13 @@
             <DoorOpen size={16} class="mr-2" weight="duotone" />
             Move to room
             <CaretRight size={16} class="ml-auto" />
+          </DropdownMenu.Item>
+        {/if}
+
+        {#if chat.can_make_private}
+          <DropdownMenu.Item onclick={onMakePrivate} data-testid="make-private">
+            <Lock size={16} class="mr-2" weight="duotone" />
+            Make private
           </DropdownMenu.Item>
         {/if}
 

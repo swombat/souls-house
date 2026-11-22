@@ -1,10 +1,11 @@
 # A human's durable place in a private conversation, recorded when they create
-# it. It never depends on surviving messages; access still needs a confirmed
-# membership of the account. (Posting can't add anyone: only a participant
-# can post into a private chat, Message#author_is_in_private_chat.)
+# it, or when it is made private later (the person who did it, and everyone who
+# had written in it by then). It never depends on surviving messages; access
+# still needs a confirmed membership of the account. (Posting can't add anyone:
+# only a participant can post into a private chat, Message#author_is_in_private_chat.)
 class ChatParticipant < ApplicationRecord
 
-  SOURCES = %w[creator].freeze
+  SOURCES = %w[creator made_private writer].freeze
 
   belongs_to :chat
   belongs_to :user

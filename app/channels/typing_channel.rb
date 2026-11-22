@@ -24,12 +24,12 @@ class TypingChannel < ApplicationCable::Channel
     @chat = Chat.find_by_obfuscated_id(params[:chat_id].to_s)
     return reject unless @chat && !@chat.discarded? && @chat.accessible_by?(current_user)
 
-    return stream_from(self.class.stream_for_chat(@chat)) unless @chat.private?
-
     # A private conversation's typing names stop once the person's place or
-    # membership does, even on an open subscription (eKmnrJ).
+    # membership does, even on an open subscription (eKmnrJ), and that includes
+    # a conversation made private while it was open (#1092).
     stream_from(self.class.stream_for_chat(@chat), coder: ActiveSupport::JSON) do |message|
-      transmit(message) if @chat.reload.accessible_by?(current_user)
+      private_now = Chat.where(id: @chat.id).pick(:private)
+      transmit(message) if !private_now || @chat.reload.accessible_by?(current_user)
     end
   end
 
@@ -54,7 +54,12 @@ class TypingChannel < ApplicationCable::Channel
 
   private
 
+  # Sending is checked against current access too (Mira, #1092): a connection
+  # that lost the conversation, by its being made private or otherwise, can't
+  # put a name or state into it, idle on disconnect included.
   def announce(state)
+    return unless Chat.find_by(id: @chat.id)&.accessible_by?(current_user)
+
     ActionCable.server.broadcast(self.class.stream_for_chat(@chat), {
       user_id: current_user.obfuscated_id,
       name: current_user.first_name.presence || current_user.display_name,

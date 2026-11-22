@@ -244,6 +244,7 @@ Rails.application.routes.draw do
         resource :reply_dismissal, only: :create
         resource :draft, only: [ :show, :update ]
         resource :archive, only: [ :create, :destroy ]
+        resource :privacy, only: :create
         resource :discard, only: [ :create, :destroy ]
         resource :fork, only: :create
         resource :moderation, only: :create

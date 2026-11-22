@@ -161,6 +161,50 @@ class Chat < ApplicationRecord
   # and forks); a private chat refuses any seat after that (ChatAgent).
   attr_accessor :opening_seats
 
+  # Made private after it started (eKmnrJ, Daniel: "you decide who's in and
+  # then you declare that no one else can see it"). Who's in is who is there
+  # now: the residents seated, the person doing it, and every human who has
+  # written in it. Everyone else loses it from list, search and link. One way.
+  # Only someone who has written in it can close it (#1092): a reader who never
+  # wrote can't shut the other readers out. (A starter isn't recorded, and a
+  # conversation a resident started has none.)
+  # Who may press it (Daniel, eKmnrJ): anyone who has written in it, or a site
+  # admin or an admin of the account. An admin who hasn't written closes it to
+  # the writers and the residents and loses it themselves.
+  def can_make_private?(user)
+    !private? && user.present? && (written_by?(user) || private_lock_admin?(user))
+  end
+
+  def written_by?(user)
+    user.present? && Message.where(chat_id: id, user_id: user.id).exists?
+  end
+
+  def private_lock_admin?(user)
+    user.site_admin || account.memberships.confirmed.find_by(user_id: user.id)&.admin? || false
+  end
+
+  def make_private!(by:)
+    # The account lock first, as Stone#revise! takes it, so a publication in
+    # flight and this conversion are serialized and each sees the other (#1092).
+    account.with_lock do
+      lock!
+      return false if private?
+      raise NotAWriter, "Only someone who has written in this conversation, or an admin, can make it private" unless can_make_private?(by)
+      # Every stone is a public page; a private conversation can't have one up.
+      raise PublishedStones, "Withdraw this conversation's published stones first" if stones.available.exists?
+
+      update!(private: true)
+      now = Time.current
+      writer_ids = Message.where(chat_id: id).where.not(user_id: nil).distinct.pluck(:user_id)
+      # An admin who hasn't written isn't kept: they close it and lose it.
+      rows = writer_ids.map do |user_id|
+        { chat_id: id, user_id: user_id, source: user_id == by.id ? "made_private" : "writer", created_at: now }
+      end
+      ChatParticipant.insert_all(rows, unique_by: %i[chat_id user_id]) if rows.any?
+      true
+    end
+  end
+
   def visible_to?(actor)
     return true unless private?
 
@@ -174,6 +218,8 @@ class Chat < ApplicationRecord
   # Raised where a private chat is asked for by someone outside it; callers
   # answer as if it didn't exist (404), never with a 403 that confirms it.
   class NotVisible < StandardError; end
+  class PublishedStones < StandardError; end
+  class NotAWriter < StandardError; end
 
   def ensure_visible_to!(actor)
     raise NotVisible unless visible_to?(actor)

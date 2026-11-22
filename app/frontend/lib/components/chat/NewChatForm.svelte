@@ -36,8 +36,6 @@
   let selectedAgentIds = $state(restored.selectedAgentIds);
   let message = $state(restored.message);
   let title = $state(restored.title);
-  // Private: only the people in it see it (eKmnrJ). Set once, here.
-  let isPrivate = $state(false);
   let sidebarOpen = $state(false);
   // A new conversation starts in the room being viewed; from All chats, Main.
   // An archived room is read-only: a conversation started there begins in Main.
@@ -125,7 +123,6 @@
     formData.append('message', message);
     formData.append('draft_submission_id', submitted.submissionId);
     if (title.trim()) formData.append('chat[title]', title.trim());
-    if (isPrivate) formData.append('chat[private]', 'true');
     if (pendingAudioSignedId) formData.append('audio_signed_id', pendingAudioSignedId);
     selectedFiles.forEach((file) => formData.append('files[]', file));
     selectedAgentIds.forEach((agentId) => formData.append('agent_ids[]', agentId));
@@ -193,19 +190,6 @@
             draft.edit({ selectedAgentIds: value });
           }
         } />
-      <!-- One line until ticked, so a short phone keeps room for the latest conversations below. -->
-      <label class="mx-4 mt-2 flex items-start gap-2 text-sm" data-testid="new-chat-private">
-        <input type="checkbox" class="mt-0.5" bind:checked={isPrivate} />
-        <span>
-          <span class="font-medium">Private</span>
-          {#if isPrivate}
-            <span class="block text-muted-foreground">
-              Only you and the residents you pick can see it. It stays out of everyone else's list and search, account
-              admins included. It isn't private from the house's operators.
-            </span>
-          {/if}
-        </span>
-      </label>
       <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 

@@ -232,7 +232,7 @@ class ChatsController < ApplicationController
       .permit(:model_id, :web_access, :title)
   end
 
-  # private is set at creation only; nothing converts a chat later (eKmnrJ).
+  # private can be set at creation; later, Chats::PrivaciesController (eKmnrJ).
   def chat_create_params
     params.fetch(:chat, {}).permit(:title, :private)
   end
@@ -312,6 +312,8 @@ class ChatsController < ApplicationController
     json[:next_commitment] = Chat.waiting_commitments_for([ @chat ])[@chat.id]
     json[:handoff_stuck] = Chat.handoff_stuck_ids_for([ @chat ]).include?(@chat.id)
     json[:run_error_residents] = Chat.run_error_residents_for([ @chat ])[@chat.id] || []
+    json[:can_make_private] = @chat.can_make_private?(Current.user)
+    json[:make_private_keeps_you] = @chat.written_by?(Current.user)
     if @chat.active_whiteboard && !@chat.active_whiteboard.deleted?
       json[:active_whiteboard] = {
         id: @chat.active_whiteboard.id,

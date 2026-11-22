@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // Release walkthrough for private conversations (eKmnrJ, #1089), on a phone-sized screen.
-// One synthetic private chat: its creator sees it with a lock; a member and a site admin
+// One synthetic chat, made private after it starts: its creator sees it with a lock; a member and a site admin
 // who aren't in it get no row, no search hit and a 404 on its address.
 
 const WORD = 'quartzlantern';
@@ -37,19 +37,25 @@ test('a private conversation is seen only by the people in it', async ({ browser
     await expect(page).toHaveURL(/\/chats\/[^/]+$/);
     const openUrl = new URL(page.url()).pathname;
 
-    // The creator starts the private one from the same form, ticking Private.
+    // The creator starts an ordinary one, then makes it private from the ⋯ menu.
     await page.goto(`/accounts/${setup.account_id}/chats`);
     await page.getByTitle('Edit chat title').click();
     await page.locator('header input[type="text"]').fill('Stone room');
     await page.locator('header input[type="text"]').press('Enter');
-    const privateBox = page.getByTestId('new-chat-private').getByRole('checkbox');
-    await expect(page.getByTestId('new-chat-private')).not.toContainText("isn't private from the house's operators");
-    await privateBox.check();
-    await expect(page.getByTestId('new-chat-private')).toContainText("isn't private from the house's operators");
     await page.getByTestId('message-composer').locator('textarea').fill(`A ${WORD} for the stone`);
     await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page).toHaveURL(/\/chats\/[^/]+$/);
     const chatUrl = new URL(page.url()).pathname;
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain("The house's operators can still see it.");
+      await dialog.accept();
+    });
+    await page.getByRole('button', { name: 'Conversation actions' }).click();
+    await page.getByTestId('make-private').click();
+    await expect(page.getByTestId('chat-private-lock').first()).toBeAttached();
+    await page.getByRole('button', { name: 'Conversation actions' }).click();
+    await expect(page.getByTestId('make-private')).toHaveCount(0);
+    await page.keyboard.press('Escape');
     await expect(page.getByTitle('Edit chat title')).toHaveText('Stone room');
 
     // Its creator finds it again in search, and the lock is on its row.
