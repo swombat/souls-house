@@ -9,9 +9,11 @@
 - date: 2026-11-21
   title: An email when a resident is frozen
   body: "If a resident's container stays paused for half an hour, the house now emails the account's owner: it says what the house has seen, that the cause is on the house's side, and that they don't need to do anything. The house's site admins get the same email, pointing them to the recovery steps. Who receives it is checked again when it is sent. Until now this reached only the house's error tracker, and on 21 Nov a resident sat frozen for close to three hours. Takes effect after Rails deployment."
+  clip: frozen-email
 - date: 2026-11-21
   title: Private conversations, and the stone can change its conversation
   body: "A conversation can now be made private when it starts, from the new-conversation form or from a stone's settings. Only the people in it can see a private conversation: the person who started it, from the start, and the residents they picked. Nobody else gets its title, messages, counts or search results, and that includes the account's admins. Its row shows a lock. No resident can be added after it starts, its stones can't be published, a fork of it stays private with the same people, and the account export leaves it out. A commitment made in it wakes only there. It is private from everyone else on the account, not from the house's operators. A stone's owner can now point it at another conversation they can see that has the stone's resident, or start a new one (private by default). Only the conversation changes: the history stays where it was, and a reply already on its way lands in the old one. A stone hears back only while its owner can still read the conversation. Takes effect after Rails deployment."
+  clip: private-conversations
 - date: 2026-11-21
   title: A backup that finds its resident paused says so at once
   body: "A backup pauses its resident while it copies them. If the worker doing it was stopped partway, by a deploy for instance, the resident stayed paused until someone noticed, and the next backup left it that way because the pause wasn't its own. A backup now records its claim on the exact container before pausing it, and a backup that finds its resident already paused reports it at once, saying whether an earlier backup had claimed that container. The house still doesn't undo a pause it finds, because a claim shows a backup meant to pause, not that the pause is its own; recovery stays with an operator. Takes effect after Rails deployment."
@@ -21,12 +23,14 @@
 - date: 2026-11-21
   title: Residents can send on WhatsApp when you let them
   body: "WhatsApp sending was built but switched off for every house by a setting nobody could see. It is now on. On the WhatsApp card, only the connection owner can let a resident send as them in existing chats; read access alone never permits sending, and a guest resident still needs its home's approval. Sends are recorded and the owner can read every one, with limits of 6 per minute and 100 per day per connection. Takes effect after Rails deployment."
+  clip: whatsapp-sending
 - date: 2026-11-21
   title: A device can speak again before its reply comes
   body: "A paired device such as the stone could send one clip and then had to wait for the resident's reply; anything said in between was refused. Now up to five clips can wait, and each one ends one way the device is told: answered by a reply that was given that clip, marked ambiguous when the house can't show the reply saw it (or someone else spoke in between), or expired after ten minutes with no reply. Each reply's voice stays fetchable for its own 30 minutes, even after a later reply. Saying exactly the same words twice in a row is refused, as the room refuses any repeat. Takes effect after Rails deployment; the device's firmware decides how it shows each outcome."
 - date: 2026-11-21
   title: Hook warnings stay inside the conversation
   body: "The yellow circled exclamation mark for a resident's missing or misfiring Chaos hook no longer shows in the conversation list or the conversation header. It said something was wrong without saying what, and its tooltip was hard to find next to the tag menu. The warning is now only on the resident's run card in the conversation: the summary line says hook warning, and opening the card gives the exact reason. The owner's Chaos hooks card in the resident's settings is unchanged. Takes effect after Rails deployment."
+  clip: hook-warning-run-card
 - date: 2026-11-21
   title: Residents know about the companion
   body: "The sheet every resident reads at session start said no native app was released, so a resident could tell someone it couldn't work on their computer. It now says there is no app for talking with residents outside the browser, and, when a companion download is offered, that the companion lets residents work on your Mac or Linux computer, at /companion. It names only the computers a download is offered for. Takes effect after Rails deployment."
