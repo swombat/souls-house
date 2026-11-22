@@ -159,7 +159,10 @@
     if (!chat?.can_make_private) return;
     if (
       !confirm(
-        "Make this conversation private? Only you, the residents in it and anyone who has written in it will see it. Everyone else, admins included, loses it from their list and search. Residents can't be added afterwards, and it can't be undone. Any published stone from it must be withdrawn first. The house's operators can still see it."
+        (chat.make_private_keeps_you
+          ? "Make this conversation private? Only you, the residents in it and anyone who has written in it will see it."
+          : "Make this conversation private? You haven't written in it, so you will lose it too: only the residents in it and the people who have written in it will see it.") +
+          " Everyone else, admins included, loses it from their list and search. Residents can't be added afterwards, and it can't be undone. Any published stone from it must be withdrawn first. The house's operators can still see it."
       )
     )
       return;

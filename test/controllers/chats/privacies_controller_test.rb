@@ -86,7 +86,7 @@ class Chats::PrivaciesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, Stone.where(chat_id: @chat.id).count
   end
 
-  # Who may press it (#1092): only someone who has written in it. A member who
+  # Who may press it (#1092): someone who has written in it, or an admin. A member who
   # has only read it isn't offered it and is refused, and nothing changes.
   test "a member who has only read it can't make it private" do
     sign_in @reader
@@ -94,13 +94,39 @@ class Chats::PrivaciesControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, JSON.parse(response.body).dig("props", "chat", "can_make_private")
 
     post account_chat_privacy_path(@account, @chat)
-    assert_equal "Only someone who has written in this conversation can make it private", flash[:alert]
+    assert_equal "Only someone who has written in this conversation, or an admin, can make it private", flash[:alert]
     refute @chat.reload.private?
     assert_empty @chat.chat_participants
 
     sign_in @owner
     get account_chat_path(@account, @chat), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
     assert_equal true, JSON.parse(response.body).dig("props", "chat", "can_make_private")
+  end
+
+  # Daniel (eKmnrJ): a site admin or an account admin may also make it private,
+  # and doing so without having written shuts themselves out too.
+  test "an account admin who hasn't written can make it private and loses it" do
+    @account.memberships.find_by!(user: @reader).update!(role: "admin")
+    sign_in @reader
+    get account_chat_path(@account, @chat), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    props = JSON.parse(response.body).dig("props", "chat")
+    assert_equal true, props["can_make_private"]
+    assert_equal false, props["make_private_keeps_you"]
+
+    post account_chat_privacy_path(@account, @chat)
+    assert_redirected_to account_chats_path(@account)
+    assert @chat.reload.private?
+    assert_equal({ @member.id => "writer", @owner.id => "writer" },
+      @chat.chat_participants.pluck(:user_id, :source).to_h)
+    refute @chat.visible_to?(@reader)
+  end
+
+  test "a site admin who isn't a member can make it private" do
+    admin = users(:site_admin_user)
+    assert @chat.can_make_private?(admin)
+    assert @chat.make_private!(by: admin)
+    refute @chat.reload.visible_to?(admin)
+    assert_equal [ @member.id, @owner.id ].sort, @chat.chat_participants.pluck(:user_id).sort
   end
 
 end
