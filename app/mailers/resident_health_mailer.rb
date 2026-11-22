@@ -87,6 +87,32 @@ class ResidentHealthMailer < ApplicationMailer
     mail(to: recipient.email_address, subject: "#{@agent.name}'s #{@provider_name} sign-in needs reconnecting")
   end
 
+  # A resident's container has been seen paused for half an hour or more
+  # (Backup::PausedResidentWatchJob). On 21 Nov 2026 Mira sat frozen from
+  # 04:08 to 06:50Z: the watch fired at 04:40, into the error tracker only,
+  # and nobody acted until a resident noticed her failed runs. Daniel: "we
+  # send an email to the owner of the account". It goes to the account's
+  # owner and to the house's site admins, who are the ones able to act.
+  #
+  # Who may receive it is decided again here, when the email is sent, not
+  # when it was queued (Mira, #1094): a recipient who is no longer the
+  # owner or a site admin gets nothing, and the operator copy goes only to
+  # someone who is a site admin now. The owner copy says what was observed
+  # and asks nothing of them; the operator copy points to the recovery
+  # runbook rather than a command, because freeing a resident safely means
+  # first establishing that no backup still holds it.
+  def resident_frozen(agent, since, recipient)
+    @agent = agent
+    @account = agent.account
+    @owner = recipient
+    @operator = recipient.site_admin
+    return unless @operator || @account.memberships.confirmed.owners.exists?(user: recipient)
+
+    @since = format_time(since)
+    @runs_url = edit_account_agent_url(@account, @agent, tab: "interactions")
+    mail(to: recipient.email_address, subject: "#{agent.name} is frozen")
+  end
+
   private
 
   def load(streak)

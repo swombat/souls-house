@@ -32,6 +32,7 @@ describe('runLabel for automatic deploys', () => {
     expect(runLabel(auto(undefined))).toBe('✓ finished (outcome unknown)');
     expect(runLabel({ ...auto(undefined), conclusion: 'failure' })).toBe('✗ failed');
     expect(runLabel({ ...auto('superseded'), conclusion: 'failure' })).toBe('– master moved on, nothing deployed');
+    expect(runLabel({ ...auto('deferred'), conclusion: 'failure' })).toBe('– a backup held the switch, nothing deployed');
   });
 });
 

@@ -139,6 +139,14 @@ jobs:
                 # hole in #313. The host still deploys nothing; the marker
                 # step below still names this as superseded, not a crash.
                 exit 1 ;;
+              deferred)
+                # A backup held a resident paused, or its state couldn't be
+                # read, so the host didn't switch releases (#1096). Red like
+                # superseded, nothing shipped, no runtime rebuild; the gate
+                # isn't latched, so a rerun or the next merge deploys.
+                printf '\nA backup held the switch; nothing deployed:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                echo outcome=deferred >> "$GITHUB_OUTPUT"
+                exit 1 ;;
               partial)
                 # A rebuild whose only unfinished work is busy host residents
                 # is done from here: the host's minute sweep rolls each one
@@ -175,3 +183,6 @@ jobs:
       - name: Master moved on, nothing deployed
         if: failure() && steps.request.outputs.outcome == 'superseded'
         run: echo superseded
+      - name: A backup held the switch, nothing deployed
+        if: failure() && steps.request.outputs.outcome == 'deferred'
+        run: echo deferred

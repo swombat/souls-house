@@ -1,0 +1,8 @@
+<p>Hello,</p>
+<p><strong>The house has seen <%= @agent.name %>'s container paused since at least <%= @since %>.</strong> While it is paused, <%= @agent.name %> can't answer in conversations or run their wakes.</p>
+<p>The house is responsible for investigating it. This is on the house's side, and there is nothing you need to do. This notice doesn't delete or change anything of theirs.</p>
+<% if @operator %>
+<p>You are getting this as a site admin. Before anything is unpaused, follow the paused-resident recovery runbook (docs/operations/paused-resident-recovery.md): it establishes whose pause this is and that no backup still holds it.</p>
+<% end %>
+<p>The <a href="<%= @runs_url %>">Runs tab</a> shows each run.</p>
+<p><%= Setting.instance.site_name %></p>

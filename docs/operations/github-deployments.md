@@ -145,8 +145,41 @@ lists the resident ids. The limit is `backup_wait_seconds` in `settings.json`
 An answer the house could not give counts as unknown, never as idle. The wait
 is a best effort: after the last check Kamal still pulls the image and boots
 web before it stops the job worker, and a backup that starts in that time is
-cut off. Backups of residents on the house are not waited for: the nightly run
-continues by itself after a restart.
+cut off.
+
+Backups of residents on the house are fenced and waited for. Before its wait
+the deploy raises a fence (`Backup::DeployFence`; `backup_fence` in the run:
+`raised`, `absent`, `unraised`, then `lowered` or `expires`). While it is up no
+house backup claims or pauses a resident: the fence check and the pause claim
+share one Postgres advisory lock, and the claim commits on its own connection,
+so a backup either claimed first or is refused and busy-retried later. Any
+claim counts, however old; a claim is gone only when its backup has unpaused
+and released it, or an operator releases it by
+`docs/operations/paused-resident-recovery.md`. Claims whose heartbeat
+(`touched_at`, every 60 seconds until the unpause is over) is more than 3
+minutes old are listed in `stale_pause_claims`: most likely a dead worker's,
+and a resident still paused. The fence is lowered after the release switch,
+even a failed one, and expires by itself only after the wait limit, a probe
+overrun, Kamal's whole timeout and a margin.
+
+**A routine deploy defers rather than cut a backup off.** The run ends in its
+own terminal state, `deferred`, with `backup_wait: deferred`, a step beginning
+`deferred:`, and nothing deployed. That happens when backups are still running
+at the limit, when they can't be read while a job worker runs, when a release
+that has the fence can't raise it, or when too little fence is left before the
+switch. Deferred doesn't latch the gate: a rerun or the next merge deploys, and
+the deploy alarm's grace check says so if production falls behind. In Actions
+it is red with the marker step **A backup held the switch, nothing deployed**,
+and the Deployments page names it. With no job worker running there is nothing
+to cut off, and it deploys. A live release with no fence at all (the one before
+the fence shipped) is deployed with the claim wait alone (`backup_fence:
+absent`). If Kamal's tools container can't be removed after a failed switch,
+the fence is left up to expire by itself (`backup_fence: held`). Every probe is
+bounded: the web lookup takes at most 30 s and the Rails runner at most 300 s.
+There is no override. A recovery deploy that must go out over a stuck claim
+waits until an operator has released the claim by the recovery runbook. A
+direct `kamal deploy` from a laptop bypasses this worker, the fence and the
+wait entirely.
 
 This lives in the root-installed worker, so it takes effect after
 `sudo ops/deploy/install` on the host, not on merge.

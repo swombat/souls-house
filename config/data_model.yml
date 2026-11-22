@@ -282,6 +282,7 @@ areas:
       - vm_server_moves
       - agent_backup_snapshots
       - backup_pause_claims
+      - backup_deploy_fences
       - agent_import_stages
 
   - id: integrations
