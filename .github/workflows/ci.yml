@@ -117,6 +117,19 @@ jobs:
       - name: Rails system tests
         if: ${{ !cancelled() && matrix.suite == 'rails' && matrix.shard == 1 && steps.dependencies.outcome == 'success' && steps.assets.outcome == 'success' }}
         run: bin/rails test:system
+      - name: Telegram connector end-to-end (Rails and the real connector)
+        if: ${{ !cancelled() && matrix.suite == 'rails' && matrix.shard == 1 && steps.dependencies.outcome == 'success' }}
+        # The test skips unless COMMS_TELEGRAM_CONNECTOR_PYTHON names a Python
+        # with the connector's requirements, so until now nothing ran it.
+        # --no-deps as in the Docker build; requirements.txt pins the tree.
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tg-venv"
+          "$RUNNER_TEMP/tg-venv/bin/pip" install --quiet --no-deps -r services/telegram-connector/requirements.txt
+          COMMS_TELEGRAM_CONNECTOR_PYTHON="$RUNNER_TEMP/tg-venv/bin/python" \
+            bin/rails test test/integration/comms_telegram_connector_e2e_test.rb 2>&1 | tee "$RUNNER_TEMP/tg-e2e.log"
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -qE '[1-9][0-9]* skips' "$RUNNER_TEMP/tg-e2e.log"
       - name: Browser end-to-end tests
         if: matrix.suite == 'e2e'
         # The planner prints this shard's spec files, balanced by recorded
