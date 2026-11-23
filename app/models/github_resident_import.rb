@@ -211,6 +211,9 @@ class GithubResidentImport < ApplicationRecord
   MOVE_HOUSE_HOME = "This import's home is already seeded on the main server. Moving a home to its own server " \
                     "is a migration from the resident's settings.".freeze
   MOVE_SERVER_STATE = "Its own server is past the point where the import can be moved back.".freeze
+  MOVE_RELEASING = "Moved to the main server. Its own server is being released; retry activation once it has gone " \
+                   "and the home is set up on the main server.".freeze
+  MOVED_TO_MAIN_SERVER = "github_import_moved_to_main_server".freeze
 
   # What a site admin can move this import to now: "main_server",
   # "own_server", or nil. Only a never-started import moves; one that has
@@ -222,19 +225,21 @@ class GithubResidentImport < ApplicationRecord
     end
     return unless status.in?(%w[needs_runtime_trust failed])
 
-    "main_server" if on_own_server_never_started?
+    "main_server" if placement != "main_server" && on_own_server_never_started?
   end
 
   # A site admin moves a never-started import between the main server and
   # its own server, so it never needs an operator's script (23 Nov, Reed).
   # With no resident yet only the recorded choice changes, and the usual
   # checks run when it is admitted. A resident already admitted to its own
-  # server but never started comes back to the main server: its enrollment
-  # is revoked, its staged home is dropped and its placement becomes a
-  # local one at the next generation, as Agents::VmMigration#return_to_house!
-  # does. The server it was bought is kept, and shows in Site Admin as held
-  # and empty. Retry activation then seeds it on the main server from the
-  # reviewed checkout. Returns the destination.
+  # server but never started is sent back to the main server: its server's
+  # cleanup is requested through the normal path (VmCleanupJob deletes it
+  # and retires the placement), and the import records "main_server". Retry
+  # activation, once the placement is retired, makes the placement local and
+  # seeds the home on the main server from the reviewed checkout
+  # (GithubResidentImportJob#bring_home!). Nothing is kept: a server nobody
+  # is responsible for is a bill nobody is (Mira, #1109). Returns the
+  # destination.
   def move_to!(destination, by:)
     raise Account::NotAuthorized unless by&.is_site_admin?
     raise ArgumentError, "unknown destination" unless PLACEMENTS.include?(destination)
@@ -249,6 +254,7 @@ class GithubResidentImport < ApplicationRecord
     result = ProvisionVmAgentJob.exclusively(placement_row.id) { return_to_main_server!(by:) }
     raise MoveRefused, MOVE_BUSY if result == :busy
 
+    VmCleanupJob.perform_later(placement_row.id)
     destination
   end
 
@@ -287,9 +293,13 @@ class GithubResidentImport < ApplicationRecord
     @moving_placement = false
   end
 
+  # Its own server, never started: still waiting for its first start, or
+  # already released (the trust deadline requests cleanup and fails the
+  # placement; VmCleanupJob then retires it). Either way it holds no home
+  # anyone has run.
   def on_own_server_never_started?(resident = agent, placement_row = resident&.placement)
     placement_row.present? && placement_row.backend == "hetzner_cloud" && placement_row.kind == "github_import" &&
-      placement_row.state == "pending" && !placement_row.cleanup_requested? &&
+      placement_row.state.in?(%w[pending failed retired]) &&
       resident.runtime_ready_at.nil? && resident.identity_seeded_at.nil? && !resident.active? && resident.paused?
   end
 
@@ -306,7 +316,9 @@ class GithubResidentImport < ApplicationRecord
   end
 
   # Under ProvisionVmAgentJob.exclusively for its placement, so no
-  # provisioning step runs against it meanwhile.
+  # provisioning step runs against it meanwhile. The placement stays a VM
+  # one until VmCleanupJob has retired it; only then does a retry bring the
+  # resident home, so the cleanup never loses the server it must delete.
   def return_to_main_server!(by:)
     AgentPlacement.transaction do
       lock!
@@ -316,20 +328,14 @@ class GithubResidentImport < ApplicationRecord
       raise MoveRefused, MOVE_NOT_WAITING unless status.in?(%w[needs_runtime_trust failed])
       raise MoveRefused, MOVE_SERVER_STATE unless on_own_server_never_started?(resident, placement_row)
 
-      server_id = placement_row.provider_server_id
       RunnerEnrollment.where(agent_placement_id: placement_row.id, revoked_at: nil).find_each(&:revoke!)
-      placement_row.update!(backend: "local", kind: nil, state: "ready", generation: placement_row.generation + 1,
-        house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
-        cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
-        location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil)
-      resident.import_stages.delete_all
-      resident.update_columns(health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil,
-        updated_at: Time.current)
+      placement_row.request_cleanup!(MOVED_TO_MAIN_SERVER) unless placement_row.state == "retired"
       from = placement
-      moving_placement { update!(placement: "main_server", status: "needs_runtime_trust", last_error: nil) }
+      moving_placement { update!(placement: "main_server", status: "needs_runtime_trust", last_error: MOVE_RELEASING) }
       AuditLog.create!(action: "github_import_returned_to_house", user: by, account:, auditable: resident,
         data: { "github_resident_import_id" => id, "placement_id" => placement_row.id,
-          "generation" => placement_row.generation, "kept_provider_server_id" => server_id, "from" => from })
+          "generation" => placement_row.generation, "released_provider_server_id" => placement_row.provider_server_id,
+          "from" => from })
     end
   end
 

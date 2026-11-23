@@ -1001,7 +1001,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
-  test "a site admin moves a never-started own-server import to the main server, keeping its server" do
+  test "a site admin moves a never-started own-server import to the main server: its server is released, then it is set up at home" do
     with_house do
       request, agent = github_import_seeded!
       placement = agent.placement
@@ -1014,39 +1014,82 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal "main_server", request.movable_to
 
       assert_raises(Account::NotAuthorized) { request.move_to!("main_server", by: users(:regular_user)) }
-      assert_equal "hetzner_cloud", placement.reload.backend
+      assert_not placement.reload.cleanup_requested?
 
-      assert_equal "main_server", request.move_to!("main_server", by: users(:site_admin_user))
+      assert_enqueued_with(job: VmCleanupJob, args: [ placement.id ]) do
+        assert_equal "main_server", request.move_to!("main_server", by: users(:site_admin_user))
+      end
       placement.reload
       request.reload
-      agent.reload
-      assert_equal [ "local", nil, "ready" ], [ placement.backend, placement.kind, placement.state ]
-      assert_nil placement.provider_server_id
-      assert_nil placement.birth_deadline_at, "the birth sweep no longer counts it"
-      assert_equal "main_server", request.placement
-      assert_equal "needs_runtime_trust", request.status
-      assert_empty agent.import_stages
+      assert placement.cleanup_requested?, "its server goes through the normal cleanup"
+      assert_equal [ "hetzner_cloud", "github_import" ], [ placement.backend, placement.kind ],
+        "it stays a VM placement until the cleanup has retired it"
+      assert_equal [ "main_server", "needs_runtime_trust" ], [ request.placement, request.status ]
+      assert_equal GithubResidentImport::MOVE_RELEASING, request.last_error
       assert_empty RunnerEnrollment.where(agent_placement_id: placement.id, revoked_at: nil)
-      assert_empty @client.deletes, "the server is kept, not deleted"
       audit = AuditLog.find_by!(action: "github_import_returned_to_house", auditable: agent)
-      assert_equal server_id, audit.data["kept_provider_server_id"]
-      assert_nil request.movable_to, "a resident on the main server is not moved by this action"
+      assert_equal server_id, audit.data["released_provider_server_id"]
+      assert_nil request.movable_to, "already moved"
 
-      # Retry activation now seeds it on the main server, never on a server.
-      assert_enqueued_with(job: GithubResidentImportJob) { request.retry_activation!(@user) }
+      # A retry before the server has gone waits; nothing is bought or seeded.
+      request.retry_activation!(@user)
+      run_import(request, reviewed_checkout)
+      assert_equal [ "needs_runtime_trust", GithubResidentImportJob::BRING_HOME_WAITING ], [ request.status, request.last_error ]
+      assert_equal "hetzner_cloud", placement.reload.backend
+
+      VmCleanupJob.perform_now(placement.id)
+      assert_equal "retired", placement.reload.state
+      assert_includes @client.deletes.map(&:first), server_id, "the server is deleted, not kept"
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+
+      # On a namespaced house the VM's container name is not this house's,
+      # so the real ownership check would refuse it. The retry prepares the
+      # local names first; only Docker itself is stubbed.
+      # This house, as a namespaced one.
+      house = Class.new(SimpleDelegator) do
+        def namespace = "shtest"
+        def fingerprint = "fp-test"
+      end.new(LocalInstance.current)
+      absent = Object.new
+      absent.define_singleton_method(:success?) { false }
       seeded = []
-      volume = Object.new
-      volume.define_singleton_method(:seed_from_directory!) { |root| seeded << root }
-      sandbox = Object.new
-      sandbox.define_singleton_method(:imported_runtime_trusted?) { false }
-      Agents::GithubImportSource.stub(:new, github_source(request, reviewed_checkout)) do
-        Agents::Volume.stub(:new, volume) do
-          Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+      LocalInstance.stub(:current, house) do
+        agent.reload
+        assert_not_equal "shtest-agent-#{agent.uuid}", agent.container_name, "the VM's name is not this house's"
+        # The volume seeds as the real one does up to Docker: the ownership
+        # check runs for real; Docker answers that nothing exists yet.
+        volume = ->(resident) do
+          fake = Object.new
+          fake.define_singleton_method(:seed_from_directory!) do |root|
+            Agents::Resources.new(resident).verify_existing!
+            seeded << root
+          end
+          fake
+        end
+        sandbox = Object.new
+        sandbox.define_singleton_method(:imported_runtime_trusted?) { false }
+        request.retry_activation!(@user)
+        Agents::DockerLocalGuard.stub(:check!, true) do
+          Agents::BoundedCommand.stub(:capture3, [ "", "Error: No such object", absent ]) do
+            Agents::GithubImportSource.stub(:new, github_source(request, reviewed_checkout)) do
+              Agents::Volume.stub(:new, volume) do
+                Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+              end
+            end
+          end
         end
       end
       assert_equal 1, seeded.size
+      placement.reload
+      agent.reload
+      assert_equal [ "local", nil, "ready", 2 ], [ placement.backend, placement.kind, placement.state, placement.generation ]
+      assert_equal "shtest-agent-#{agent.uuid}", agent.container_name
+      assert_equal Agents::Config.sandbox_host, agent.sandbox_host
+      assert agent.identity_seeded_at
+      assert_empty agent.import_stages
       assert_equal "needs_runtime_trust", request.reload.status
       assert_equal 1, @client.creates.size, "no second server"
+      assert AuditLog.exists?(action: "github_import_brought_home", auditable: agent)
     end
   end
 
@@ -1085,6 +1128,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         VmCleanupJob.perform_now(placement.id)
         assert_equal "retired", placement.reload.state
         assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+        assert_equal "main_server", request.reload.movable_to, "a released import that never started can still come home"
 
         serve_creates_as(4343)
         request.retry_activation!(@user)
