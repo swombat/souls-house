@@ -521,9 +521,15 @@ TAILNET_OUTPUT_MAX = 16384
 # (version 2), never code. The path is checked here by the same rule as
 # Agent.valid_journal_source? and passed as one argv value. The script is a
 # byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and a house test
-# keeps the two equal.
-HOME_STATS_VERSION = 2
+# keeps the two equal. Version 3 also answers part "storage": the disk use
+# alone, walked by HOME_STORAGE_SCRIPT (a byte-for-byte copy of
+# Agents::HomeStorage::SCRIPT) under HOME_STORAGE_SECONDS. The count script
+# no longer walks the disk. The budget is short because this runner answers
+# one command at a time and the house redelivers after two minutes; a home
+# too big for it reports "timeout", which the card shows as too slow.
+HOME_STATS_VERSION = 3
 HOME_STATS_SECONDS = 30
+HOME_STORAGE_SECONDS = 25
 JOURNAL_SOURCE_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
 JOURNAL_SOURCE_MAX = 200
 
@@ -536,7 +542,7 @@ def valid_journal_source(source):
             and all(JOURNAL_SOURCE_SEGMENT.fullmatch(segment) and segment.strip(".") for segment in segments))
 
 
-HOME_STATS_SCRIPT = r"""import json, os, pathlib, re, stat, subprocess, sys
+HOME_STATS_SCRIPT = r"""import json, os, pathlib, re, stat, sys
 root = pathlib.Path("/home/agent/identity/memory/daily-journals")
 # One Markdown file under memory/ when the resident chose one (argv), else
 # the dated daily journals. The rule is Agent.valid_journal_source?.
@@ -589,20 +595,24 @@ else:
         os.close(handle)
         raise RuntimeError("journal source is not a file")
     count = count_entries(os.fdopen(handle, encoding="utf-8"))
-# Allocated bytes, including hidden files; du does not follow symlinks.
-# Explicit volume roots exclude the image layer and temporary filesystems.
-storage_bytes = None
+print(json.dumps({"count": count}))
+"""
+HOME_STORAGE_SCRIPT = r"""import json, pathlib, subprocess, sys
+# The walk's budget in seconds: one argv value, bounded here too.
+budget = max(1, min(int(sys.argv[1]), 600))
+roots = ["/home/agent/" + name for name in ("identity", ".chaos", "repo", "work", "state")]
 try:
-    roots = ["/home/agent/" + name for name in ("identity", ".chaos", "repo", "work", "state")]
     if any(pathlib.Path(path).is_symlink() for path in roots):
         raise ValueError("invalid volume root")
-    measurement = subprocess.run(["du", "-s", "-B1", "--", *roots], capture_output=True, text=True, timeout=10, check=True)
+    measurement = subprocess.run(["du", "-s", "-B1", "--", *roots], capture_output=True, text=True, timeout=budget, check=True)
     sizes = [int(line.split()[0]) for line in measurement.stdout.splitlines()]
-    if len(sizes) == len(roots) and all(size >= 0 for size in sizes):
-        storage_bytes = sum(sizes)
-except (OSError, ValueError, subprocess.SubprocessError):
-    pass
-print(json.dumps({"count": count, "storage_bytes": storage_bytes}))
+    if len(sizes) != len(roots) or any(size < 0 for size in sizes):
+        raise ValueError("unreadable sizes")
+    print(json.dumps({"storage_bytes": sum(sizes)}))
+except subprocess.TimeoutExpired:
+    print(json.dumps({"error": "timeout"}))
+except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+    print(json.dumps({"error": "failed"}))
 """
 VOLUME_MOUNTS = (
     ("identity", "/home/agent/identity"),
@@ -1231,6 +1241,10 @@ class ResidentHost:
         the card as unavailable rather than wrong."""
         name = payload.get("container_name")
         self._known_resident(name)
+        part = payload.get("part")
+        _require(part in (None, "storage"), f"home_stats part not allowed: {part!r}")
+        if part == "storage":
+            return self._home_storage(name)
         source = payload.get("journal_source")
         _require(source is None or valid_journal_source(source), f"journal source not allowed: {source!r}")
         ok, output = self.docker(["docker", "exec", name, "timeout", str(HOME_STATS_SECONDS),
@@ -1249,6 +1263,29 @@ class ResidentHost:
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             size = None
         return {"count": count, "storage_bytes": size}
+
+    def _home_storage(self, name):
+        """The disk use alone (home_stats part "storage", version 3): the
+        resident's five volumes walked by the fixed HOME_STORAGE_SCRIPT under
+        HOME_STORAGE_SECONDS. Returns {"storage_bytes"} or {"error":
+        "timeout"}; anything else fails the command."""
+        ok, output = self.docker(["docker", "exec", name, "timeout", str(HOME_STORAGE_SECONDS + 10),
+                                  "python3", "-c", HOME_STORAGE_SCRIPT, str(HOME_STORAGE_SECONDS)],
+                                 timeout=HOME_STORAGE_SECONDS + 25)
+        if not ok:
+            raise CommandFailed("could not measure the resident's disk use")
+        try:
+            measured = json.loads((output or "").strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            raise CommandFailed("the resident's disk measurement was unreadable")
+        if not isinstance(measured, dict):
+            raise CommandFailed("the resident's disk measurement was unreadable")
+        size = measured.get("storage_bytes")
+        if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+            return {"storage_bytes": size}
+        if measured.get("error") == "timeout":
+            return {"error": "timeout"}
+        raise CommandFailed("could not measure the resident's disk use")
 
     def update_runner(self, payload):
         """Install the house's current runner bundle (#593). Fetched by

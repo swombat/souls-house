@@ -150,6 +150,37 @@ class ParityTest(unittest.TestCase):
                                      reboot_reader=lambda: {}, sandbox_id_reader=lambda: None)
         self.assertEqual(runner.HOME_STATS_VERSION, facts["home_stats"])
 
+    def test_home_stats_storage_walks_alone_under_the_runners_short_budget(self):
+        self.host.start_resident(spec())
+        self.docker.calls.clear()
+        answers = iter([(True, '{"storage_bytes": 4096}'), (True, '{"error": "timeout"}')])
+        self.host.docker = lambda argv, timeout=120: (self.docker.calls.append((argv, timeout)), next(answers))[1]
+        payload = {"container_name": "agent-pilot-1", "part": "storage"}
+        self.assertEqual({"storage_bytes": 4096}, self.host.home_stats(payload))
+        self.assertEqual({"error": "timeout"}, self.host.home_stats(payload))
+        argv, timeout = self.docker.calls[0]
+        self.assertEqual(["docker", "exec", "agent-pilot-1", "timeout", str(runner.HOME_STORAGE_SECONDS + 10),
+                          "python3", "-c", runner.HOME_STORAGE_SCRIPT, str(runner.HOME_STORAGE_SECONDS)], argv)
+        # Answered well inside the house's two-minute redelivery.
+        self.assertLess(timeout, 120)
+
+    def test_home_stats_storage_fails_on_anything_but_a_size_or_a_timeout(self):
+        self.host.start_resident(spec())
+        payload = {"container_name": "agent-pilot-1", "part": "storage"}
+        for answer in ((False, "boom"), (True, ""), (True, "private prose"), (True, '{"error": "failed"}'),
+                       (True, '{"storage_bytes": -1}'), (True, '{"storage_bytes": true}'), (True, "[1]")):
+            with self.subTest(answer=answer):
+                self.host.docker = lambda argv, timeout=120, answer=answer: answer
+                with self.assertRaises(runner.CommandFailed):
+                    self.host.home_stats(payload)
+        for part in ("count", "storage; id", ["storage"], 1):
+            with self.subTest(part=part), self.assertRaises(runner.BadCommand):
+                self.host.home_stats({"container_name": "agent-pilot-1", "part": part})
+
+    def test_the_count_script_no_longer_walks_the_disk(self):
+        self.assertNotIn("du", runner.HOME_STATS_SCRIPT.split())
+        self.assertNotIn("subprocess", runner.HOME_STATS_SCRIPT)
+
     def test_the_home_stats_script_counts_entries_in_a_real_home(self):
         home = tempfile.mkdtemp()
         journals = os.path.join(home, "daily-journals")

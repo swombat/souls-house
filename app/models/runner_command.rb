@@ -93,6 +93,18 @@ class RunnerCommand < ApplicationRecord
     true
   end
 
+  # Refused in place if the runner hasn't taken it yet: the house stopped
+  # waiting for an answer nobody will read. A command already delivered
+  # (even in the same instant) is left to finish. Returns whether it was.
+  def abandon_if_queued!(now:)
+    abandoned = self.class.where(id:, state: "queued").update_all(
+      state: "refused", result: { "outcome" => "refused", "error" => "the house stopped waiting" },
+      finished_at: now, payload_json: nil, updated_at: now
+    )
+    reload
+    abandoned.positive?
+  end
+
   # Refused here without ever reaching the runner.
   def refuse_locally!(reason, now:)
     update!(state: "refused", result: { "outcome" => "refused", "error" => reason }, finished_at: now, payload_json: nil)
