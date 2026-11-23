@@ -223,6 +223,43 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     end
   end
 
+  # Reed, #1113: hooks/kit.py writes "## 2026-11-23T21:35:48.228101+00:00 — ...",
+  # where the T leaves no word boundary for \b to find.
+  test "full ISO headings keep their date and clock in day folders and in a single file" do
+    heading = "## 2026-11-23T21:35:48.228101+00:00 — a kit entry\nbody\n"
+    @home.join("journal/2026-11-23").mkpath
+    @home.join("journal/2026-11-23/entry.md").write(heading)
+    declare({ "path" => "journal" })
+    entry = run_reader(mode: "catalog")["items"].find { |item| item["kind"] == "journals" }
+    assert_equal "2026-11-23T21:35:48.000000Z", entry["occurred_at"]
+
+    @home.join("single.md").write(heading + "## Note at 09:15, 2026-11-22\n")
+    declare({ "path" => "single.md" })
+    catalog = run_reader(mode: "catalog")
+    times = catalog["items"].select { |item| item["kind"] == "journals" }.map { |item| item["occurred_at"] }.sort
+    assert_equal [ "2026-11-22T09:15:00.000000Z", "2026-11-23T21:35:48.000000Z" ], times
+    assert_equal({ "2026-11-22" => 1, "2026-11-23" => 1 }, run_reader(mode: "overview")["daily_counts"])
+  end
+
+  # Mira and Reed, #1113: the same missing folder is an empty journal by
+  # default and unavailable once declared, so a cached 0 must not answer for it.
+  test "declaring the default place is not served the undeclared cache" do
+    @root.join("daily-journals").rmtree
+    agent = agents(:research_assistant)
+    agent.update_columns(runtime: "external", container_name: "test-resident", sandbox_host: nil)
+    archive = Agents::MemoryArchive.new(agent)
+    local = ->(_script, request) { execute(JSON.parse(request)).first.then { |out| out.empty? ? raise(Errno::EIO) : out } }
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      Agents::Resources.stub(:new, Struct.new(:verify_existing!).new(true)) do
+        archive.stub(:capture, local) do
+          assert_equal [ "measured", 0 ], archive.overview.values_at("status", "count")
+          declare({ "path" => "memory/daily-journals" })
+          assert_equal "unavailable", archive.overview["status"]
+        end
+      end
+    end
+  end
+
   test "unavailable residents never masquerade as empty archives" do
     agent = agents(:research_assistant)
     agent.container_name = nil

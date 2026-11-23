@@ -31,10 +31,12 @@ module Agents
     # by it: a home that says "journal": false is closed at once, even while
     # an older overview or catalog is still cached (Mira, #1113).
     def snapshot(mode)
-      place = current_place
+      place, declared = current_place
       return { "status" => "not_shared", "count" => nil, "daily_counts" => {}, "items" => [] } if place.nil?
 
-      Rails.cache.fetch([ "resident-memory-v2", @agent.id, @agent.uuid, @agent.container_name, place, mode ],
+      # Declared or not is part of the key: the same missing folder is a
+      # measured 0 by default but unavailable once declared (Mira, Reed, #1113).
+      Rails.cache.fetch([ "resident-memory-v2", @agent.id, @agent.uuid, @agent.container_name, place, declared, mode ],
                         expires_in: 2.minutes) do
         read(mode).merge("measured_at" => Time.current.iso8601)
       end
@@ -42,13 +44,14 @@ module Agents
       { "status" => "unavailable", "count" => nil, "daily_counts" => {}, "items" => [] }
     end
 
-    # The declared journal's place, or nil when it is not shared.
+    # The journal's place and whether the home declared it, or nil when it
+    # is not shared.
     def current_place
       declared = read("declaration")
       return nil if declared["status"] == "not_shared"
       raise ReadError unless declared["status"] == "declared" && declared["place"].is_a?(String)
 
-      declared["place"]
+      [ declared["place"], declared["declared"] == true ]
     end
 
     def read(mode, **arguments)

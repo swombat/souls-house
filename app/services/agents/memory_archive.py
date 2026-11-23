@@ -53,18 +53,32 @@ def summary_documents(home, folder, pattern):
         os.close(fd)
 
 
+# A heading's date and clock. `\b` cannot be trusted here: in an ISO
+# heading like "2026-11-23T21:01:27.228101+00:00" the T is a word
+# character, so there is no boundary on either side of it (Reed, #1113).
+DATE_IN_TITLE = re.compile(r"(?<![\d-])(\d{4}-\d{2}(?:-\d{2})?)(?![\d-])")
+LEADING_CLOCK = re.compile(r"(?:\d{4}-\d{2}-\d{2}[T ])?(\d{2}):(\d{2})(?::(\d{2}))?(?!\d)")
+CLOCK_IN_TITLE = re.compile(r"(?<![:\d+-])(\d{2}):(\d{2})(?::(\d{2}))?(?!\d)")
+
+
 def timestamp(kind, document, title):
     day = document["day"]
     if kind != "journals" or document.get("modified"):
-        match = re.search(r"\b(\d{4}-\d{2}(?:-\d{2})?)\b", title)
+        match = DATE_IN_TITLE.search(title)
         if match:
             day = match[1]
     day += "-01" * (2 - day.count("-"))
-    date = dt.date.fromisoformat(day)
-    clock = re.search(r"\b(\d{2}):(\d{2})\b", title) if document.get("modified") else (
-        re.match(r"(\d{2}):(\d{2})\b", title) if kind == "journals" else None)
-    hour, minute = (int(clock[1]), int(clock[2])) if clock else (0, 0)
-    return dt.datetime.combine(date, dt.time(hour, minute)).isoformat(timespec="microseconds") + "Z"
+    try:
+        date = dt.date.fromisoformat(day)
+    except ValueError:
+        date = dt.date.fromisoformat(document["day"] + "-01" * (2 - document["day"].count("-")))
+    clock = CLOCK_IN_TITLE.search(title) if document.get("modified") else (
+        LEADING_CLOCK.match(title) if kind == "journals" else None)
+    try:
+        moment = dt.time(*(int(part) for part in clock.groups(default="0"))) if clock else dt.time()
+    except ValueError:
+        moment = dt.time()
+    return dt.datetime.combine(date, moment).isoformat(timespec="microseconds") + "Z"
 
 
 def scan(mode, fallback):
@@ -208,7 +222,8 @@ def declaration(fallback):
     # effect at once.
     home = os.open(HOME, DIRECTORY_FLAGS)
     try:
-        return {"status": "declared", "place": journal_place(home, fallback)[0]}
+        place, declared = journal_place(home, fallback)
+        return {"status": "declared", "place": place, "declared": bool(declared)}
     except NotShared:
         return {"status": "not_shared"}
     finally:
