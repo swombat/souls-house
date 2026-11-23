@@ -166,6 +166,30 @@ class HouseCliTest < ActiveSupport::TestCase
     end
   end
 
+  test "doctor treats a blank HOUSE_EMBEDDINGS_IMAGE as the accessory off, not a missing key" do
+    in_fixture_root do |root|
+      House::Init.new(root: root, yes: true, out: StringIO.new, stdin: StringIO.new).run
+      env = House.parse(File.read(File.join(root, "config/house.env")))
+      env["HOUSE_DOCKER_GID"] = "999"
+      env["HOUSE_EMBEDDINGS_IMAGE"] = ""
+      env["HOUSE_EMBEDDINGS_DIGEST"] = ""
+      env["HOUSE_DOMAIN"] = "localhost"
+      env["HOUSE_HOST"] = "127.0.0.1"
+      write_secret_files(root)
+      File.delete(File.join(root, "config/credentials/deployment/mnemodyne_embedding_token.key"))
+
+      out = StringIO.new
+      status = House::Doctor.new(
+        root: root, env: env, runner: StubRunner.new(GOOD_REMOTE_OUTPUT, true), out: out, stdin: StringIO.new
+      ).run
+
+      assert_equal 0, status
+      assert_no_match(/^FAIL/, out.string)
+      assert_match(/INFO\tEmbeddings accessory — off/, out.string)
+      assert_match(/INFO\tMNEMODYNE_EMBEDDING_TOKEN — not needed/, out.string)
+    end
+  end
+
   test "doctor fails a required key that's missing" do
     in_fixture_root do |root|
       House::Init.new(root: root, yes: true, out: StringIO.new, stdin: StringIO.new).run

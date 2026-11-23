@@ -51,7 +51,6 @@
   house_ssh_port = house.call("HOUSE_SSH_PORT")
   house_image = house.call("HOUSE_IMAGE")
   house_registry_user = house.call("HOUSE_REGISTRY_USER")
-  house_embeddings_image = house.call("HOUSE_EMBEDDINGS_IMAGE")
   house_agent_image = house.call("HOUSE_AGENT_IMAGE")
   house_storage = house.call("HOUSE_STORAGE")
   house_site_name = house.call("HOUSE_SITE_NAME")
@@ -62,13 +61,22 @@
   house_source_repo = house_optional.call("HOUSE_SOURCE_REPO")
   transition_aliases = house_optional.call("HOUSE_TRANSITION_ALIASES").to_s.split(",").map(&:strip).reject(&:empty?)
 
+  # Memory embeddings (services/mnemodyne-embeddings, the bge-small accessory).
+  # On while HOUSE_EMBEDDINGS_IMAGE is set, which is the default in
+  # config/house.env.example, so forks and self-hosted houses keep bge. A house
+  # whose MNEMODYNE_EMBEDDING_PROFILE is voyage-* never calls it and may leave
+  # HOUSE_EMBEDDINGS_IMAGE blank: then the accessory, MNEMODYNE_EMBEDDING_URL
+  # and MNEMODYNE_EMBEDDING_TOKEN all drop out, like voice-embeddings below.
   # Canonical HOUSE_EMBEDDINGS_DIGEST; MNEMODYNE_EMBEDDING_IMAGE_DIGEST is kept
   # as a compatibility override (it predates the HOUSE_* vocabulary).
-  embedding_digest = ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"].to_s.strip
-  embedding_digest = ENV["HOUSE_EMBEDDINGS_DIGEST"].to_s.strip if embedding_digest.empty?
-  unless embedding_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
-    raise "Set HOUSE_EMBEDDINGS_DIGEST to the approved immutable embedding image digest " \
-      "(sha256:...). (Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST to override for compatibility.)"
+  house_embeddings_image = house_optional.call("HOUSE_EMBEDDINGS_IMAGE")
+  if house_embeddings_image
+    embedding_digest = ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"].to_s.strip
+    embedding_digest = ENV["HOUSE_EMBEDDINGS_DIGEST"].to_s.strip if embedding_digest.empty?
+    unless embedding_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
+      raise "Set HOUSE_EMBEDDINGS_DIGEST to the approved immutable embedding image digest " \
+        "(sha256:...). (Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST to override for compatibility.)"
+    end
   end
 
   web_volumes = [ "/var/run/docker.sock:/var/run/docker.sock" ]
@@ -160,9 +168,12 @@ env:
 <% if house_source_repo %>
     HOUSE_SOURCE_REPO: <%= house_source_repo %> # owner/repo the Site Admin deploy page reads and dispatches to.
 <% end %>
+<% if house_embeddings_image %>
     MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
-    # voyage-* = Voyage AI with credentials voyage.api_key (Mnemodyne::Embeddings). The
-    # bge-small accessory stays configured as the way back: set the profile to
+<% end %>
+    # voyage-* = Voyage AI with credentials voyage.api_key (Mnemodyne::Embeddings).
+    # The way back to bge: set HOUSE_EMBEDDINGS_IMAGE/_DIGEST, boot the
+    # embeddings accessory, set the profile to
     # bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1 and re-embed.
     MNEMODYNE_EMBEDDING_PROFILE: voyage-4
 <% if voice_embeddings_image %>
@@ -186,7 +197,9 @@ env:
   secret:
     - RAILS_MASTER_KEY # Rails master key (provide in .kamal/secrets)
     - DATABASE_URL # Database connection string (provided per env in secrets)
+<% if house_embeddings_image %>
     - MNEMODYNE_EMBEDDING_TOKEN # Same private token on web/jobs and embedding accessory.
+<% end %>
 <% if voice_embeddings_image %>
     - VOICE_EMBEDDING_TOKEN # Same private token on web/jobs and the voice-embeddings accessory.
 <% end %>
@@ -271,6 +284,7 @@ builder:
     image: <%= house_image %>:production-build-cache
 
 accessories:
+<% if house_embeddings_image %>
   embeddings:
     # Build/publish this artifact after review; see docs/mnemodyne-deployment.md.
     image: <%= house_embeddings_image %>@<%= embedding_digest %>
@@ -284,6 +298,7 @@ accessories:
       read-only: true
       tmpfs: /tmp
     # No public port. Kamal's private network supplies souls-house-embeddings.
+<% end %>
 <% if voice_embeddings_image %>
   voice-embeddings:
     # Built from services/voice-embeddings by bin/house release-voice-embeddings,
