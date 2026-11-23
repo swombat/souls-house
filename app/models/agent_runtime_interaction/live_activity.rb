@@ -5,6 +5,7 @@ module AgentRuntimeInteraction::LiveActivity
   TERMINAL_STATES = %w[completed failed timed_out cancelled busy outcome_unknown].freeze
   PREPARATION_WINDOW = 10.minutes
   RELEASE_GRACE = 10.minutes
+  REPORT_FRESHNESS = 30.seconds
 
   included do
     has_many :agent_runtime_attempts, dependent: :destroy
@@ -282,13 +283,13 @@ module AgentRuntimeInteraction::LiveActivity
     replies = linked_messages.count
     state = execution_state
     ongoing = !state.in?(TERMINAL_STATES)
-    waking = state.in?(%w[preparing running]) && !stored_snapshot["fallback"] && stored_snapshot["phase"] == "waking"
-    snapshot.delete("phase") unless waking
     health = if latest&.last_report_at
-      latest.last_report_at < 30.seconds.ago && ongoing ? "stale" : "live"
+      latest.last_report_at < REPORT_FRESHNESS.ago && ongoing ? "stale" : "live"
     else
       "connecting"
     end
+    waking = state.in?(%w[preparing running]) && health == "live" && !stored_snapshot["fallback"] && stored_snapshot["phase"] == "waking"
+    snapshot.delete("phase") unless waking
     helpers_shared = narration_shared && agent.reload.share_working_narration?
     helpers = RuntimeSubagents.new(helpers_shared ? stored_snapshot[RuntimeSubagents::KEY] : nil)
     helpers.gap! if !ongoing || health != "live" || stored_snapshot["fallback"]

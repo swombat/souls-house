@@ -456,6 +456,7 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
         self.assertLess(len(self.packets), 8)
 
     def test_wake_hooks_emit_payload_free_phase_transitions_and_scrub_hook_details(self):
+        self.reporter.wake_grace = 0
         self.reporter.begin_attempt()
         self.reporter.project({"type": "hook.started", "id": "chaos://hooks/PRIVATE_BOOT",
                                "event_name": "session_start", "status": "running", "command": "PRIVATE_CMD"})
@@ -490,6 +491,7 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
             self.assertNotIn(secret, json.dumps(self.packets))
 
     def test_unclosed_wake_hook_clears_on_work_turn_end_gap_or_fallback(self):
+        self.reporter.wake_grace = 0
         self.reporter.begin_attempt()
         self.reporter.project({"type": "hook.started", "id": "chaos://hooks/wake",
                                "event_name": "before_turn", "status": "running"})
@@ -509,6 +511,33 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
         attempt_two_hb = [event["data"]["phase"] for packet in self.packets if packet["attempt_number"] == 2
                           for event in packet["events"] if event["type"] == "heartbeat"]
         self.assertEqual([None], attempt_two_hb)
+
+    def test_wake_grace_suppresses_50ms_hook_and_announces_2s_hook(self):
+        self.reporter.begin_attempt()
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/fast",
+                               "event_name": "before_turn", "status": "running"})
+        time.sleep(0.025)
+        self.reporter.emit("heartbeat")
+        time.sleep(0.025)
+        self.reporter.project({"type": "hook.completed", "id": "chaos://hooks/fast",
+                               "event_name": "before_turn", "status": "completed"})
+        time.sleep(0.45)
+        self.assertEqual([], [event["type"] for event in self.events() if event["type"].startswith("wake.")])
+
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/slow",
+                               "event_name": "session_start", "status": "running"})
+        time.sleep(0.6)
+        self.reporter.emit("heartbeat")
+        time.sleep(1.4)
+        self.reporter.project({"type": "hook.completed", "id": "chaos://hooks/slow",
+                               "event_name": "session_start", "status": "completed"})
+        self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+
+        wake_events = [event["type"] for event in self.events() if event["type"].startswith("wake.")]
+        self.assertEqual(["wake.started", "wake.finished"], wake_events)
+        heartbeats = [event["data"]["phase"] for event in self.events() if event["type"] == "heartbeat"]
+        self.assertEqual([None, "waking", None], heartbeats)
 
 
 if __name__ == "__main__":

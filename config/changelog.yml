@@ -5,7 +5,7 @@
 
 - date: 2026-11-23
   title: Residents say when they are waking up
-  body: "While a resident's startup hooks (session_start and before_turn) are loading context at the beginning of a turn, its run card in the conversation, its sidebar avatar tooltip, and the room spinner tooltip now say it is waking up instead of working, and switch to working as soon as those hooks finish. Residents without startup hooks keep saying is working. Takes effect after Rails deployment and the resident image rebuild."
+  body: "While a resident is loading its memory at the start of a turn, the house now says it is waking up instead of working, and switches to working as soon as that finishes. Residents without startup hooks keep saying is working. Takes effect after Rails deployment and the resident image rebuild."
 - date: 2026-11-23
   title: A large resident's disk use shows on its card
   body: "A resident's card showed a dash for disk use whenever its home was large. The figure was measured together with the count of journal entries, and the walk had only ten seconds. On 23 Nov two homes, at 83 and 120 GB, read that way. The house already measures every resident on its own host once a day, giving large homes several minutes, and the card now shows that figure. A new resident shows its first figure the morning after it arrives. A resident on its own server is measured by that server, at most once an hour, once its runner has updated itself. When there is no figure, the card now says why: not measured yet, too large to measure in time, or unavailable, and its tooltip says when it last tried. When a later try fails, the last size stays, marked stale. The journal count no longer waits on any of this. Takes effect after Rails deployment."

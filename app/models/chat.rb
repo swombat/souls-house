@@ -354,7 +354,7 @@ class Chat < ApplicationRecord
     chats = chats.to_a
     active_runs = AgentRuntimeInteraction.working
       .where(chat_id: chats.map(&:id))
-      .pluck(:chat_id, :agent_id, Arel.sql(AgentRuntimeInteraction::WAKING_PHASE_SQL))
+      .pluck(:chat_id, :agent_id, Arel.sql(AgentRuntimeInteraction.waking_phase_sql))
     working = Hash.new { |hash, key| hash[key] = [] }
     waking = Hash.new { |hash, key| hash[key] = {} }
     active_runs.each do |chat_id, agent_id, is_waking|

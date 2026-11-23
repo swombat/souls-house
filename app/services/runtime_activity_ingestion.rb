@@ -44,9 +44,11 @@ class RuntimeActivityIngestion
       raise Invalid unless attempt.number == payload["attempt_number"]
       latest = attempt.number == run.agent_runtime_attempts.maximum(:number)
       prior_phase = attempt.snapshot["phase"]
+      prior_fresh = attempt.last_report_at.present? && attempt.last_report_at >= AgentRuntimeInteraction::REPORT_FRESHNESS.ago
+      prior_waking = prior_phase == "waking" && prior_fresh && !attempt.snapshot["fallback"]
       @subagents_shared = shared_narration?
       @subagents = RuntimeSubagents.new(@subagents_shared ? attempt.snapshot[RuntimeSubagents::KEY] : nil)
-      @subagents.gap! if attempt.last_report_at && attempt.last_report_at < 30.seconds.ago
+      @subagents.gap! if attempt.last_report_at && !prior_fresh
       detail_count = run.agent_runtime_attempts.sum(:detail_count)
       detail_bytes = run.agent_runtime_attempts.sum(:detail_bytes)
       events.sort_by { |event| event["seq"] }.each do |event|
@@ -85,7 +87,8 @@ class RuntimeActivityIngestion
       attempt.snapshot = snapshot
       attempt.last_report_at = Time.current
       state_changed = run.execution_state != prior_state
-      phase_changed = attempt.snapshot["phase"] != prior_phase
+      now_waking = attempt.snapshot["phase"] == "waking" && !attempt.snapshot["fallback"]
+      phase_changed = attempt.snapshot["phase"] != prior_phase || now_waking != prior_waking
       refresh_surfaces = latest && !run.finished_at? && phase_changed && !state_changed
       if latest && (attempt.last_broadcast_at.nil? || attempt.last_broadcast_at < 1.second.ago || state_changed || phase_changed || run.finished_at?)
         attempt.last_broadcast_at = Time.current

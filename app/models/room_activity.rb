@@ -23,7 +23,7 @@ class RoomActivity
       .pluck(
         :chat_id, :agent_id,
         Arel.sql("MAX(agent_runtime_interactions.started_at)"),
-        Arel.sql("BOOL_AND(#{AgentRuntimeInteraction::WAKING_PHASE_SQL})")
+        Arel.sql("BOOL_AND(#{AgentRuntimeInteraction.waking_phase_sql})")
       )
     return EMPTY if runs.empty?
 

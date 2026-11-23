@@ -1,7 +1,12 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel, shortDate } from '$lib/chat-display';
+  import {
+    commitmentMarkLabel,
+    handoffStuckLabel,
+    runErrorLabel,
+    shortDate,
+  } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
   import { Archive, ChatText, LockSimple, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';

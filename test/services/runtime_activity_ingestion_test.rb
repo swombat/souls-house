@@ -599,6 +599,50 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_not @run.as_chat_activity_json[:snapshot].key?("phase")
   end
 
+  test "stale waking report falls back to working on read until a fresh heartbeat arrives" do
+    account_channel = "Account:#{@chat.account.obfuscated_id}"
+    room_channel = "RoomActivity:#{@chat.account.obfuscated_id}"
+
+    freeze_time do
+      ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+      ingest(2, "turn.started")
+      ingest(3, "wake.started")
+
+      card = @run.reload.as_chat_activity_json
+      assert_equal "is waking up", card[:status_label]
+      assert_equal "live", card[:reporter_health]
+      assert_equal "waking", card[:snapshot]["phase"]
+      assert_equal [ @agent.to_param ], Chat.sidebar_json_for([ @chat ]).first["waking_agent_ids"]
+      assert_equal "waking", RoomActivity.summary_for(@chat.account)[:all].find { |entry| entry[:id] == @agent.to_param }[:phase]
+
+      travel 31.seconds
+      assert_equal "running", @run.reload.execution_state
+      assert_equal "waking", @run.agent_runtime_attempts.last.snapshot["phase"]
+
+      stale_card = @run.as_chat_activity_json
+      assert_equal "is working", stale_card[:status_label]
+      assert_equal "stale", stale_card[:reporter_health]
+      assert_not stale_card[:snapshot].key?("phase")
+      sidebar_row = Chat.sidebar_json_for([ @chat ]).first
+      assert_equal [ @agent.to_param ], sidebar_row["working_agent_ids"]
+      assert_empty sidebar_row["waking_agent_ids"]
+      assert_nil RoomActivity.summary_for(@chat.account)[:all].find { |entry| entry[:id] == @agent.to_param }[:phase]
+
+      assert_broadcast_on(account_channel, action: "refresh", prop: "chats") do
+        assert_broadcast_on(room_channel, action: "refresh") do
+          ingest(4, "heartbeat", { "operations" => [], "phase" => "waking", "detail_dropped" => 0 })
+        end
+      end
+
+      recovered_card = @run.reload.as_chat_activity_json
+      assert_equal "is waking up", recovered_card[:status_label]
+      assert_equal "live", recovered_card[:reporter_health]
+      assert_equal "waking", recovered_card[:snapshot]["phase"]
+      assert_equal [ @agent.to_param ], Chat.sidebar_json_for([ @chat ]).first["waking_agent_ids"]
+      assert_equal "waking", RoomActivity.summary_for(@chat.account)[:all].find { |entry| entry[:id] == @agent.to_param }[:phase]
+    end
+  end
+
   private
 
   def start_helpers

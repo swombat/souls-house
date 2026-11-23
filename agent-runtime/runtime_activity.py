@@ -77,6 +77,7 @@ class Reporter:
     SUBAGENT_STATUSES = frozenset(("pending_init", "running", "interrupted", "completed",
                                   "errored", "shutdown", "not_found"))
     WAKE_HOOK_EVENTS = frozenset(("session_start", "before_turn"))
+    WAKE_GRACE_SECONDS = 0.4
     CATEGORIES = {
         "command_execution": "command", "file_change": "files",
         "mcp_tool_call": "tool", "web_search": "search",
@@ -103,6 +104,10 @@ class Reporter:
         self.operations = {}
         self.subagents = {}
         self.wake_hooks = set()
+        self.wake_announced = False
+        self.wake_timer = None
+        self.wake_token = 0
+        self.wake_grace = self.WAKE_GRACE_SECONDS
         self.attempt_id = None
         self.number = 0
         self.seq = 0
@@ -140,7 +145,7 @@ class Reporter:
             if kind == "heartbeat":
                 data = {
                     "operations": list(self.operations.values()),
-                    "phase": "waking" if self.wake_hooks else None,
+                    "phase": "waking" if self.wake_announced else None,
                     "detail_dropped": self.dropped,
                 }
                 if self.share:
@@ -176,7 +181,7 @@ class Reporter:
             self.seq = 0
             self.operations = {}
             self.subagents = {}
-            self.wake_hooks = set()
+            self._clear_wake_hooks(emit_finished=False)
             # Each attempt has its own snapshot; send the plan again.
             self.last_plan = None
             self.emit("attempt.started", {"narration_capability": self.capability})
@@ -202,11 +207,12 @@ class Reporter:
             hook_id = event.get("id")
             if event.get("event_name") in self.WAKE_HOOK_EVENTS and isinstance(hook_id, str) and 0 < len(hook_id) <= 512:
                 with self.lock:
-                    if hook_id in self.wake_hooks or len(self.wake_hooks) < 64:
-                        was_waking = bool(self.wake_hooks)
+                    if not self.disabled and not self.closed and self.attempt_id and (
+                            hook_id in self.wake_hooks or len(self.wake_hooks) < 64):
+                        was_empty = not self.wake_hooks
                         self.wake_hooks.add(hook_id)
-                        if not was_waking:
-                            self.emit("wake.started")
+                        if was_empty and not self.wake_announced:
+                            self._arm_wake_timer()
         elif kind == "hook.completed":
             hook_id = event.get("id")
             if event.get("event_name") in self.WAKE_HOOK_EVENTS and isinstance(hook_id, str):
@@ -214,7 +220,7 @@ class Reporter:
                     if hook_id in self.wake_hooks:
                         self.wake_hooks.discard(hook_id)
                         if not self.wake_hooks:
-                            self.emit("wake.finished")
+                            self._clear_wake_hooks()
         elif kind == "turn.started":
             self.emit("turn.started")
             self.poll_plan()
@@ -449,17 +455,48 @@ class Reporter:
 
     def stream_gap(self, kind="stream.gap"):
         with self.lock:
-            self.wake_hooks.clear()
+            self._clear_wake_hooks(emit_finished=False)
             for child in self.subagents.values():
                 if child["status"] in ("pending_init", "running"):
                     child["status"] = "unknown"
             self.emit(kind)
 
-    def _clear_wake_hooks(self):
+    def _arm_wake_timer(self):
+        self._cancel_wake_timer()
+        if self.wake_grace <= 0:
+            self.wake_announced = True
+            self.emit("wake.started")
+            return
+        token = self.wake_token
+        attempt_id = self.attempt_id
+        timer = threading.Timer(self.wake_grace, self._announce_wake, args=(attempt_id, token))
+        timer.daemon = True
+        self.wake_timer = timer
+        timer.start()
+
+    def _cancel_wake_timer(self):
+        self.wake_token += 1
+        if self.wake_timer is not None:
+            self.wake_timer.cancel()
+            self.wake_timer = None
+
+    def _announce_wake(self, attempt_id, token):
         with self.lock:
-            if self.wake_hooks:
-                self.wake_hooks.clear()
-                self.emit("wake.finished")
+            if (self.disabled or self.closed or self.attempt_id != attempt_id
+                    or self.wake_token != token or not self.wake_hooks or self.wake_announced):
+                return
+            self.wake_timer = None
+            self.wake_announced = True
+            self.emit("wake.started")
+
+    def _clear_wake_hooks(self, emit_finished=True):
+        with self.lock:
+            self._cancel_wake_timer()
+            self.wake_hooks.clear()
+            if self.wake_announced:
+                self.wake_announced = False
+                if emit_finished:
+                    self.emit("wake.finished")
 
     @staticmethod
     def _text(value):
@@ -593,6 +630,10 @@ class Reporter:
                 pass
             for thread in readers:
                 thread.join(timeout=1)
+            with self.lock:
+                self._cancel_wake_timer()
+                if not self.wake_announced:
+                    self.wake_hooks.clear()
             for pipe in (proc.stdin, proc.stdout, proc.stderr):
                 pipe.close()
         # The run's last word on its plan, so the card settles where it ended.
@@ -618,7 +659,7 @@ class Reporter:
                                              self.silence.finish(time.time()))
         with self.lock:
             self.operations = {}
-            self.wake_hooks.clear()
+            self._clear_wake_hooks(emit_finished=False)
         self.emit("supervisor.finished", {
             "outcome": outcome, "telemetry": self._safe_telemetry(body.get("telemetry")),
             "runtime_status": body.get("status"), "returncode": body.get("returncode"),
