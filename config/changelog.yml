@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-23
+  title: Connecting a Google subscription works again
+  body: "Since the Antigravity update on 23 Nov, the Google sign-in link the house showed was cut short, and Google answered that a required parameter was missing. The house now takes the whole link from Antigravity itself instead of reading it off the screen, where it was wrapped over several lines. A brand-new resident's first sign-in could also fail with an invalid authentication response until it was restarted; its sign-in folders now belong to the resident from the first boot. Takes effect after Rails deployment and the resident image rebuild."
+- date: 2026-11-23
   title: A GitHub import of a home that's already linked says so
   body: "Importing a repository whose home is already linked to a resident in your account now stops at the form and names that resident: open the original import request to continue with them, or contact support if they're retired and you're trying to recover them. Until now such an import could stay in Provisioning with no message. Any import that fails during setup is now always marked failed. Requests already stuck in Provisioning aren't changed by this. Takes effect after Rails deployment."
 - date: 2026-11-23

@@ -238,6 +238,29 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes entrypoint, '--db "$CHAOS_JOURNALD_DB"'
   end
 
+  test "first boot hands the directories it creates to the agent user" do
+    # On a brand-new state volume the ownership pass must come after the
+    # directories it covers exist, or state/antigravity stays root-owned 0700
+    # and the Antigravity sign-in fails with PermissionError (Reed, 23 Nov).
+    entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
+    chown_loop = entrypoint.index('for path in "$AGENT_HOME/identity" "$AGENT_HOME/.chaos" "$AGENT_REPO_PATH" "$AGENT_HOME/work" "$AGENT_HOME/state"; do')
+    assert chown_loop, "the boot ownership pass is missing"
+    assert_match(/for path in [^\n]*; do\n\s+if \[ -d "\$path" \]; then\n\s+chown -R 1000:1000 "\$path"/, entrypoint[chown_loop..])
+
+    [
+      '"$AGENT_HOME/state/claude"',
+      '"$AGENT_HOME/state/antigravity"',
+      '"$AGENT_REPO_PATH/.chaos"',
+      '"$AGENT_HOME/work"',
+      '"$AGENT_HOME/identity/automation"'
+    ].each do |dir|
+      created = entrypoint.index(dir)
+      assert created, "#{dir} is no longer created at boot"
+      assert_operator created, :<, chown_loop, "#{dir} is created after the ownership pass"
+    end
+    assert_operator entrypoint.index("chmod 0700 \"$AGENT_HOME/state\""), :<, chown_loop
+  end
+
   test "runtime config installs missing providers through database settings" do
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
     settings = Rails.root.join("agent-runtime/runtime_settings.py").read
@@ -815,6 +838,69 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "https://accounts.google.com/o/oauth2/auth?state=private",
                  result.dig("state", "verification_url")
     assert_equal false, result.fetch("path_exists")
+  end
+
+  test "Gemini login never takes the sign-in link from the wrapped TUI on stdout" do
+    # agy 1.5.9 prints the link inside its TUI, wrapped at about 78 columns.
+    # The first wrapped line is a valid-looking but truncated URL; Google then
+    # answers "Required parameter is missing: response_type". The helper file
+    # carries the whole link and must be the one the house shows.
+    out = run_shim_python(<<~PY)
+      full = (
+          "https://accounts.google.com/o/oauth2/auth?access_type=offline"
+          "&client_id=1071006060591-example.apps.googleusercontent.com"
+          "&redirect_uri=https%3A%2F%2Fcodeassist.google.com%2Fauthcode"
+          "&response_type=code&scope=openid&state=private"
+      )
+      tui = [
+          "\\x1b[2J\\x1b[H  Sign in with Google\\n",
+          "  " + full[:76] + "\\n",
+          "  " + full[76:152] + "\\n",
+          "  " + full[152:] + "\\n",
+          "  Paste the authorization code:\\n",
+      ]
+
+      class Process:
+          stdout = iter(tui)
+          def poll(self): return None
+          def wait(self): return 1
+
+      process = Process()
+      mod._auth_process = process
+      mod._auth_state = {"status": "starting", "provider": "gemini"}
+      path = mod._antigravity_login_url_path()
+      path.parent.mkdir(parents=True, exist_ok=True)
+
+      seen = []
+      original_set = mod._auth_code_ready.set
+      def record():
+          if mod._auth_state.get("verification_url"):
+              seen.append(mod._auth_state["verification_url"])
+          original_set()
+      mod._auth_code_ready.set = record
+      mod._provider_account_status = lambda provider: {"status": "failed", "provider": provider}
+      mod._antigravity_oauth_token_fingerprint = lambda: None
+
+      mod._monitor_auth_process(process, "gemini", None)
+      from_stdout = list(seen)
+
+      mod._auth_process = process
+      mod._auth_state = {"status": "starting", "provider": "gemini"}
+      path.write_text(full + "\\n")
+      mod._monitor_antigravity_login_url(process)
+      print(json.dumps({
+          "from_stdout": from_stdout,
+          "state": mod._auth_state,
+          "full": full,
+      }))
+    PY
+
+    result = JSON.parse(out)
+    assert_empty result.fetch("from_stdout"),
+                 "a wrapped TUI line must not become the verification URL"
+    assert_equal "awaiting_code", result.dig("state", "status")
+    assert_equal result.fetch("full"), result.dig("state", "verification_url")
+    assert_includes result.dig("state", "verification_url"), "response_type=code"
   end
 
   test "Gemini login does not delete a URL created after a missed read" do

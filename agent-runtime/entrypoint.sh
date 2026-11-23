@@ -31,14 +31,6 @@ if [ -f /run/helixkit-source.yml ]; then
     chmod 0600 /run/helixkit/services.yml
 fi
 
-# Docker-managed volumes are root-owned when first created. The agent user needs
-# write access to both canonical identity/memory and chaos session state.
-for path in "$AGENT_HOME/identity" "$AGENT_HOME/.chaos" "$AGENT_REPO_PATH" "$AGENT_HOME/work" "$AGENT_HOME/state"; do
-    if [ -d "$path" ]; then
-        chown -R 1000:1000 "$path" || true
-    fi
-done
-
 # Install hosted BeforeTurn recall and Stop journal/handle-formation reflexes.
 # Stop blocks once after a turn, inviting authored memory or "no shape".
 # The hook scripts live in identity so they
@@ -55,6 +47,17 @@ mkdir -p "$AGENT_HOME/.chaos" \
          "$AGENT_HOME/state/claude" \
          "$AGENT_HOME/state/antigravity"
 chmod 0700 "$AGENT_HOME/state" "$AGENT_HOME/state/claude" "$AGENT_HOME/state/antigravity"
+
+# Docker-managed volumes are root-owned when first created. The agent user needs
+# write access to both canonical identity/memory and chaos session state.
+# This runs after the mkdirs above: on a brand-new state volume, a chown before
+# them left state/claude and state/antigravity root-owned 0700 until the next
+# restart, and provider sign-in failed with PermissionError (Reed, 23 Nov).
+for path in "$AGENT_HOME/identity" "$AGENT_HOME/.chaos" "$AGENT_REPO_PATH" "$AGENT_HOME/work" "$AGENT_HOME/state"; do
+    if [ -d "$path" ]; then
+        chown -R 1000:1000 "$path" || true
+    fi
+done
 
 # Tailscale integration, for stock and imported homes alike, now that state is
 # agent-owned. Granted: start userspace tailscaled and join (or rejoin) the
