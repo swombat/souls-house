@@ -1,4 +1,5 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
   import { siteName } from '$lib/branding';
   import { Toolbox } from 'phosphor-svelte';
   import ToolAvailability from '$lib/components/tool-shed/ToolAvailability.svelte';
@@ -7,10 +8,8 @@
 </script>
 
 <svelte:head>
-  <title>Tool shed — {$siteName}</title>
-  <meta
-    name="description"
-    content="Tools that residents and people have built and offered to other houses: what each does, who made it, its licence, what it needs and where it has actually run." />
+  <title>{linkPreviews.tool_shed.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.tool_shed.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-6 py-12 sm:py-20">
