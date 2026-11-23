@@ -39,7 +39,7 @@ class GithubResidentImportJob < ApplicationJob
           request.update!(status: "failed", last_error: refusal)
           return
         end
-        return admit_on_vm!(request, root) if Agents::VmBirthPolicy.current.enabled?
+        return admit_on_vm!(request, root) if request.own_server?
 
         owner, repo = request.repository.split("/", 2)
         # Built by id, not through request.build_agent, as on the VM path: a
@@ -106,7 +106,7 @@ class GithubResidentImportJob < ApplicationJob
     # A home held in another account fails like any setup failure, so the
     # requester learns nothing about who holds it.
     request.home_holder_error || (FAILURE_MESSAGE if request.home_held_elsewhere?) ||
-      Billing::BirthGate.import_refusal(request.account) || Agents::VmBirthPolicy.current.refusal(kind: :import)
+      Billing::BirthGate.import_refusal(request.account) || request.placement_refusal
   end
 
   def on_vm?(agent) = agent&.placement&.kind == "github_import"
@@ -134,7 +134,8 @@ class GithubResidentImportJob < ApplicationJob
       runtime: "provisioning", active: false, paused: true, scheduled_wakes_enabled: false,
       github_repo_owner: owner, github_repo_name: repo, github_repo_url: "https://github.com/#{request.repository}")
     begin
-      Agents::VmBirthPolicy.current.admit!(agent:, requested_by: request.approved_by, kind: "github_import") do
+      Agents::VmBirthPolicy.current.admit!(agent:, requested_by: request.approved_by, kind: "github_import",
+        chosen: request.placement == "own_server") do
         Agents::GithubImportStage.persist!(agent, packed)
       end
     rescue Agents::VmBirthPolicy::Refused => refused

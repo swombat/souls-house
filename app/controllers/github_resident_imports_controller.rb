@@ -15,12 +15,15 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def create
-    if (refusal = Billing::BirthGate.import_refusal(current_account) || Agents::VmBirthPolicy.current.refusal(kind: :import))
+    placement = chosen_placement
+    if (refusal = Billing::BirthGate.import_refusal(current_account) ||
+                  Agents::VmBirthPolicy.current.refusal(kind: :import, own_server: placement && placement == "own_server"))
       return redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ refusal ] } }
     end
 
     attrs = params.require(:github_resident_import).permit(:name, :model_id, :service_connection_id, :branch, :sync_strategy)
     attrs[:sync_strategy] ||= "existing"
+    attrs[:placement] = placement
     connection = current_account.service_connections.find_by_public_id!(attrs.delete(:service_connection_id))
     raise Account::NotAuthorized unless connection.provider == "github" && connection.provisionable_by?(Current.user)
     raise ArgumentError, "Choose a supported model" unless (Chat::MODELS + HouseInference::Offering.models).any? { |model| model[:model_id] == attrs[:model_id] }
@@ -94,6 +97,30 @@ class GithubResidentImportsController < ApplicationController
     redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ message ] } }
   end
 
+  # Only a site admin chooses where an import goes; anyone else's request,
+  # and an admin's that names no placement, follows the site setting.
+  def chosen_placement
+    return unless Current.user.is_site_admin?
+
+    value = params.dig(:github_resident_import, :placement).presence
+    return if value.nil? || value == "site_setting"
+    raise ArgumentError, "Choose main server or own server" unless GithubResidentImport::PLACEMENTS.include?(value)
+
+    value
+  end
+
+  def placement_options
+    return unless Current.user.is_site_admin?
+
+    {
+      default: Agents::VmBirthPolicy.current.enabled? ? "own_server" : "main_server",
+      choices: [
+        { value: "main_server", label: "Main server" },
+        { value: "own_server", label: "Its own server" }
+      ]
+    }
+  end
+
   def require_import_authority!
     head :forbidden unless GithubResidentImport.requestable_by?(current_account, Current.user)
   end
@@ -112,6 +139,7 @@ class GithubResidentImportsController < ApplicationController
         repository: connection.credential_metadata["repository"], token_metadata: token_props(connection_metadata(connection)) } },
       models: (Chat::MODELS + HouseInference::Offering.models).map { |model| model.slice(:model_id, :label, :group) },
       sync_strategies: [ { value: "existing", label: "Keep existing sync" }, { value: "standard", label: "Use standard two-way Git sync" } ],
+      placement_options: placement_options,
       submit_url: account_github_resident_imports_path(current_account),
       approve_url: can_manage_import ? approve_account_github_resident_import_path(current_account, @import) : nil,
       refresh_url: can_manage_import ? refresh_account_github_resident_import_path(current_account, @import) : nil,
@@ -131,6 +159,7 @@ class GithubResidentImportsController < ApplicationController
       repository: @import.repository, branch: @import.branch, commit_sha: @import.commit_sha,
       portable_home_id: @import.portable_home_id, home_profile: "portable_v1",
       sync_strategy: @import.sync_strategy, sync_auto_commit_paths: @import.sync_auto_commit_paths,
+      placement: @import.placement,
       sync_append_only_paths: @import.sync_append_only_paths,
       sync_allow_destructive_paths: @import.sync_allow_destructive_paths,
       sync_protected_paths: @import.sync_auto_commit_paths, sync_shrink_minimum_ratio: 0.5,

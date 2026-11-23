@@ -899,6 +899,30 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     [ request, agent.reload ]
   end
 
+  test "a site admin's own-server choice is admitted to its own server with the switch off, and checked like a birth" do
+    with_house do
+      @setting.update!(new_residents_on_vm: false)
+      request = import_request(placement: "own_server")
+      approve_fixture(request)
+      root = reviewed_checkout
+      assert_difference("Agent.count", 1) do
+        assert_enqueued_with(job: ProvisionVmAgentJob) { run_import(request, root) }
+      end
+      placement = request.agent.placement
+      assert_equal "provisioning", request.status
+      assert_equal "github_import", placement.kind
+      assert_equal "pending", placement.state
+
+      # The choice skips only the switch: the server limit still refuses.
+      @setting.update!(vm_resident_limit: 1)
+      second = import_request(connection: request.service_connection, placement: "own_server", portable_home_id: "another-portable-home")
+      approve_fixture(second)
+      assert_no_difference("Agent.count") { run_import(second, reviewed_checkout) }
+      assert_equal "failed", second.status
+      assert_equal Agents::VmBirthPolicy::LIMIT_REFUSAL, second.last_error
+    end
+  end
+
   test "a GitHub import on its own VM: admitted at import, seeded from the reviewed checkout, trust-gated, then ready" do
     with_house do
       request = approved_import

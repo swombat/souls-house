@@ -379,3 +379,27 @@ test('terminal failures do not poll indefinitely', async () => {
     vi.useRealTimers();
   }
 });
+
+test('a site admin chooses main server or its own server, starting from the site setting', async () => {
+  render(GithubImport, {
+    ...props,
+    placement_options: {
+      default: 'own_server',
+      choices: [
+        { value: 'main_server', label: 'Main server' },
+        { value: 'own_server', label: 'Its own server' },
+      ],
+    },
+  });
+  expect(screen.getByRole('radio', { name: 'Its own server (site setting)' })).toBeChecked();
+  await fireEvent.click(screen.getByRole('radio', { name: 'Main server' }));
+  await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Placed' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Request account approval' }));
+  expect(get(useForm.mock.results.at(-1).value).github_resident_import.placement).toBe('main_server');
+});
+
+test('anyone else sees no placement choice and sends none', () => {
+  render(GithubImport, props);
+  expect(screen.queryByTestId('github-import-placement')).not.toBeInTheDocument();
+  expect(useForm.mock.calls.at(-1)[0].github_resident_import).not.toHaveProperty('placement');
+});
