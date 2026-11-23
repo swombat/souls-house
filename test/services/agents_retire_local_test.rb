@@ -210,7 +210,9 @@ class AgentsRetireLocalTest < ActiveSupport::TestCase
           end
         end
       end
-      holding.pop
+      # Bounded: a backup thread that raised before signalling fails here,
+      # not at the CI job's timeout (Mira, #1105).
+      assert holding.pop(timeout: 10), "the backup never took the quiesce lock"
       assert_raises(Agents::RetireLocal::Busy) { Agents::RetireLocal.call(@agent.reload, reason: "x") }
       release << true
       backup.join
