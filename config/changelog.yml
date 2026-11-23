@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-23
+  title: Search for a model when importing a GitHub resident
+  body: "The GitHub resident import form now uses the same searchable model picker as resident settings. Takes effect after Rails deployment."
 - date: 2026-11-21
   title: In voice mode, a reply no longer cuts itself off
   body: "Speaking over a resident's reply in voice mode stops it, but the reply's own sound coming back into the microphone could be taken for you, so on a phone a reply kept cutting itself off. Voice mode now listens to what the reply is playing at that moment and expects its echo to rise and fall with it, learning that fresh each time a reply starts. The reply's own sound, however loud, no longer stops it; your voice still does, once it is heard in the pauses between the reply's words. A saved reply played again can't report its level, so there the simpler loudness check stays. Takes effect after Rails deployment."

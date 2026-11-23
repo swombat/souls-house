@@ -11,6 +11,7 @@
   let {
     groupedModels = {},
     value = $bindable(),
+    id,
     triggerClass = 'w-full max-w-md',
     contentClass = 'max-h-80',
     disabled = false,
@@ -64,13 +65,16 @@
 
 <Popover.Root bind:open>
   <Popover.Trigger
+    {id}
     {disabled}
+    type="button"
+    aria-describedby={id ? `${id}-value` : undefined}
     aria-haspopup="listbox"
     class={cn(
       'border-input focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50 shadow-xs flex h-9 select-none items-center justify-between gap-2 whitespace-nowrap rounded-md border bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50',
       triggerClass
     )}>
-    <span class="truncate">{findModelLabel(groupedModels, value)}</span>
+    <span id={id ? `${id}-value` : undefined} class="truncate">{findModelLabel(groupedModels, value)}</span>
     <ChevronDownIcon class="size-4 shrink-0 text-muted-foreground opacity-50" aria-hidden="true" />
   </Popover.Trigger>
   <Popover.Content class="w-(--bits-popover-anchor-width) min-w-64 p-1" align="start">

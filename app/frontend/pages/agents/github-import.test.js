@@ -3,6 +3,15 @@ import { get } from 'svelte/store';
 import { router, useForm } from '@inertiajs/svelte';
 import GithubImport from './github-import.svelte';
 
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+});
+afterEach(() => {
+  if (originalScrollIntoView) HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  else delete HTMLElement.prototype.scrollIntoView;
+});
+
 const authority = {
   token_kind: 'fine_grained',
   oauth_scopes: [],
@@ -79,6 +88,29 @@ test('standard sync is an explicit choice with manifest-owned paths, not a paths
   expect(form.github_resident_import).not.toHaveProperty('sync_auto_commit_paths');
 });
 
+test('searches the model list and submits the chosen model only on request', async () => {
+  render(GithubImport, {
+    ...props,
+    models: [...props.models, { model_id: 'anthropic/alternate', label: 'Alternate', group: 'Anthropic' }],
+  });
+  await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Existing Resident' } });
+  const form = get(useForm.mock.results.at(-1).value);
+  const picker = screen.getByRole('button', { name: 'Model' });
+  expect(picker).toHaveAccessibleDescription('Test model');
+  await fireEvent.click(picker);
+  const search = await screen.findByRole('combobox', { name: 'Find a model' });
+  await fireEvent.input(search, { target: { value: 'anthropic alt' } });
+  expect(screen.queryByRole('option', { name: 'Test model' })).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Alternate' })).toBeVisible();
+  await fireEvent.keyDown(search, { key: 'Enter' });
+  expect(picker).toHaveAccessibleDescription('Alternate');
+  expect(form.post).not.toHaveBeenCalled();
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Request account approval' }));
+  expect(form.post).toHaveBeenCalledOnce();
+  expect(form.github_resident_import.model_id).toBe('anthropic/alternate');
+});
+
 test.each(['classic', 'unknown', 'unexpected_kind'])(
   'blocks %s credentials even when a connection exists',
   async (kind) => {
@@ -146,6 +178,7 @@ test('real-shaped processing state disables duplicate request submission', async
   form.update((value) => ({ ...value, processing: true }));
   expect(await screen.findByRole('button', { name: 'Submitting…' })).toBeDisabled();
   expect(screen.getByLabelText('GitHub connection')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Model' })).toBeDisabled();
   expect(get(form).post).not.toHaveBeenCalled();
 });
 

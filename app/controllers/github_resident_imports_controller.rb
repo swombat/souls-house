@@ -103,7 +103,7 @@ class GithubResidentImportsController < ApplicationController
         connection.provisionable_by?(Current.user)
       }.map { |connection| { id: connection.public_id, label: connection.display_label,
         repository: connection.credential_metadata["repository"], token_metadata: token_props(connection_metadata(connection)) } },
-      models: (Chat::MODELS + HouseInference::Offering.models).map { |model| model.slice(:model_id, :label) },
+      models: (Chat::MODELS + HouseInference::Offering.models).map { |model| model.slice(:model_id, :label, :group) },
       sync_strategies: [ { value: "existing", label: "Keep existing sync" }, { value: "standard", label: "Use standard two-way Git sync" } ],
       submit_url: account_github_resident_imports_path(current_account),
       approve_url: can_manage_import ? approve_account_github_resident_import_path(current_account, @import) : nil,
