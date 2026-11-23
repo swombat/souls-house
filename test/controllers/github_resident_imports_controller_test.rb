@@ -131,7 +131,28 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_account_github_resident_import_path(@account)
     follow_redirect!
     error = inertia_shared_props.dig("errors", "base").first
-    assert_includes error, "already belongs to the resident Reed in this account"
+    assert_equal "Import request failed. This home is already linked to Reed. To continue with that resident, open the original import request.", error
+  end
+
+  test "a request for a home held in another account is accepted without saying so" do
+    connection = import_connection
+    other = accounts(:team_account).agents.new(name: "Elsewhere", model_id: Chat::MODELS.first[:model_id],
+      home_profile: "portable_v1", portable_home_id: "synthetic-portable-home", runtime: "offline", active: false, paused: true)
+    other.save!(validate: false)
+    Agents::GithubImportSource.stub(:new, source_stub) do
+      assert_difference "GithubResidentImport.count", 1 do
+        post account_github_resident_imports_path(@account), params: {
+          github_resident_import: { name: "Same id", model_id: Chat::MODELS.first[:model_id],
+            service_connection_id: connection.public_id, branch: "main" }
+        }
+      end
+    end
+    created = GithubResidentImport.order(:id).last
+    assert_redirected_to account_github_resident_import_path(@account, created)
+    follow_redirect!
+    assert_not_includes response.body, "linked to"
+    assert_not_includes response.body, "Elsewhere"
+    assert_not_includes response.body, "another account"
   end
 
   test "new requests keep existing strategy by default" do

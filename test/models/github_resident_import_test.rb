@@ -283,22 +283,29 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     assert_equal fingerprint, request.approved_credential_fingerprint
   end
 
-  test "a request for a home another resident holds is refused with a sentence, and the request's own resident is not another" do
+  test "a home held in this account is refused with a sentence; one held elsewhere is never confirmed" do
     first = import_request
     holder = accounts(:personal_account).agents.new(github_resident_import_id: first.id, name: "Reed",
       model_id: first.model_id, home_profile: "portable_v1", portable_home_id: first.portable_home_id,
       runtime: "offline", active: false, paused: true)
     holder.save!(validate: false)
     assert_nil first.reload.home_holder_error, "the resident this request made does not block its own retries"
+    assert_not first.home_held_elsewhere?
 
     refused = assert_raises(ActiveRecord::RecordInvalid) { import_request(connection: first.service_connection, name: "Again") }
-    assert_includes refused.record.errors[:portable_home_id].first,
-      "already belongs to the resident Reed in this account"
+    assert_equal "This home is already linked to Reed. To continue with that resident, open the original import request.",
+      refused.record.errors[:portable_home_id].first
+
+    holder.update_columns(deprecated_at: Time.current)
+    retired = GithubResidentImport.new(account: first.account, portable_home_id: first.portable_home_id)
+    assert_equal "This home is still linked to retired resident Reed. Contact support if you're trying to recover that resident.",
+      retired.home_holder_error
 
     holder.update_columns(account_id: accounts(:team_account).id)
-    elsewhere = GithubResidentImport.new(account: first.account, portable_home_id: first.portable_home_id)
-    assert_includes elsewhere.home_holder_error, "a resident in another account"
-    assert_not_includes elsewhere.home_holder_error, "Reed", "another account's resident is never named"
+    elsewhere = import_request(connection: first.service_connection, name: "Elsewhere")
+    assert elsewhere.persisted?, "the form does not reveal that another account holds the id"
+    assert_nil elsewhere.home_holder_error
+    assert elsewhere.home_held_elsewhere?
   end
 
 end

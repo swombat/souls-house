@@ -1,5 +1,7 @@
 class GithubResidentImportJob < ApplicationJob
 
+  FAILURE_MESSAGE = "Import or runtime setup failed. The existing home was preserved; review setup and approval before retrying.".freeze
+
   queue_as :default
 
   def perform(id)
@@ -90,7 +92,7 @@ class GithubResidentImportJob < ApplicationJob
       rescue StandardError => agent_error
         Rails.logger.error("GitHub resident import #{id}: resident not paused after failure (#{agent_error.class})")
       end
-      request.update!(status: "failed", last_error: "Import or runtime setup failed. The existing home was preserved; review setup and approval before retrying.")
+      request.update!(status: "failed", last_error: FAILURE_MESSAGE)
     end
     Rails.logger.error("GitHub resident import #{id} failed (#{error.class})")
     raise
@@ -101,8 +103,10 @@ class GithubResidentImportJob < ApplicationJob
   # Why a request with no resident yet can't make one now. A retry for a
   # resident already created is never refused here.
   def new_resident_refusal(request)
-    request.home_holder_error || Billing::BirthGate.import_refusal(request.account) ||
-      Agents::VmBirthPolicy.current.refusal(kind: :import)
+    # A home held in another account fails like any setup failure, so the
+    # requester learns nothing about who holds it.
+    request.home_holder_error || (FAILURE_MESSAGE if request.home_held_elsewhere?) ||
+      Billing::BirthGate.import_refusal(request.account) || Agents::VmBirthPolicy.current.refusal(kind: :import)
   end
 
   def on_vm?(agent) = agent&.placement&.kind == "github_import"

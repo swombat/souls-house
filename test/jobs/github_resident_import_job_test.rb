@@ -218,7 +218,7 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     second.reload
     assert_equal "failed", second.status
     assert_equal second.home_holder_error, second.last_error
-    assert_includes second.last_error, "already belongs to the resident #{holder.name} in this account"
+    assert_equal "This home is already linked to #{holder.name}. To continue with that resident, open the original import request.", second.last_error
     assert_nil second.agent
     assert_equal "needs_runtime_trust", first.reload.status, "the resident that holds the home is untouched"
   end
@@ -241,7 +241,7 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     end
     second.reload
     assert_equal "failed", second.status
-    assert_includes second.last_error, "already belongs to the resident"
+    assert_includes second.last_error, "already linked to"
     assert_nil second.agent
   end
 
@@ -266,6 +266,23 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     assert_equal "failed", fresh.status, "never left provisioning with no message"
     assert_match(/Import or runtime setup failed/, fresh.last_error)
     assert_nil fresh.agent
+  end
+
+  test "a home held in another account fails like any setup failure and confirms nothing" do
+    first = import_request
+    second = import_request(connection: first.service_connection, name: "Second try")
+    approve_fixture(second)
+    accounts(:team_account).agents.new(name: "Elsewhere", model_id: first.model_id, home_profile: "portable_v1",
+      portable_home_id: first.portable_home_id, runtime: "offline", active: false, paused: true).save!(validate: false)
+    Agents::GithubImportSource.stub(:new, ->(*) { flunk "refused before the repository is fetched" }) do
+      assert_no_difference "Agent.count" do
+        GithubResidentImportJob.perform_now(second.id)
+      end
+    end
+    second.reload
+    assert_equal "failed", second.status
+    assert_equal GithubResidentImportJob::FAILURE_MESSAGE, second.last_error
+    assert_nil second.agent
   end
 
 end

@@ -1163,7 +1163,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         run_import(second, root)
       end
       assert_equal "failed", second.status
-      assert_includes second.last_error, "already belongs to the resident #{first.agent.name}"
+      assert_includes second.last_error, "already linked to #{first.agent.name}"
       assert_nil second.agent
     end
   end
