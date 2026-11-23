@@ -7,19 +7,13 @@ class AgentHomeStorageJobTest < ActiveJob::TestCase
     @agent.update_columns(runtime: "external", home_storage: {}, home_storage_requested_at: nil, storage_usage: {})
   end
 
-  test "a local resident already measured daily is never walked from a card" do
-    @agent.update_columns(storage_usage: { "status" => "measured", "bytes" => 5 })
-    assert_no_enqueued_jobs { AgentHomeStorageJob.request_refresh(@agent, remote: false) }
-  end
-
-  test "a local resident never measured gets one first walk by the daily walker, not a second walker" do
-    assert_enqueued_jobs 1, only: AgentStorageUsageJob do
-      3.times { AgentHomeStorageJob.request_refresh(@agent, remote: false) }
+  # A page of never-measured residents would fill the shared worker (Mira).
+  test "a card never starts a walk on the house host, measured or not" do
+    [ {}, { "status" => "measured", "bytes" => 5 } ].each do |usage|
+      @agent.update_columns(storage_usage: usage, home_storage_requested_at: nil)
+      assert_no_enqueued_jobs { 3.times { AgentHomeStorageJob.request_refresh(@agent, remote: false) } }
     end
-    assert_no_enqueued_jobs only: AgentHomeStorageJob
-    travel 61.minutes do
-      assert_enqueued_jobs(1, only: AgentStorageUsageJob) { AgentHomeStorageJob.request_refresh(@agent, remote: false) }
-    end
+    assert_nil @agent.reload.home_storage_requested_at
   end
 
   test "a VM resident is walked by its runner at most once an hour, on the background queue" do

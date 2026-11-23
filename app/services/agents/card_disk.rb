@@ -7,6 +7,7 @@ module Agents
   #   measured_at  when that size was found
   #   attempted_at when the latest walk was tried
   #   reason       why an unavailable walk failed, in the house's words
+  #   partial      true when the walk found only some of the volumes
   module CardDisk
 
     module_function
@@ -26,7 +27,9 @@ module Agents
     def local(usage)
       base = { "bytes" => usage["bytes"], "measured_at" => usage["measured_at"], "attempted_at" => usage["checked_at"] }
       case usage["status"]
-      when "measured", "partial" then base.merge("status" => "measured")
+      when "measured" then base.merge("status" => "measured")
+      # Some of its volumes were missing: a size, but not the whole home's.
+      when "partial" then base.merge("status" => "measured", "partial" => true)
       when "unavailable"
         if out_of_time?(usage)
           base.merge("status" => "too_slow")

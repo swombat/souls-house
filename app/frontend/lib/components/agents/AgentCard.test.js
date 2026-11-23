@@ -69,6 +69,11 @@ test.each([
     'updates itself',
   ],
   [
+    { status: 'measured', partial: true, bytes: 1024 ** 3, measured_at: '2026-11-23T04:20:00Z' },
+    '1.0 GiB (partial)',
+    'Measured',
+  ],
+  [
     {
       status: 'too_slow',
       bytes: 2 * 1024 ** 3,

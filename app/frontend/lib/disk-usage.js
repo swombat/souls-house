@@ -10,7 +10,8 @@ export function diskSize(bytes) {
 // "can't be measured".
 export function diskNote(storage) {
   if (!storage?.status) return null;
-  if (storage.bytes != null) return storage.status === 'measured' ? null : '(stale)';
+  if (storage.bytes != null && storage.status === 'measured') return storage.partial ? '(partial)' : null;
+  if (storage.bytes != null) return '(stale)';
   if (storage.status === 'too_slow') return '(too large to measure)';
   return '(unavailable)';
 }

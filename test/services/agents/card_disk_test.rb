@@ -16,7 +16,7 @@ class Agents::CardDiskTest < ActiveSupport::TestCase
                    "measured_at" => "2026-11-23T04:20:13Z", "checked_at" => "2026-11-23T04:20:13Z", "attempt_seconds" => 109.4 })
     assert_equal({ "status" => "measured", "bytes" => 120_500_000_000, "measured_at" => "2026-11-23T04:20:13Z",
                    "attempted_at" => "2026-11-23T04:20:13Z" }, disk)
-    assert_equal "measured", local({ "status" => "partial", "bytes" => 3 })["status"]
+    assert_equal [ "measured", true ], local({ "status" => "partial", "bytes" => 3 }).values_at("status", "partial")
   end
 
   test "a failed daily walk keeps its last size, and says whether it ran out of time" do
