@@ -64,7 +64,7 @@ module Agent::RuntimeAvailability
     end
 
     raise Unavailable.new(
-      "#{name} is unavailable#{deprecated? ? ': its inline runtime has been retired' : ''}",
+      "#{name} is unavailable#{deprecated? ? ': it has been retired' : ''}",
       code: unavailability_reason
     )
   end
