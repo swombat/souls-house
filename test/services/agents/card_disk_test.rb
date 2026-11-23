@@ -24,6 +24,10 @@ class Agents::CardDiskTest < ActiveSupport::TestCase
     assert_equal [ "too_slow", 9, "2026-11-23T04:25:00Z" ], timeout.values_at("status", "bytes", "attempted_at")
     failed = local({ "status" => "unavailable", "failure" => "docker_unavailable" })
     assert_equal({ "status" => "unavailable", "reason" => "failed" }, failed)
+    # The walker's own timeout kills du: du_failed after its whole budget.
+    budget = Agents::StorageUsage::DU_SECONDS
+    assert_equal "too_slow", local({ "status" => "unavailable", "failure" => "du_failed", "attempt_seconds" => budget + 0.4 })["status"]
+    assert_equal "unavailable", local({ "status" => "unavailable", "failure" => "du_failed", "attempt_seconds" => 2.0 })["status"]
   end
 
   test "a VM resident shows its runner's walk, and only the card's fields" do

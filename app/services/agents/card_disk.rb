@@ -28,13 +28,22 @@ module Agents
       case usage["status"]
       when "measured", "partial" then base.merge("status" => "measured")
       when "unavailable"
-        if usage["failure"] == "timeout"
+        if out_of_time?(usage)
           base.merge("status" => "too_slow")
         else
           base.merge("status" => "unavailable", "reason" => "failed")
         end
       else {}
       end.compact
+    end
+
+    # The daily walker's own busybox timeout kills du, which then reads as
+    # du_failed, not timeout ("timeout" is only the outer Ruby limit). A
+    # du_failed walk that lasted its whole budget ran out of time (Mira, #1111).
+    def out_of_time?(usage)
+      return true if usage["failure"] == "timeout"
+
+      usage["failure"] == "du_failed" && usage["attempt_seconds"].to_f >= Agents::StorageUsage::DU_SECONDS
     end
 
   end
