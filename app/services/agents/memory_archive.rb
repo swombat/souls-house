@@ -5,6 +5,12 @@ module Agents
   class MemoryArchive
     class ReadError < StandardError; end
 
+    # The journals layer is read by the same rule as the card's count
+    # (journal_rule.py), so the tab and the card can't disagree about what an
+    # entry is or where the journal lives.
+    SCRIPT = (Agents::JournalEntryStats::RULE + "\n" +
+              Rails.root.join("app/services/agents/memory_archive.py").read).freeze
+
     def initialize(agent)
       @agent = agent
     end
@@ -22,7 +28,8 @@ module Agents
     private
 
     def snapshot(mode)
-      Rails.cache.fetch([ "resident-memory-v1", @agent.id, @agent.uuid, @agent.container_name, mode ], expires_in: 2.minutes) do
+      Rails.cache.fetch([ "resident-memory-v2", @agent.id, @agent.uuid, @agent.container_name, @agent.journal_source, mode ],
+                        expires_in: 2.minutes) do
         read(mode).merge("measured_at" => Time.current.iso8601)
       end
     rescue ReadError
@@ -33,8 +40,7 @@ module Agents
       raise ReadError if @agent.container_name.blank?
       raise ReadError if @agent.sandbox_host.present? && @agent.sandbox_host != Config.sandbox_host
       Agents::Resources.new(@agent).verify_existing!
-      script = Rails.root.join("app/services/agents/memory_archive.py").read
-      JSON.parse(capture(script, { mode: mode, **arguments }.to_json))
+      JSON.parse(capture(SCRIPT, { mode: mode, journal_source: @agent.journal_source, **arguments }.to_json))
     rescue Agents::Resources::OwnershipError, Timeout::Error, SystemCallError, JSON::ParserError
       raise ReadError
     end

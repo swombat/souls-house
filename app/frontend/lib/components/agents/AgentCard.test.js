@@ -28,6 +28,14 @@ test('keeps a failed measurement visibly stale', () => {
   expect(screen.getByLabelText('Journal entries').parentElement).toHaveTextContent('27 (stale)');
 });
 
+test('says not shared, not zero, when the home keeps its journal to itself', () => {
+  render(AgentCard, { agent: { ...agent, journal_entry_stats: { status: 'not_shared' } }, accountId: 'test' });
+  const stat = screen.getByLabelText('Journal entries').parentElement;
+  expect(stat).toHaveTextContent('not shared');
+  expect(stat).not.toHaveTextContent('—');
+  expect(stat).not.toHaveTextContent('unavailable');
+});
+
 test('distinguishes an unmeasured count from zero', () => {
   render(AgentCard, { agent: { ...agent, journal_entry_stats: {} }, accountId: 'test' });
   expect(screen.getByLabelText('Journal entries').parentElement).toHaveTextContent('—');

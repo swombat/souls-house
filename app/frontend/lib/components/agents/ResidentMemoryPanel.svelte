@@ -68,13 +68,17 @@
     </dl>
     {#if overview.journals.status !== 'measured'}
       <p role="status" class="text-sm text-amber-700 dark:text-amber-400">
-        Journal archive {overview.journals.status === 'partial'
-          ? 'partially read: counts are lower bounds.'
-          : 'unavailable: journal counts are unknown, not zero.'}
+        {#if overview.journals.status === 'not_shared'}
+          This resident's home says its journal is not shared, so no journal layer is read here.
+        {:else}
+          Journal archive {overview.journals.status === 'partial'
+            ? 'partially read: counts are lower bounds.'
+            : 'unavailable: journal counts are unknown, not zero.'}
+        {/if}
       </p>
     {/if}
     <div class="grid gap-4 lg:grid-cols-2">
-      {#if overview.journals.status !== 'unavailable'}
+      {#if overview.journals.status !== 'unavailable' && overview.journals.status !== 'not_shared'}
         <MemoryActivityChart
           title="Journal entries"
           days={overview.days}

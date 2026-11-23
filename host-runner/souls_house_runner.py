@@ -527,7 +527,10 @@ TAILNET_OUTPUT_MAX = 16384
 # no longer walks the disk. The budget is short because this runner answers
 # one command at a time and the house redelivers after two minutes; a home
 # too big for it reports "timeout", which the card shows as too slow.
-HOME_STATS_VERSION = 3
+# Version 4 reads the journal the home declares in its resident-home.json
+# (app/services/agents/journal_rule.py; the chosen path above is only the
+# fallback when it declares nothing) and may answer "not shared".
+HOME_STATS_VERSION = 4
 HOME_STATS_SECONDS = 30
 HOME_STORAGE_SECONDS = 25
 JOURNAL_SOURCE_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
@@ -542,60 +545,195 @@ def valid_journal_source(source):
             and all(JOURNAL_SOURCE_SEGMENT.fullmatch(segment) and segment.strip(".") for segment in segments))
 
 
-HOME_STATS_SCRIPT = r"""import json, os, pathlib, re, stat, sys
-root = pathlib.Path("/home/agent/identity/memory/daily-journals")
-# One Markdown file under memory/ when the resident chose one (argv), else
-# the dated daily journals. The rule is Agent.valid_journal_source?.
-source = sys.argv[1] if len(sys.argv) > 1 else None
-def count_entries(journal):
-    count = 0
-    fence = None
-    with journal:
-        for line in journal:
-            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
-            if marker:
-                run = marker[1]
-                if fence is None:
-                    fence = run
-                elif run[0] == fence[0] and len(run) >= len(fence):
-                    fence = None
-                continue
-            if fence is None and re.match(r"^##[ \t]+\S", line):
-                count += 1
-    return count
-count = 0
-if source is None:
-    if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
-        raise RuntimeError("invalid journal directory")
+HOME_STATS_SCRIPT = r"""# The resident's journal: where it is and what one entry is. One rule, read by
+# the card's count (Agents::JournalEntryStats::SCRIPT and the runner's
+# byte-for-byte copy, HOME_STATS_SCRIPT) and by the Memories tab
+# (memory_archive.py). The home declares the place in its resident-home.json:
+#   "journal": {"path": "<folder or .md file inside the home>"}   that place
+#   "journal": false                                              not shared
+#   no "journal" key        an admin's chosen file if there is one, else
+#                           memory/daily-journals (a missing one is empty)
+# A .md file's entries are its "## " headings outside fences (a file with none
+# but some text besides a "# " title is one untitled entry). In a folder,
+# YYYY-MM-DD.md is read that way; inside a YYYY-MM-DD/ folder each non-empty
+# .md is exactly one entry, whatever headings it holds. Dotfiles and README.md are skipped; nothing else is read. Every
+# step is opened from the home down without following links, so a link swapped
+# in after any check is refused at open, not followed.
+import json, os, re, stat, time
+
+HOME = "/home/agent/identity"
+DEFAULT_JOURNAL = "memory/daily-journals"
+JOURNAL_PATH_MAX = 200
+MANIFEST_MAX = 64 * 1024
+DIRECTORY_NAMES_MAX = 20000
+DAY = r"\d{4}-\d{2}-\d{2}"
+DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+
+
+class NotShared(Exception):
+    pass
+
+
+def valid_journal_path(path):
+    # Plain relative segments only: no "..", no "/" at either end, no links.
+    if not isinstance(path, str) or not path or len(path) > JOURNAL_PATH_MAX:
+        return False
+    return all(re.fullmatch(r"[A-Za-z0-9_.-]+", part) and part.strip(".") for part in path.split("/"))
+
+
+def read_file(directory, name, limit):
+    with os.fdopen(os.open(name, FILE_FLAGS, dir_fd=directory), "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+            raise ValueError("not a bounded regular file")
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("file grew past its limit")
+    return data
+
+
+def journal_place(home, fallback=None):
+    # (path, declared) for the journal, relative to the home. declared is False
+    # only for the default, whose absence is an empty journal; a declared place
+    # that is missing is an error. Raises NotShared for "journal": false.
+    if fallback is not None and not (valid_journal_path(fallback) and fallback.startswith("memory/")
+                                     and fallback.endswith(".md")):
+        raise ValueError("invalid journal source")
     try:
-        paths = list(root.iterdir())
+        manifest = json.loads(read_file(home, "resident-home.json", MANIFEST_MAX))
     except FileNotFoundError:
-        paths = []
-    for path in paths:
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
-            continue
-        count += count_entries(path.open(encoding="utf-8"))
-else:
-    segments = source.split("/")
-    if (len(source) > 200 or not source.endswith(".md") or len(segments) < 2 or segments[0] != "memory"
-            or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", segment) or not segment.strip(".") for segment in segments)):
-        raise RuntimeError("invalid journal source")
-    # Opened step by step without following links, so a link swapped in
-    # after any check is refused at open, not followed.
-    directory = os.open(str(root.parent.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        manifest = {}
+    if not isinstance(manifest, dict):
+        raise ValueError("invalid home manifest")
+    if "journal" not in manifest:
+        return (fallback, True) if fallback is not None else (DEFAULT_JOURNAL, False)
+    journal = manifest["journal"]
+    if journal is False:
+        raise NotShared()
+    if isinstance(journal, dict) and set(journal) == {"path"} and valid_journal_path(journal["path"]):
+        return journal["path"], True
+    raise ValueError("invalid journal declaration")
+
+
+def _names(directory):
+    names = []
+    with os.scandir(directory) as found:
+        for entry in found:
+            names.append((entry.name, entry.is_file(follow_symlinks=False), entry.is_dir(follow_symlinks=False)))
+            if len(names) > DIRECTORY_NAMES_MAX:
+                raise ValueError("too many files in one journal folder")
+    return sorted(names, reverse=True)
+
+
+def _document(directory, name, path, day, whole, limit):
     try:
-        for segment in segments[:-1]:
-            inner = os.open(segment, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
-            os.close(directory)
-            directory = inner
-        handle = os.open(segments[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        data = read_file(directory, name, limit)
+    except (OSError, ValueError):
+        data = None
+    return {"path": path, "day": day, "whole": whole, "data": data}
+
+
+def documents(home, path, limit):
+    # Every file the rule reads, newest first, as {"path", "day", "whole",
+    # "data"}: whole means the file is one entry, else its headings are; data is
+    # None for a file that could not be read within the limit. A place that
+    # names nothing raises FileNotFoundError; a link anywhere raises OSError.
+    parts = path.split("/")
+    parent = os.dup(home)
+    try:
+        for part in parts[:-1]:
+            inner = os.open(part, DIRECTORY_FLAGS, dir_fd=parent)
+            os.close(parent)
+            parent = inner
+        try:
+            folder = os.open(parts[-1], DIRECTORY_FLAGS, dir_fd=parent)
+        except NotADirectoryError:
+            if not parts[-1].endswith(".md"):
+                raise ValueError("a journal file must be Markdown")
+            # One file has no dates in its name: an entry is dated by its
+            # heading, else by the day the file last changed.
+            modified = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False).st_mtime
+            data = read_file(parent, parts[-1], limit)
+            yield {"path": path, "day": time.strftime("%Y-%m-%d", time.gmtime(modified)), "modified": True,
+                   "whole": False, "data": data}
+            return
     finally:
-        os.close(directory)
-    if not stat.S_ISREG(os.fstat(handle).st_mode):
-        os.close(handle)
-        raise RuntimeError("journal source is not a file")
-    count = count_entries(os.fdopen(handle, encoding="utf-8"))
-print(json.dumps({"count": count}))
+        os.close(parent)
+    try:
+        for name, is_file, is_dir in _names(folder):
+            if is_file and re.fullmatch(DAY + r"\.md", name):
+                yield _document(folder, name, path + "/" + name, name[:-3], False, limit)
+            elif is_dir and re.fullmatch(DAY, name):
+                day = os.open(name, DIRECTORY_FLAGS, dir_fd=folder)
+                try:
+                    for inner, inner_is_file, _ in _names(day):
+                        if not inner_is_file or inner.startswith(".") or inner == "README.md" or not inner.endswith(".md"):
+                            continue
+                        document = _document(day, inner, path + "/" + name + "/" + inner, name, True, limit)
+                        if document["data"] is None or document["data"].strip():
+                            yield document
+                finally:
+                    os.close(day)
+    finally:
+        os.close(folder)
+
+
+def headings(data):
+    # (offset, title) of each "## " heading outside fenced blocks.
+    found, offset, fence = [], 0, None
+    for raw in data.splitlines(keepends=True):
+        line = raw.decode("utf-8", errors="replace")
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if marker:
+            run = marker[1]
+            if fence is None:
+                fence = run
+            elif run[0] == fence[0] and len(run) >= len(fence) and not line[marker.end():].strip():
+                fence = None
+        elif fence is None and re.match(r"^##[ \t]+\S", line):
+            found.append((offset, line.strip()[3:].strip()))
+        offset += len(raw)
+    return found
+
+
+def entries(document):
+    # (start, end, title) of each entry in one document. A whole file is one
+    # entry, titled by its first heading when it has one; "" is untitled.
+    data = document["data"]
+    found = headings(data)
+    if document["whole"]:
+        return [(0, len(data), found[0][1] if found else "")]
+    if not found and any(line.strip() and not line.startswith(b"# ") for line in data.splitlines()):
+        return [(0, len(data), "")]
+    return [(start, found[index + 1][0] if index + 1 < len(found) else len(data), title)
+            for index, (start, title) in enumerate(found)]
+
+# The count. argv[1], when present, is the file an admin chose
+# (Agent#journal_source), read only when the home declares nothing.
+import sys
+COUNT_FILE_MAX = 64 * 1024 * 1024
+def count_journal():
+    home = os.open(HOME, DIRECTORY_FLAGS)
+    try:
+        try:
+            path, declared = journal_place(home, sys.argv[1] if len(sys.argv) > 1 else None)
+        except NotShared:
+            return {"status": "not_shared"}
+        count = 0
+        try:
+            for document in documents(home, path, COUNT_FILE_MAX):
+                if document["data"] is None:
+                    raise ValueError("a journal file could not be read")
+                count += len(entries(document))
+        except FileNotFoundError:
+            if declared:
+                raise
+            count = 0
+        return {"count": count}
+    finally:
+        os.close(home)
+print(json.dumps(count_journal()))
 """
 HOME_STORAGE_SCRIPT = r"""import json, pathlib, subprocess, sys
 # The walk's budget in seconds: one argv value, bounded here too.
@@ -1237,7 +1375,8 @@ class ResidentHost:
         dated daily journals, or the one file the resident chose) and
         persistent disk use, counted inside the resident by the fixed
         HOME_STATS_SCRIPT. Returns {"count", "storage_bytes"}; storage_bytes
-        may be None. Anything malformed fails the command, so the house shows
+        may be None. A home whose journal is not shared returns {"status":
+        "not_shared"}. Anything malformed fails the command, so the house shows
         the card as unavailable rather than wrong."""
         name = payload.get("container_name")
         self._known_resident(name)
@@ -1256,6 +1395,8 @@ class ResidentHost:
             measured = json.loads((output or "").strip().splitlines()[-1])
         except (ValueError, IndexError):
             raise CommandFailed("the resident's home measurement was unreadable")
+        if measured == {"status": "not_shared"}:
+            return {"status": "not_shared"}
         count = measured.get("count") if isinstance(measured, dict) else None
         if not isinstance(count, int) or isinstance(count, bool) or count < 0:
             raise CommandFailed("the resident's home measurement was unreadable")

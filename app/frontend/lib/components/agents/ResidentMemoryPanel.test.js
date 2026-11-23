@@ -91,6 +91,17 @@ test('unavailable journals are unknown and do not produce an empty chart', async
   expect(screen.getByText('—')).toBeInTheDocument();
 });
 
+test('a journal that is not shared says so and draws no journal chart', async () => {
+  fetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ ...overview, journals: { count: null, status: 'not_shared' } }),
+  });
+  render(ResidentMemoryPanel, { overviewUrl: '/overview' });
+  expect(await screen.findByText(/journal is not shared/)).toBeInTheDocument();
+  expect(screen.queryByText(/unknown, not zero/)).not.toBeInTheDocument();
+  expect(screen.getAllByRole('img')).toHaveLength(1);
+});
+
 test('all-off is sent explicitly rather than falling back to every type', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
   await expandHistory();

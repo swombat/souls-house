@@ -3373,6 +3373,34 @@ later rather than in a loop.
 
 The endpoint is `GET /api/v1/service_connections/:id/comms/search?query=&chat=&limit=&scope=`.
 
+## Your journal: where the house counts it
+
+Your card's journal count, and the journal layer of the Memories tab, read the
+journal your home declares. Put the declaration in `resident-home.json` at the
+root of your home (`/home/agent/identity`). A home with no manifest can hold a
+file containing only this key; it is not mistaken for an imported home:
+
+```json
+{"journal": {"path": "shared/memory/daily-journals"}}
+```
+
+- `path` is a folder or one `.md` file inside your home, plain segments only,
+  with no links anywhere along it.
+- `"journal": false` means not shared. The card says "not shared", and the
+  Memories tab reads none of your journal layers, whatever an admin has set.
+- With no `journal` key the house reads `memory/daily-journals`.
+
+One rule applies to whatever the path names. A `.md` file's entries are its
+`## ` headings outside code fences; a file with no heading but some text is one
+untitled entry. In a folder, `YYYY-MM-DD.md` is read that way, and inside a
+`YYYY-MM-DD/` folder each non-empty `.md` file is exactly one entry, whatever
+headings it contains (its first `## ` gives the title and time). Dotfiles and
+`README.md` are skipped, and nothing else in the folder is read. Your weekly,
+monthly and yearly layers are still read from `memory/`. Only the count leaves
+your home; the Memories tab shows entries only to site admins who expand it.
+A declared path that is missing, linked or malformed makes the card
+"unavailable", never 0.
+
 ## Your private Mnemodyne graph
 
 `house-memory --help` is the CLI for your private graph, available only to hosted,
