@@ -137,17 +137,30 @@ def read_document(kind, document, mode, result, budget):
     return True
 
 
-def journal_file(place, path):
-    # True when path names a file the rule reads in this journal.
+def entry_file_name(name):
+    # Any name documents() reads inside a day folder: one segment, no leading
+    # dot (so never ".."), Markdown, not the guide. Opened with no-follow.
+    return (isinstance(name, str) and "/" not in name and "\0" not in name and not name.startswith(".")
+            and name.endswith(".md") and name != "README.md" and len(name.encode("utf-8", "surrogateescape")) <= 255)
+
+
+def eligible(place, path):
+    # True when path names a file the scan reads: a summary-layer file, or one
+    # of the declared journal's files, matched exactly as documents() finds them.
+    if not isinstance(path, str):
+        return False
+    folder, _, name = path.rpartition("/")
+    if valid_journal_path(path) and any(folder == layer and re.fullmatch(pattern + r"\.md", name)
+                                        for layer, pattern in SUMMARIES.values()):
+        return True
     if path == place:
         return path.endswith(".md")
     if not path.startswith(place + "/"):
         return False
-    rest = path[len(place) + 1:].split("/")
+    rest = path[len(place) + 1:].split("/", 1)
     if len(rest) == 1:
         return bool(re.fullmatch(DAY + r"\.md", rest[0]))
-    return (len(rest) == 2 and bool(re.fullmatch(DAY, rest[0])) and rest[1].endswith(".md")
-            and not rest[1].startswith(".") and rest[1] != "README.md")
+    return bool(re.fullmatch(DAY, rest[0])) and entry_file_name(rest[1])
 
 
 def bodies(selections, fallback):
@@ -162,12 +175,13 @@ def bodies(selections, fallback):
             return {item["id"]: {"body_status": "unavailable"} for item in selections}
         result = {}
         for item in selections:
-            path = item["path"]
-            folder, _, name = path.rpartition("/")
-            summary = any(folder == layer and re.fullmatch(pattern + r"\.md", name) for layer, pattern in SUMMARIES.values())
-            if not valid_journal_path(path) or not (summary or journal_file(place, path)):
-                raise ValueError("invalid path")
+            # A refusal is the item's alone: one odd selection never costs the
+            # rest of the page its bodies.
             try:
+                path = item["path"]
+                if not eligible(place, path):
+                    raise ValueError("not a file the journal rule reads")
+                folder, _, name = path.rpartition("/")
                 fd = directory(home, folder) if folder else os.dup(home)
                 try:
                     data = read_file(fd, name, MAX_FILE)
@@ -177,13 +191,26 @@ def bodies(selections, fallback):
                     result[item["id"]] = {"body_status": "changed"}
                     continue
                 start, end = item["start"], item["end"]
-                if not (0 <= start < end <= len(data)):
+                if not (isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(data)):
                     raise ValueError("invalid range")
                 result[item["id"]] = {"body": data[start:min(end, start + MAX_BODY)].decode("utf-8", errors="replace"),
                                       "body_status": "truncated" if end-start > MAX_BODY else "complete"}
-            except (OSError, ValueError):
-                result[item["id"]] = {"body_status": "unavailable"}
+            except (OSError, ValueError, KeyError, TypeError):
+                result[str(item.get("id")) if isinstance(item, dict) else "invalid"] = {"body_status": "unavailable"}
         return result
+    finally:
+        os.close(home)
+
+
+def declaration(fallback):
+    # The current declaration alone, cheap and never cached: the house checks
+    # it before serving a cached overview or catalog, so "not shared" takes
+    # effect at once.
+    home = os.open(HOME, DIRECTORY_FLAGS)
+    try:
+        return {"status": "declared", "place": journal_place(home, fallback)[0]}
+    except NotShared:
+        return {"status": "not_shared"}
     finally:
         os.close(home)
 
@@ -191,7 +218,9 @@ def bodies(selections, fallback):
 request = json.load(sys.stdin)
 mode = request["mode"]
 fallback = request.get("journal_source")
-if mode in ("overview", "catalog"):
+if mode == "declaration":
+    response = declaration(fallback)
+elif mode in ("overview", "catalog"):
     response = scan(mode, fallback)
 elif mode == "bodies":
     response = bodies(request["items"], fallback)

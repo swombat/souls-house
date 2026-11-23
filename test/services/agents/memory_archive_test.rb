@@ -86,14 +86,19 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     @root.join("people").mkpath
     write("people/anna.md", "private, not a journal")
     write("daily-journals/notes.txt", "private, not a day file")
-    %w[memory/people/anna.md memory/daily-journals/notes.txt resident-home.json].each do |path|
-      @home.join("resident-home.json").write("{}") unless @home.join("resident-home.json").exist?
+    @root.join("weekly-journals").delete
+    @root.join("weekly-journals").mkpath
+    write("daily-journals/2026-09-22.md", "## ordinary\nshown\n")
+    @home.join("resident-home.json").write("{}")
+    good = run_reader(mode: "catalog")["items"].find { |item| item["path"] == "memory/daily-journals/2026-09-22.md" }
+    foreign = %w[memory/people/anna.md memory/daily-journals/notes.txt resident-home.json memory/../memory/people/anna.md].map do |path|
       data = @home.join(path).binread
-      item = { id: "x", path: path, fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
-      out, _err, status = execute(mode: "bodies", items: [ item ])
-      refute status.success?, path
-      refute_includes out, "private"
+      { id: path, path: path, fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
     end
+    bodies = run_reader(mode: "bodies", items: foreign + [ good ])
+    foreign.each { |item| assert_equal({ "body_status" => "unavailable" }, bodies.fetch(item[:id]), item[:path]) }
+    assert_equal "complete", bodies.fetch(good["id"])["body_status"], "a refusal is the item's alone"
+    refute_includes bodies.to_json, "private"
   end
 
   test "a declared journal of day folders is read by the card's rule, one entry per file" do
@@ -125,6 +130,20 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     assert_includes body["body"], "## What is open", "the whole file is the one entry"
   end
 
+  test "an entry file with an ordinary spaced name round-trips beside another" do
+    journal = @home.join("journal/2026-11-21")
+    journal.mkpath
+    journal.join("morning note.md").write("## 09:00 morning\nspaced body\n")
+    journal.join("later.md").write("## 18:00 later\nplain body\n")
+    journal.join("café ☕.md").write("## 20:00 unicode\nunicode body\n")
+    declare({ "path" => "journal" })
+    catalog = run_reader(mode: "catalog")
+    assert_equal 3, catalog["count"]
+    bodies = run_reader(mode: "bodies", items: catalog["items"])
+    assert_equal %w[complete complete complete], bodies.values.map { |body| body["body_status"] }
+    assert_includes bodies.to_json, "spaced body"
+  end
+
   test "journal false closes the count and every journal layer" do
     write("daily-journals/2026-11-20.md", "## one\nprivate\n")
     write("weekly-journals/2026-11-16.md", "## 2026-11-17 (Tuesday)\nprivate\n")
@@ -147,8 +166,9 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     data = @root.join("daily-journals/2026-11-20.md").binread
     stale = { id: "x", path: "memory/daily-journals/2026-11-20.md", fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
     declare({ "path" => "journal" })
-    out, _err, status = execute(mode: "bodies", items: [ stale ])
-    refute status.success?
+    out, err, status = execute(mode: "bodies", items: [ stale ])
+    assert status.success?, err
+    assert_equal({ "x" => { "body_status" => "unavailable" } }, JSON.parse(out))
     refute_includes out, "private"
   end
 
@@ -168,6 +188,39 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     assert_equal 2, run_reader(mode: "overview", journal_source: "memory/growth.md")["count"]
     declare({ "path" => "memory/daily-journals" })
     assert_equal 1, run_reader(mode: "overview", journal_source: "memory/growth.md")["count"]
+  end
+
+  # Mira, #1113: a cached overview or catalog must not outlive "journal": false.
+  test "the current declaration gates a cached overview and catalog" do
+    write("daily-journals/2026-11-20.md", "## 09:00 private title\nbody\n")
+    agent = agents(:research_assistant)
+    agent.update_columns(runtime: "external", container_name: "test-resident", sandbox_host: nil)
+    archive = Agents::MemoryArchive.new(agent)
+    calls = Hash.new(0)
+    local = lambda do |_script, request|
+      calls[JSON.parse(request)["mode"]] += 1
+      out, err, status = execute(JSON.parse(request))
+      assert status.success?, err
+      out
+    end
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      Agents::Resources.stub(:new, Struct.new(:verify_existing!).new(true)) do
+        archive.stub(:capture, local) do
+          assert_equal 1, archive.overview["count"]
+          assert_equal "09:00 private title", archive.catalog["items"].first["title"]
+          archive.overview
+          assert_equal 1, calls["overview"], "the overview is cached"
+          declare(false)
+          closed = archive.overview
+          assert_equal "not_shared", closed["status"]
+          assert_nil closed["count"]
+          assert_equal [], archive.catalog["items"]
+          refute_includes Agents::MemoryHistory.new(agent, archive: archive).call(kinds: %w[journals]).to_json, "private title"
+          declare({ "path" => "memory/daily-journals" })
+          assert_equal 1, archive.overview["count"]
+        end
+      end
+    end
   end
 
   test "unavailable residents never masquerade as empty archives" do

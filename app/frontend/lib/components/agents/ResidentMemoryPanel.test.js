@@ -17,7 +17,7 @@ const entry = {
   id: 'one',
   kind: 'journals',
   title: 'A journal entry',
-  path: 'daily-journals/2026-09-22.md',
+  path: 'shared/memory/daily-journals/2026-09-22/morning note.md',
   occurred_at: '2026-09-22T10:00:00.000000Z',
   timestamp_basis: 'journal heading',
   body: '<script>alert("not executable")</script>',
@@ -100,6 +100,26 @@ test('a journal that is not shared says so and draws no journal chart', async ()
   expect(await screen.findByText(/journal is not shared/)).toBeInTheDocument();
   expect(screen.queryByText(/unknown, not zero/)).not.toBeInTheDocument();
   expect(screen.getAllByRole('img')).toHaveLength(1);
+});
+
+test('history shows the home-relative path as the reader gave it', async () => {
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  expect(await screen.findByText('shared/memory/daily-journals/2026-09-22/morning note.md')).toBeInTheDocument();
+  expect(screen.queryByText(/^memory\/shared/)).not.toBeInTheDocument();
+});
+
+test('history says a journal is not shared rather than empty, and still shows graph nodes', async () => {
+  const node = { ...entry, id: 'node:1', kind: 'nodes', title: 'A graph node', node: { id: 1 }, edges: [], edge_count: 0 };
+  fetch.mockImplementation(async (url) => ({
+    ok: true,
+    json: async () =>
+      url === '/overview'
+        ? { ...overview, journals: { count: null, status: 'not_shared' } }
+        : { items: url.includes('kinds=journals') && !url.includes('nodes') ? [] : [node], next_cursor: null, archive_status: 'not_shared' },
+  }));
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  expect(await screen.findByText(/no journal layer is shown/)).toBeInTheDocument();
+  expect(screen.queryByText('No matching memory items.')).not.toBeInTheDocument();
 });
 
 test('all-off is sent explicitly rather than falling back to every type', async () => {

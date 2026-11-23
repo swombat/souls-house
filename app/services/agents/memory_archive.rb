@@ -27,13 +27,28 @@ module Agents
 
     private
 
+    # The declaration is read fresh on every request, and the cache is keyed
+    # by it: a home that says "journal": false is closed at once, even while
+    # an older overview or catalog is still cached (Mira, #1113).
     def snapshot(mode)
-      Rails.cache.fetch([ "resident-memory-v2", @agent.id, @agent.uuid, @agent.container_name, @agent.journal_source, mode ],
+      place = current_place
+      return { "status" => "not_shared", "count" => nil, "daily_counts" => {}, "items" => [] } if place.nil?
+
+      Rails.cache.fetch([ "resident-memory-v2", @agent.id, @agent.uuid, @agent.container_name, place, mode ],
                         expires_in: 2.minutes) do
         read(mode).merge("measured_at" => Time.current.iso8601)
       end
     rescue ReadError
       { "status" => "unavailable", "count" => nil, "daily_counts" => {}, "items" => [] }
+    end
+
+    # The declared journal's place, or nil when it is not shared.
+    def current_place
+      declared = read("declaration")
+      return nil if declared["status"] == "not_shared"
+      raise ReadError unless declared["status"] == "declared" && declared["place"].is_a?(String)
+
+      declared["place"]
     end
 
     def read(mode, **arguments)
