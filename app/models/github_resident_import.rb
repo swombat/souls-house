@@ -34,9 +34,30 @@ class GithubResidentImport < ApplicationRecord
   validates :commit_sha, format: { with: /\A[0-9a-f]{40}\z/ }
   validate :connection_matches_account
   validate :reviewed_configuration_is_immutable, on: :update
+  validate :home_not_already_held, on: :create
 
   def self.requestable_by?(account, user)
     account.service_credentials_manageable_by?(user)
+  end
+
+  # Why this request can't make a resident: another resident already holds
+  # its home (agents.portable_home_id is unique, and a retired resident keeps
+  # its home). A sentence a person can act on, or nil. The resident this
+  # request itself made is not "another".
+  def home_holder_error
+    holder = Agent.find_by(portable_home_id: portable_home_id)
+    return if holder.nil? || (persisted? && holder.github_resident_import_id == id)
+
+    renamed = "To import it as someone new, give the repository a new identity_id in its manifest."
+    if holder.account_id == account_id
+      state = holder.deprecated_at ? "the retired resident" : "the resident"
+      "This home (identity_id \"#{portable_home_id}\") already belongs to #{state} #{holder.name} in this account, " \
+        "so it can't be imported again. #{renamed}"
+    else
+      # Nothing about another account's resident is shown here, not even its name.
+      "This home (identity_id \"#{portable_home_id}\") already belongs to a resident in another account, " \
+        "so it can't be imported here. #{renamed}"
+    end
   end
 
   def approvable_by?(user)
@@ -238,6 +259,12 @@ class GithubResidentImport < ApplicationRecord
     return unless service_connection
     errors.add(:service_connection, "must be a GitHub connection in this account") unless
       service_connection.account_id == account_id && service_connection.provider == "github"
+  end
+
+  def home_not_already_held
+    return if portable_home_id.blank?
+    error = home_holder_error
+    errors.add(:portable_home_id, error) if error
   end
 
   def reviewed_configuration_is_immutable

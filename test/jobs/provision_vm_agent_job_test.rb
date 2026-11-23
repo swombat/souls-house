@@ -1151,6 +1151,23 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  test "an import of a home a resident already holds is refused before admission, with a sentence" do
+    with_house do
+      first = approved_import
+      second = import_request(connection: first.service_connection, name: "Second try")
+      approve_fixture(second)
+      root = reviewed_checkout
+      run_import(first, root)
+      assert_equal "github_import", first.agent.placement.kind
+      assert_no_difference [ "Agent.count", "AgentPlacement.count", "AgentImportStage.count" ] do
+        run_import(second, root)
+      end
+      assert_equal "failed", second.status
+      assert_includes second.last_error, "already belongs to the resident #{first.agent.name}"
+      assert_nil second.agent
+    end
+  end
+
   test "a failure while staging rolls the whole admission back and leaves nothing" do
     with_house do
       request = approved_import
