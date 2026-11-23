@@ -98,7 +98,8 @@ class GithubResidentImportsController < ApplicationController
   end
 
   # Only a site admin chooses where an import goes; anyone else's request,
-  # and an admin's that names no placement, follows the site setting.
+  # and an admin's that leaves "follow the site setting", follows the switch
+  # as it stands when the import is admitted.
   def chosen_placement
     return unless Current.user.is_site_admin?
 
@@ -112,9 +113,11 @@ class GithubResidentImportsController < ApplicationController
   def placement_options
     return unless Current.user.is_site_admin?
 
+    current = Agents::VmBirthPolicy.current.enabled? ? "its own server" : "the main server"
     {
-      default: Agents::VmBirthPolicy.current.enabled? ? "own_server" : "main_server",
+      default: "site_setting",
       choices: [
+        { value: "site_setting", label: "Follow the site setting (now #{current})" },
         { value: "main_server", label: "Main server" },
         { value: "own_server", label: "Its own server" }
       ]

@@ -208,7 +208,7 @@
                 value={choice.value}
                 bind:group={$form.github_resident_import.placement}
                 disabled={$form.processing} />
-              {choice.label}{choice.value === placementOptions.default ? ' (site setting)' : ''}
+              {choice.label}
             </label>
           {/each}
           {#if errorsFor('placement')}

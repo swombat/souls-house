@@ -182,8 +182,21 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
     get new_account_github_resident_import_path(@account)
     options = inertia_shared_props.fetch("placement_options")
-    assert_equal "own_server", options.fetch("default")
-    assert_equal %w[main_server own_server], options.fetch("choices").pluck("value")
+    assert_equal "site_setting", options.fetch("default")
+    assert_equal %w[site_setting main_server own_server], options.fetch("choices").pluck("value")
+    assert_equal "Follow the site setting (now its own server)", options.fetch("choices").first.fetch("label")
+    # Left alone, the form pins nothing: the switch decides when it is admitted.
+    # (Sent with the switch off: this test house can't order a server.)
+    Setting.instance.update!(new_residents_on_vm: false)
+    Agents::GithubImportSource.stub(:new, source_stub) do
+      post account_github_resident_imports_path(@account), params: params.call("site_setting")
+    end
+    untouched = GithubResidentImport.last
+    assert_nil untouched.placement
+    assert_not untouched.own_server?
+    Setting.instance.update!(new_residents_on_vm: true)
+    assert untouched.own_server?, "an untouched request follows the switch as it is later, not as it was"
+    untouched.destroy!
     Agents::GithubImportSource.stub(:new, source_stub) do
       post account_github_resident_imports_path(@account), params: params.call("main_server")
     end
@@ -200,7 +213,8 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     Setting.instance.update!(new_residents_on_vm: false)
     connection = import_connection
     get new_account_github_resident_import_path(@account)
-    assert_equal "main_server", inertia_shared_props.dig("placement_options", "default")
+    assert_equal "Follow the site setting (now the main server)",
+                 inertia_shared_props.dig("placement_options", "choices", 0, "label")
     Agents::GithubImportSource.stub(:new, ->(*) { flunk "a refused request never fetches" }) do
       assert_no_difference("GithubResidentImport.count") do
         post account_github_resident_imports_path(@account), params: {

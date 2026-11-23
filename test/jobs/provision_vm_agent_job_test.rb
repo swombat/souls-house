@@ -913,6 +913,13 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal "github_import", placement.kind
       assert_equal "pending", placement.state
 
+      # Its server is bought on the strength of the choice, and the receipt says so.
+      run_job(request.agent)
+      assert_equal "github_import:#{request.id}/placement:own_server/agent:#{request.agent.id}",
+                   operation(request.agent).approval_reference
+      planned = AuditLog.find_by!(action: "vm_birth_procurement_planned", auditable: operation(request.agent))
+      assert_equal request.id, planned.data["github_resident_import_id"]
+
       # The choice skips only the switch: the server limit still refuses.
       @setting.update!(vm_resident_limit: 1)
       second = import_request(connection: request.service_connection, placement: "own_server", portable_home_id: "another-portable-home")
