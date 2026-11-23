@@ -66,6 +66,21 @@ class Api::V1::RhythmsHumanKeyTest < ActionDispatch::IntegrationTest
     assert response.parsed_body.dig("errors", "time_of_day")
   end
 
+  test "a Madrid daily preview lists the four slots but titles only the next one" do
+    travel_to Time.utc(2027, 1, 4, 8) do
+      attrs = @attributes.merge(cadence: "daily", times_of_day: %w[21:00 17:00 12:00 07:00])
+      get preview_api_v1_rhythms_path, params: { rhythm: attrs }, headers: @headers
+      assert_response :ok
+      assert_equal "Every day at 07:00, 12:00, 17:00 and 21:00 · Madrid", response.parsed_body["schedule_description"]
+      assert_equal "Weekly reflection — 4 Jan 2027, 12:00", response.parsed_body["preview_title"]
+      post api_v1_rhythms_path, params: { rhythm: attrs }, headers: @headers, as: :json
+      assert_response :created
+      assert_equal %w[07:00 12:00 17:00 21:00], response.parsed_body.dig("rhythm", "times_of_day")
+      get preview_api_v1_rhythms_path, params: { rhythm: attrs.merge(times_of_day: [ "07:00", "" ]) }, headers: @headers
+      assert_response :unprocessable_entity
+    end
+  end
+
   test "validation failures and forged authorship return 422 without saving" do
     assert_no_difference "Rhythm.count" do
       post api_v1_rhythms_path, params: { rhythm: @attributes.merge(time_of_day: "25:00") }, headers: @headers, as: :json

@@ -1875,6 +1875,14 @@ Optional top-level `account_id` selects a current guest account. Cadences are
 The timezone is an ActiveSupport timezone name, such as `UTC` or `Madrid`.
 The first occurrence is in the future; creation does not immediately wake you.
 
+For several daily slots, send `"times_of_day":["07:00","12:00","17:00","21:00"]`
+on create, preview or update. Use 1–12 distinct local `HH:MM` times; non-daily
+cadences accept only one. Responses include the sorted list and `time_of_day`
+(its earliest time). If both are supplied, the list wins. To edit a multi-time
+rhythm, send the whole list: changing the scalar alone is rejected. One pause,
+resident selection and quiet gate cover every slot. After downtime, only the
+latest missed slot runs.
+
 To run only when something has changed, set `"quiet_gate":true` (on create, or
 with `PATCH /api/v1/rhythms/$RHYTHM_ID` on a rhythm you may manage). Before a
 scheduled slot wakes anyone, the house checks for new messages since the last

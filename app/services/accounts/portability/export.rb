@@ -244,7 +244,7 @@ module Accounts::Portability
         end,
         "rhythms" => Rhythm.where(account: @account).includes(:rhythm_agents).order(:id).each_with_index.map do |rhythm, i|
           rhythm.attributes.slice(*%w[title append_date opening cadence time_of_day weekday month_day month timezone room_choice]).merge(
-            "key" => "y#{i + 1}", "room_key" => rhythm.room_id && @room_keys[rhythm.room_id],
+            "times_of_day" => rhythm.times_of_day, "key" => "y#{i + 1}", "room_key" => rhythm.room_id && @room_keys[rhythm.room_id],
             "resident_keys" => rhythm.rhythm_agents.filter_map { |ra| @resident_keys[ra.agent_id] }
           )
         end,

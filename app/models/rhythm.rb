@@ -8,7 +8,9 @@ class Rhythm < ApplicationRecord
     def success? = status.in?(%i[created duplicate active held quiet])
   end
 
-  SCHEDULE_FIELDS = %w[cadence time_of_day weekday month_day month timezone].freeze
+  SCHEDULE_FIELDS = %w[cadence time_of_day times_of_day weekday month_day month timezone].freeze
+  CLOCK_TIME = /\A(?:[01]\d|2[0-3]):[0-5]\d\z/
+  MAX_DAILY_TIMES = 12
   # Where an occurrence opens: the account's resident default room, Main on
   # purpose, or the named room.
   ROOM_CHOICES = %w[resident_default main room].freeze
@@ -36,7 +38,8 @@ class Rhythm < ApplicationRecord
   validates :opening, presence: true, unless: -> { validation_context == :preview }
   validates :title, length: { maximum: 255 }
   validates :opening, length: { maximum: 20_000 }
-  validates :time_of_day, format: { with: /\A(?:[01]\d|2[0-3]):[0-5]\d\z/ }
+  validates :time_of_day, format: { with: CLOCK_TIME }
+  validate :valid_schedule_times
   validates :timezone, inclusion: { in: ActiveSupport::TimeZone.all.map(&:name) }
   validates :weekday, inclusion: { in: 0..6 }, if: :weekly?
   validates :month_day, inclusion: { in: 1..31 }, if: -> { monthly? || yearly? }
@@ -236,8 +239,36 @@ class Rhythm < ApplicationRecord
     Rhythm::Schedule.new(self).next_occurrence(after: after)
   end
 
+  # A nil list is the original single-time representation; no data rewrite or
+  # schedule reset is needed for existing rows.
+  def times_of_day
+    self[:times_of_day] || [ time_of_day ]
+  end
+
+  def assign_attributes(attributes)
+    if attributes.respond_to?(:keys) && (attributes[:times_of_day] || attributes["times_of_day"])
+      attributes = attributes.except(:time_of_day, "time_of_day")
+    end
+    super(attributes)
+  end
+
+  def times_of_day=(values)
+    return self[:times_of_day] = nil if values.nil?
+
+    if values.is_a?(Array) && values.any? && values.all? { |value| value.is_a?(String) && CLOCK_TIME.match?(value) }
+      values = values.sort
+      self.time_of_day = values.first
+      self[:times_of_day] = values.size == 1 ? nil : values
+    else
+      self[:times_of_day] = values
+    end
+  end
+
   def preview_title(at: Time.current)
-    append_date? ? "#{title} — #{at.in_time_zone(timezone).strftime('%-d %b %Y')}" : title
+    return title unless append_date?
+
+    format = times_of_day.size > 1 ? "%-d %b %Y, %H:%M" : "%-d %b %Y"
+    "#{title} — #{at.in_time_zone(timezone).strftime(format)}"
   end
 
   # The rhythm row lock protects both schedule advancement and manual request
@@ -531,10 +562,21 @@ class Rhythm < ApplicationRecord
     new_record? || SCHEDULE_FIELDS.any? { |field| will_save_change_to_attribute?(field) }
   end
 
+  def valid_schedule_times
+    return errors.add(:times_of_day, "must contain 1 to #{MAX_DAILY_TIMES} times") unless times_of_day.is_a?(Array) && times_of_day.size.in?(1..MAX_DAILY_TIMES)
+    errors.add(:times_of_day, "must contain valid HH:MM times") unless times_of_day.all? { |t| t.is_a?(String) && CLOCK_TIME.match?(t) }
+    errors.add(:times_of_day, "must contain distinct times") unless times_of_day.uniq == times_of_day
+    errors.add(:times_of_day, "can contain several times only for a daily rhythm") if !daily? && times_of_day.many?
+    if times_of_day.many? && time_of_day != times_of_day.first
+      errors.add(:time_of_day, "cannot change a multi-time schedule; send times_of_day instead")
+    end
+  end
+
   def reset_next_run
     # Let validations report malformed input instead of failing date arithmetic.
     return unless %w[daily weekly monthly yearly].include?(cadence)
-    return unless ActiveSupport::TimeZone[timezone] && time_of_day.to_s.match?(/\A(?:[01]\d|2[0-3]):[0-5]\d\z/)
+    return unless ActiveSupport::TimeZone[timezone] && times_of_day.is_a?(Array) && times_of_day.size.in?(1..MAX_DAILY_TIMES)
+    return unless times_of_day.all? { |t| t.is_a?(String) && CLOCK_TIME.match?(t) }
     return if weekly? && !weekday.in?(0..6)
     return if (monthly? || yearly?) && !month_day.in?(1..31)
     return if yearly? && !month.in?(1..12)

@@ -3,7 +3,7 @@
 # opening nor a resident selection, and saves nothing.
 class Rhythm::Preview
 
-  ATTRIBUTES = %i[title append_date cadence time_of_day weekday month_day month timezone].freeze
+  ATTRIBUTES = [ *%i[title append_date cadence time_of_day weekday month_day month timezone], { times_of_day: [] } ].freeze
 
   def initialize(account:, attributes:, creator: nil, creator_agent: nil)
     @rhythm = Rhythm.new(attributes)

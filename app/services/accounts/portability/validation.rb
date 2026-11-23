@@ -40,6 +40,7 @@ module Accounts::Portability
         string!(rhythm["opening"], 20_000)
         raise Error, "Invalid rhythm" unless rhythm["cadence"].in?(%w[daily weekly monthly yearly]) && rhythm["room_choice"].in?(Rhythm::ROOM_CHOICES)
         string!(rhythm["time_of_day"], 5)
+        list!(rhythm["times_of_day"], Rhythm::MAX_DAILY_TIMES).each { |t| string!(t, 5) } if rhythm.key?("times_of_day")
         string!(rhythm["timezone"], 100)
         %w[weekday month_day month].each { |f| raise Error, "Invalid rhythm" unless rhythm[f].nil? || rhythm[f].is_a?(Integer) }
         raise Error, "Invalid rhythm" unless [ true, false ].include?(rhythm["append_date"])

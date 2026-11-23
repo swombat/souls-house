@@ -13,6 +13,26 @@ import {
 } from './rhythms.js';
 
 describe('rhythms helpers', () => {
+  it('loads legacy scalar times and copies arrays without losing invalid form rows', () => {
+    expect(formValues({ time_of_day: '14:30' }).times_of_day).toEqual(['14:30']);
+    expect(formValues({}).times_of_day).toEqual(['09:00']);
+    const times = ['18:00', '', '18:00'];
+    const values = formValues({ times_of_day: times });
+    expect(values.times_of_day).toEqual(times);
+    expect(values.times_of_day).not.toBe(times);
+  });
+
+  it('sends every daily row unchanged for server validation and sorting, and singleton times otherwise', () => {
+    const values = formValues({ cadence: 'daily', times_of_day: ['18:00', '08:00', '', '18:00'] });
+    expect(submittableValues(values).times_of_day).toEqual(['18:00', '08:00', '', '18:00']);
+    expect(new URLSearchParams(previewQuery(values)).getAll('rhythm[times_of_day][]')).toEqual(values.times_of_day);
+    for (const cadence of ['weekly', 'monthly', 'yearly']) {
+      const data = submittableValues({ ...values, cadence, times_of_day: ['18:00', '08:00'] });
+      expect(data.times_of_day).toEqual(['08:00']);
+      expect(data).not.toHaveProperty('time_of_day');
+    }
+  });
+
   it('follows the account default room unless told otherwise, and sends a room only when one is named', () => {
     const values = formValues({});
     expect(values).toMatchObject({ room_choice: 'resident_default', room_id: '' });

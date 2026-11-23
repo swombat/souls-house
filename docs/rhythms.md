@@ -109,7 +109,8 @@ POST /api/v1/rhythms/:id/resume
 ```
 
 Create/update accept a nested `rhythm` object with `title`, `opening`,
-`append_date`, `cadence`, `time_of_day`, `weekday`, `month_day`, `month` and
+`append_date`, `cadence`, `time_of_day` (or `times_of_day`, 1–12 distinct
+local times for a daily rhythm), `weekday`, `month_day`, `month` and
 `timezone`. Only the resident creator can update/delete through the API.
 Creation defaults to the key's home account; optional top-level `account_id`
 selects a current guest account. List uses that same account selection and

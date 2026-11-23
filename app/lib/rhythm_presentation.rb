@@ -24,7 +24,7 @@ class RhythmPresentation
       title: @rhythm.title, opening: @rhythm.opening, append_date: @rhythm.append_date,
       essential: @rhythm.essential,
       can_manage_essential: Agents::AllowanceBrake.manageable_by?(@rhythm.account, @user),
-      cadence: @rhythm.cadence, time_of_day: @rhythm.time_of_day,
+      cadence: @rhythm.cadence, time_of_day: @rhythm.time_of_day, times_of_day: @rhythm.times_of_day,
       weekday: @rhythm.weekday, month_day: @rhythm.month_day, month: @rhythm.month,
       timezone: @rhythm.timezone, timezone_identifier: ActiveSupport::TimeZone[@rhythm.timezone.to_s]&.tzinfo&.identifier,
       next_run_at: at&.iso8601,
@@ -74,7 +74,7 @@ class RhythmPresentation
     when "yearly" then "Every #{Date::MONTHNAMES[@rhythm.month.to_i.clamp(1, 12)]} #{day} (last day if shorter)"
     else "Choose a schedule"
     end
-    "#{cadence} at #{@rhythm.time_of_day} · #{@rhythm.timezone}"
+    "#{cadence} at #{@rhythm.times_of_day.to_sentence(last_word_connector: ' and ')} · #{@rhythm.timezone}"
   end
 
   private

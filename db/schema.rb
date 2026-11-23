@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_203000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2893,6 +2893,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_230000) do
     t.bigint "quiet_gate_room_ids", default: [], null: false, array: true
     t.bigint "quiet_watermark_message_id"
     t.boolean "essential", default: false, null: false
+    t.jsonb "times_of_day"
     t.index ["account_id"], name: "index_rhythms_on_account_id"
     t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"

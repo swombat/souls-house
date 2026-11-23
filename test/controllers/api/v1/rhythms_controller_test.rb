@@ -66,6 +66,30 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_not Rhythm.exists?(rhythm.id)
   end
 
+  test "resident changes daily slots without losing them on legacy read-modify-write" do
+    travel_to(Time.utc(2027, 1, 4, 8)) do
+      post api_v1_rhythms_path, params: { rhythm: attributes.merge(time_of_day: "07:00") }, headers: @headers, as: :json
+      assert_response :created
+      rhythm = Rhythm.order(:id).last
+      path = api_v1_rhythm_path(rhythm)
+      slots = %w[07:00 12:00 17:00 21:00]
+      patch path, params: { rhythm: { times_of_day: slots.reverse, time_of_day: "06:00" } }, headers: @headers, as: :json
+      assert_response :ok
+      assert_equal slots, response.parsed_body.dig("rhythm", "times_of_day")
+      assert_equal "07:00", rhythm.reload.time_of_day
+      assert_equal Time.utc(2027, 1, 4, 12), rhythm.next_run_at
+      patch path, params: { rhythm: { time_of_day: "07:00" } }, headers: @headers, as: :json
+      assert_response :ok
+      [ { time_of_day: "08:00" }, { cadence: "weekly", weekday: 1 }, { times_of_day: [] },
+        { times_of_day: "07:00" }, { times_of_day: %w[10:00 10:00] }, { times_of_day: [ "07:00", "" ] },
+        { times_of_day: Array.new(13) { |i| "%02d:00" % i } } ].each do |edit|
+        patch path, params: { rhythm: edit }, headers: @headers, as: :json
+        assert_response :unprocessable_entity
+        assert_equal slots, rhythm.reload.times_of_day
+      end
+    end
+  end
+
   test "a resident switches the quiet gate on, narrows it to a room, and cannot name another account's room" do
     post api_v1_rhythms_path, params: { rhythm: attributes.merge(quiet_gate: true) }, headers: @headers, as: :json
     assert_response :created

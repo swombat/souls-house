@@ -9,6 +9,8 @@ class Rhythm::Schedule
   end
 
   def next_occurrence(after:)
+    return daily_candidates(after).find { |candidate| candidate > after } if @rhythm.cadence == "daily"
+
     date = period_date(after.in_time_zone(@zone).to_date)
     candidate = local_time(date)
     candidate = local_time(shift(date, 1)) if candidate <= after
@@ -16,6 +18,8 @@ class Rhythm::Schedule
   end
 
   def latest_occurrence(at:)
+    return daily_candidates(at).reverse.find { |candidate| candidate <= at } if @rhythm.cadence == "daily"
+
     date = period_date(at.in_time_zone(@zone).to_date)
     candidate = local_time(date)
     candidate = local_time(shift(date, -1)) if candidate > at
@@ -23,6 +27,14 @@ class Rhythm::Schedule
   end
 
   private
+
+  def daily_candidates(instant)
+    today = instant.in_time_zone(@zone).to_date
+    # Gap normalization can reorder wall times or resolve two slots to one instant.
+    (today - 1..today + 1).flat_map do |date|
+      @rhythm.times_of_day.map { |time| local_time(date, time).utc }
+    end.uniq.sort
+  end
 
   def period_date(date)
     case @rhythm.cadence
@@ -48,8 +60,8 @@ class Rhythm::Schedule
     Date.new(year, month, [ @rhythm.month_day, Date.new(year, month, -1).day ].min)
   end
 
-  def local_time(date)
-    hour, minute = @rhythm.time_of_day.split(":").map(&:to_i)
+  def local_time(date, time = @rhythm.time_of_day)
+    hour, minute = time.split(":").map(&:to_i)
     @zone.local(date.year, date.month, date.day, hour, minute)
   end
 
