@@ -1011,6 +1011,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal "needs_runtime_trust", request.reload.status
       server_id = placement.reload.provider_server_id
       assert server_id
+      assert_equal 1, placement.generation
       assert_equal "main_server", request.movable_to
 
       assert_raises(Account::NotAuthorized) { request.move_to!("main_server", by: users(:regular_user)) }
@@ -1160,6 +1161,16 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         seed.record_result!({ "outcome" => "done" }, now: Time.current)
         run_job(agent)
         assert_equal 1, trust_checks(placement).where(generation: 2).count, "the new server is checked afresh"
+
+        # Waiting for trust again, as a first start would, but at generation 2:
+        # it may have started before its release, so this is recovery, not a move.
+        answer_trust(placement, "untrusted")
+        run_job(agent)
+        assert_equal [ "needs_runtime_trust", "pending", 2 ], [ request.reload.status, placement.reload.state, placement.generation ]
+        assert_nil request.movable_to
+        error = assert_raises(GithubResidentImport::MoveRefused) { request.move_to!("main_server", by: users(:site_admin_user)) }
+        assert_equal GithubResidentImport::MOVE_SERVER_STATE, error.message
+        assert_not placement.reload.cleanup_requested?
       end
     end
   end

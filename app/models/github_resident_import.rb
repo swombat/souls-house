@@ -293,12 +293,17 @@ class GithubResidentImport < ApplicationRecord
     @moving_placement = false
   end
 
-  # Its own server, still waiting for its first start. A released (failed
-  # or retired) placement is not proof it never started: a first backup can
-  # fail after the start (Mira, #1109), so those are left to recovery.
+  # Its own server, still waiting for its first start on its first
+  # placement generation. A released placement is not proof it never
+  # started: a first backup can fail after the start, and the retry then
+  # admits it again as pending at a later generation (Mira, #1109). Both are
+  # left to recovery.
+  FIRST_GENERATION = 1
+
   def on_own_server_never_started?(resident = agent, placement_row = resident&.placement)
     placement_row.present? && placement_row.backend == "hetzner_cloud" && placement_row.kind == "github_import" &&
       placement_row.state == "pending" && !placement_row.cleanup_requested? &&
+      placement_row.generation == FIRST_GENERATION &&
       resident.runtime_ready_at.nil? && resident.identity_seeded_at.nil? && !resident.active? && resident.paused?
   end
 
