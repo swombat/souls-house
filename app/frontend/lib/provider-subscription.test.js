@@ -473,3 +473,62 @@ test('latest manual usage request wins and model changes invalidate old usage', 
   await secondRefresh;
   await waitFor(() => expect(state.usage?.marker).toBe('second-model'));
 });
+
+test('settings usage panel shows unavailable fallback when no windows apply and renders Gemini windows when present', async () => {
+  let usageBody = {
+    status: 'available',
+    windows: [{ id: 'antigravity-offline-conversations', label: 'Offline · 7 conversations', resets_at: null }],
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url) =>
+      response(url.includes('capabilities') ? { providers: { gemini: { oauth_account: true } } } : usageBody)
+    )
+  );
+  const view = render(Panel, {
+    account: { id: 'house' },
+    subscriptionAgent: {
+      id: 'gemini-resident',
+      name: 'Reed',
+      model: 'gemini-4-neon',
+      provider: 'gemini',
+      provider_name: 'Google AI',
+      available: true,
+      auth_mode: 'oauth_account',
+      connection: { status: 'connected', plan: 'Google AI' },
+    },
+    canManage: true,
+  });
+  await waitFor(() => expect(view.getByText('Usage temporarily unavailable')).toBeInTheDocument());
+
+  usageBody = {
+    status: 'available',
+    windows: [
+      {
+        id: 'gemini-5h',
+        label: 'Gemini 5-hour',
+        remaining_percent: 94,
+        resets_at: '2099-11-24T01:05:33Z',
+        blocking: true,
+      },
+      {
+        id: 'gemini-weekly',
+        label: 'Gemini weekly',
+        remaining_percent: 98,
+        resets_at: '2099-11-30T20:05:33Z',
+        blocking: true,
+      },
+      {
+        id: '3p-weekly',
+        label: 'Claude/GPT weekly',
+        remaining_percent: 100,
+        resets_at: '2099-11-30T20:41:55Z',
+        blocking: false,
+      },
+    ],
+  };
+  await fireEvent.click(view.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => expect(view.getByText(/5-hour: 94% left/)).toBeInTheDocument());
+  expect(view.getByText(/Weekly: 98% left/)).toBeInTheDocument();
+  expect(view.queryByText(/Claude\/GPT/)).not.toBeInTheDocument();
+});

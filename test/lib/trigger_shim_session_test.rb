@@ -298,6 +298,42 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "/tmp/claude", calls.dig(0, "env", "CLAUDE_CONFIG_DIR")
   end
 
+  test "Gemini subscription usage reads Antigravity /usage JSON directly" do
+    out = run_shim_python(<<~PY)
+      import subprocess
+      calls = []
+      mod._agy_available = lambda: True
+      mod._antigravity_oauth_token_fingerprint = lambda: (1, 10)
+      payload = {
+          "status": "SUCCESS",
+          "command": {
+              "name": "usage",
+              "data": {
+                  "groups": [{
+                      "name": "Gemini Models",
+                      "buckets": [
+                          {"id": "gemini-weekly", "name": "Weekly Limit Remaining", "window": "weekly", "remaining_fraction": 0.98, "reset_time": "2026-11-30T20:05:33Z"},
+                          {"id": "gemini-5h", "name": "Five Hour Limit Remaining", "window": "5h", "remaining_fraction": 0.94, "reset_time": "2026-11-24T01:05:33Z"},
+                      ],
+                  }],
+              },
+          },
+      }
+      def fake_run(cmd, **kwargs):
+          calls.append(cmd)
+          return subprocess.CompletedProcess(cmd, 0, json.dumps(payload), "")
+      mod.subprocess.run = fake_run
+      raw = mod.probe_antigravity_usage("gemini", "gemini-4-neon")
+      normalized = mod.normalize_subscription_usage(raw, "gemini", "gemini-4-neon")
+      print(json.dumps({"cmd": calls[0], "normalized": normalized}))
+    PY
+
+    result = JSON.parse(out)
+    assert_includes result["cmd"], "/usage"
+    assert_equal "available", result.dig("normalized", "status")
+    assert_equal [ "Gemini 5-hour", "Gemini weekly" ], result.dig("normalized", "windows").map { |w| w["label"] }
+  end
+
   test "subscription notice uses the selected Gemini pool and repeats only hourly per session" do
     out = run_shim_python(<<~PY)
       from datetime import datetime, timedelta, timezone
