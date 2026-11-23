@@ -135,6 +135,8 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "edit lazily exposes memory summary endpoint but not admin history" do
+    marker = "core memory marker #{SecureRandom.hex(4)}"
+    AgentMemory.create!(agent: @agent, content: marker, memory_type: :core)
     Agents::MemoryArchive.stub(:new, ->(*) { flunk "Edit must not scan archives" }) do
       get edit_account_agent_path(@account, @agent), params: { tab: "memory" }
     end
@@ -142,6 +144,8 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal account_agent_memory_overview_path(@account, @agent), inertia_shared_props["memory_overview_url"]
     assert_nil inertia_shared_props["memory_history_url"]
     assert_equal "memory", inertia_shared_props["active_tab"]
+    assert_not inertia_shared_props.key?("memories"), "the edit page no longer carries memory rows"
+    assert_not_includes response.body, marker
   end
 
   test "resident URLs are canonical and old links retain their query" do

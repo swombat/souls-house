@@ -8,8 +8,11 @@ module Agents
 
     # Count conventional second-level entry headings, ignoring fenced examples.
     # Only the aggregate leaves the resident's filesystem. No symlink traversal.
+    # Disk use is measured apart, on a slower clock (Agents::HomeStorage): a
+    # walk of a 100 GB home outlasted this script's budget, and the count
+    # should never wait on it.
     SCRIPT = <<~'PYTHON'
-      import json, os, pathlib, re, stat, subprocess, sys
+      import json, os, pathlib, re, stat, sys
       root = pathlib.Path("/home/agent/identity/memory/daily-journals")
       # One Markdown file under memory/ when the resident chose one (argv), else
       # the dated daily journals. The rule is Agent.valid_journal_source?.
@@ -62,20 +65,7 @@ module Agents
               os.close(handle)
               raise RuntimeError("journal source is not a file")
           count = count_entries(os.fdopen(handle, encoding="utf-8"))
-      # Allocated bytes, including hidden files; du does not follow symlinks.
-      # Explicit volume roots exclude the image layer and temporary filesystems.
-      storage_bytes = None
-      try:
-          roots = ["/home/agent/" + name for name in ("identity", ".chaos", "repo", "work", "state")]
-          if any(pathlib.Path(path).is_symlink() for path in roots):
-              raise ValueError("invalid volume root")
-          measurement = subprocess.run(["du", "-s", "-B1", "--", *roots], capture_output=True, text=True, timeout=10, check=True)
-          sizes = [int(line.split()[0]) for line in measurement.stdout.splitlines()]
-          if len(sizes) == len(roots) and all(size >= 0 for size in sizes):
-              storage_bytes = sum(sizes)
-      except (OSError, ValueError, subprocess.SubprocessError):
-          pass
-      print(json.dumps({"count": count, "storage_bytes": storage_bytes}))
+      print(json.dumps({"count": count}))
     PYTHON
 
     def initialize(agent)
@@ -96,9 +86,7 @@ module Agents
       count = measurement.fetch("count")
       raise MeasurementError unless count.is_a?(Integer) && count >= 0
 
-      bytes = measurement["storage_bytes"]
-      bytes = nil unless bytes.is_a?(Integer) && bytes >= 0
-      { status: "measured", count: count, storage_bytes: bytes, measured_at: Time.current.iso8601 }
+      { status: "measured", count: count, measured_at: Time.current.iso8601 }
     rescue MeasurementError, Agents::Resources::OwnershipError, Timeout::Error,
            SystemCallError, JSON::ParserError, KeyError
       @agent.journal_entry_stats.merge("status" => "unavailable")
@@ -114,33 +102,14 @@ module Agents
       count = measurement["count"]
       raise MeasurementError unless count.is_a?(Integer) && count >= 0
 
-      bytes = measurement["storage_bytes"]
-      bytes = nil unless bytes.is_a?(Integer) && bytes >= 0
-      { status: "measured", count: count, storage_bytes: bytes, measured_at: Time.current.iso8601 }
+      { status: "measured", count: count, measured_at: Time.current.iso8601 }
     rescue MeasurementError, Agents::RemoteRuntime::Unavailable
       @agent.journal_entry_stats.merge("status" => "unavailable")
     end
 
     def capture
       # The chosen journal goes in as one argv value, never into the code.
-      Open3.popen3("docker", "exec", @agent.container_name,
-        "timeout", "30", "python3", "-c", SCRIPT, *@agent.journal_source, pgroup: true) do |stdin, stdout, stderr, process|
-        stdin.close
-        output = Thread.new { stdout.read }
-        errors = Thread.new { stderr.read }
-        begin
-          Timeout.timeout(45) do
-            { ok: process.value.success?, stdout: output.value }
-          end
-        ensure
-          if process.alive?
-            Process.kill("KILL", -process.pid)
-            process.join
-          end
-          output.join
-          errors.join
-        end
-      end
+      ResidentPython.run(@agent.container_name, SCRIPT, *@agent.journal_source, seconds: 30)
     end
 
   end

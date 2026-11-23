@@ -123,7 +123,7 @@ RUN groupmod --new-name agent node \
 # Fable 5.2 requires 2.1.290 and is first in the model catalog at 2.1.321.
 # 2.1.325 (16 Nov 2026): zstd response-decoding security fix, and recent turns
 # no longer go missing from a session resumed after an unclean exit.
-ARG CLAUDE_CODE_VERSION=2.1.325
+ARG CLAUDE_CODE_VERSION=2.1.330
 RUN bun install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
 
@@ -249,6 +249,7 @@ COPY --chmod=0755 soulshouse-stone /usr/local/bin/soulshouse-stone
 COPY --chmod=0755 soulshouse-computer /usr/local/bin/soulshouse-computer
 COPY --chmod=0755 soulshouse-table /usr/local/bin/soulshouse-table
 COPY --chmod=0755 soulshouse-model /usr/local/bin/soulshouse-model
+COPY --chmod=0755 soulshouse-appearance /usr/local/bin/soulshouse-appearance
 COPY --chmod=0755 soulshouse-avatar /usr/local/bin/soulshouse-avatar
 COPY --chmod=0755 soulshouse-voice /usr/local/bin/soulshouse-voice
 COPY --chmod=0755 soulshouse-quiet-reason /usr/local/bin/soulshouse-quiet-reason

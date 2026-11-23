@@ -74,6 +74,7 @@ Env vars (read at startup):
 
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -162,6 +163,8 @@ PAID_FALLBACK_STRIPPED_ENV = (
 AUTH_CODE_TTL_SECS = 15 * 60
 SUBSCRIPTION_USAGE_TTL_SECS = 60
 SUBSCRIPTION_USAGE_TIMEOUT_SECS = 20
+# Below AgentProviderAuthClient's 20s Net::HTTP read_timeout.
+ANTIGRAVITY_USAGE_TIMEOUT_SECS = 15
 SUBSCRIPTION_NOTICE_INTERVAL_SECS = 60 * 60
 SHIM_TELEMETRY_SCHEMA_VERSION = 1
 SIDECAR_SCHEMA_VERSION = 3
@@ -2587,7 +2590,10 @@ def subscription_usage(provider, model, refresh=False):
             if not refresh and cached and now - cached["cached_at"] < SUBSCRIPTION_USAGE_TTL_SECS:
                 return _valid_cached_usage(cached["snapshot"])
         try:
-            snapshot = USAGE_PROBES[provider](provider, model)
+            raw_snapshot = USAGE_PROBES[provider](provider, model)
+            snapshot = normalize_subscription_usage(raw_snapshot, provider, model)
+            if snapshot.get("status") == "unknown":
+                raise ValueError("Subscription usage snapshot has no usable windows")
         except Exception as error:
             log.warning(f"subscription usage unavailable provider={provider}: {type(error).__name__}")
             with _subscription_usage_guard:
@@ -2598,7 +2604,6 @@ def subscription_usage(provider, model, refresh=False):
                     return usable
             return unknown_subscription_usage(provider)
 
-        snapshot = normalize_subscription_usage(snapshot, provider, model)
         with _subscription_usage_guard:
             _subscription_usage_cache[key] = {
                 "cached_at": time.monotonic(),
@@ -2795,10 +2800,51 @@ def probe_claude_usage(_provider, _model):
 
 
 def probe_antigravity_usage(_provider, _model):
-    status = _antigravity_account_status()
-    if status.get("status") != "connected":
+    if not _agy_available() or _antigravity_oauth_token_fingerprint() is None:
         raise RuntimeError("Antigravity subscription is not connected")
-    return _codexbar_usage("antigravity", _antigravity_cli_env())
+    return _antigravity_usage()
+
+
+def _reject_json_constant(token):
+    raise ValueError(f"Invalid JSON numeric constant: {token}")
+
+
+def _antigravity_usage():
+    # CodexBar's Antigravity CLI probe connects to agy's localhost HTTPS server,
+    # whose self-signed certificate Linux FoundationNetworking rejects (falling
+    # back to an offline placeholder with no reset times). agy's own /usage
+    # print command reads the quota summary directly with zero token spend under
+    # one deadline below Rails's 20s read timeout (no separate `agy models`).
+    result = subprocess.run(
+        [
+            AGY_BIN,
+            "--log-file",
+            "/dev/null",
+            "--print",
+            "/usage",
+            "--output-format",
+            "json",
+            "--print-timeout",
+            f"{ANTIGRAVITY_USAGE_TIMEOUT_SECS}s",
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=ANTIGRAVITY_USAGE_TIMEOUT_SECS,
+        env=_antigravity_usage_env(),
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Antigravity usage probe failed")
+    payload = json.loads(_bounded_output(result.stdout), parse_constant=_reject_json_constant)
+    if not isinstance(payload, dict) or payload.get("status") != "SUCCESS":
+        raise ValueError("Antigravity returned no usage snapshot")
+    command = payload.get("command")
+    data = command.get("data") if isinstance(command, dict) else None
+    if not isinstance(command, dict) or command.get("name") != "usage" or not isinstance(data, dict):
+        raise ValueError("Antigravity returned no usage command data")
+    if data.get("groups") is not None and not isinstance(data.get("groups"), list):
+        raise ValueError("Antigravity usage groups must be a list")
+    return payload
 
 
 def _codexbar_usage(provider, env, source="cli"):
@@ -2824,7 +2870,11 @@ def _bounded_output(value, limit=256_000):
 
 
 def normalize_subscription_usage(payload, provider, model):
+    if not isinstance(payload, dict):
+        payload = {}
     if provider in ("openai", "xai"):
+        raw_windows = payload.get("windows")
+        raw_windows = raw_windows if isinstance(raw_windows, list) else []
         windows = [
             {
                 "id": str(window.get("id") or f"window-{index}"),
@@ -2833,18 +2883,27 @@ def normalize_subscription_usage(payload, provider, model):
                 "resets_at": _iso_timestamp(window.get("resets_at")),
                 "blocking": True,
             }
-            for index, window in enumerate(payload.get("windows") or [])
+            for index, window in enumerate(raw_windows)
             if isinstance(window, dict) and _number(window.get("used_percent")) is not None
         ]
         observed_at = _iso_timestamp(payload.get("observed_at"))
         source = payload.get("source")
         plan = payload.get("plan")
+    elif provider == "gemini" and isinstance(payload.get("command"), dict) and payload["command"].get("name") == "usage":
+        plan = "Google AI"
+        source = "cli"
+        observed_at = _iso_timestamp(payload.get("observed_at"))
+        windows = _antigravity_windows(payload, model)
     else:
-        usage = payload.get("usage") or {}
+        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
         plan = usage.get("loginMethod") or (usage.get("identity") or {}).get("loginMethod")
         source = payload.get("source") or "cli"
         observed_at = _iso_timestamp(usage.get("updatedAt"))
-        windows = _codexbar_windows(provider, model, usage)
+        offline = str(source).lower() == "offline" or str(plan or "").lower() == "offline"
+        windows = [] if offline else _codexbar_windows(provider, model, usage)
+
+    if not _has_usable_model_windows(provider, model, windows):
+        windows = []
 
     limited = any(window["blocking"] and window["remaining_percent"] <= 0 for window in windows)
     return {
@@ -2856,6 +2915,122 @@ def normalize_subscription_usage(payload, provider, model):
         "observed_at": observed_at or datetime.now(timezone.utc).isoformat(),
         "source": source,
     }
+
+
+def _has_usable_model_windows(provider, model, windows):
+    if not windows:
+        return False
+    if provider == "gemini":
+        model_lower = (model or "").lower()
+        is_gemini_model = not model_lower or "gemini" in model_lower
+        for window in windows:
+            if not window.get("blocking") or not window.get("resets_at"):
+                continue
+            label_lower = _usage_window_label(window)
+            if is_gemini_model:
+                if label_lower.startswith("gemini ") and ("5-hour" in label_lower or "weekly" in label_lower):
+                    return True
+            else:
+                return True
+        return False
+    return True
+
+
+def _antigravity_windows(payload, model):
+    command = payload.get("command")
+    data = command.get("data") if isinstance(command, dict) else None
+    if not isinstance(data, dict):
+        return []
+    groups = data.get("groups")
+    if groups is None:
+        return []
+    if not isinstance(groups, list):
+        return []
+
+    tsv_percents = {}
+    raw_response = payload.get("response")
+    if isinstance(raw_response, str):
+        for line in raw_response.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[2].strip().endswith("%"):
+                pct = _number(parts[2].strip()[:-1])
+                if pct is not None:
+                    tsv_percents[(parts[0].strip(), parts[1].strip())] = pct
+
+    windows = []
+    seen = set()
+    for group in groups:
+        if not isinstance(group, dict):
+            return []
+        buckets = group.get("buckets")
+        if buckets is None:
+            continue
+        if not isinstance(buckets, list):
+            return []
+        group_name = str(group.get("name") or "").strip()
+        group_windows = []
+        for index, bucket in enumerate(buckets):
+            if not isinstance(bucket, dict):
+                return []
+            bucket_name = str(bucket.get("name") or "").strip()
+            if bucket.get("disabled") is True:
+                remaining_percent = 0.0
+            elif "remaining_fraction" in bucket and bucket["remaining_fraction"] is not None:
+                fraction = _number(bucket["remaining_fraction"])
+                if fraction is None:
+                    return []
+                remaining_percent = round(max(0.0, min(100.0, fraction * 100.0)), 2)
+            elif "remaining_amount" not in bucket and (group_name, bucket_name) in tsv_percents:
+                remaining_percent = round(max(0.0, min(100.0, float(tsv_percents[(group_name, bucket_name)]))), 2)
+            else:
+                continue
+
+            window_id = str(bucket.get("id") or f"window-{index}").strip()
+            label = _antigravity_window_label(group_name, bucket)
+            resets_at = _iso_timestamp(bucket.get("reset_time"))
+            key = (window_id, resets_at, remaining_percent)
+            if key in seen:
+                continue
+            seen.add(key)
+            group_windows.append({
+                "id": window_id,
+                "label": label,
+                "remaining_percent": remaining_percent,
+                "resets_at": resets_at,
+                "blocking": _window_blocks_model("gemini", model, label),
+            })
+        group_windows.sort(key=lambda item: (0 if "5-hour" in item["label"].lower() else 1))
+        windows.extend(group_windows)
+    return windows
+
+
+def _antigravity_window_label(group_name, bucket):
+    bucket_id = str(bucket.get("id") or "").strip().lower()
+    group_lower = group_name.lower()
+    if bucket_id.startswith("gemini") or "gemini" in group_lower:
+        family = "Gemini"
+    elif bucket_id.startswith("3p-") or "claude" in group_lower or "gpt" in group_lower:
+        family = "Claude/GPT"
+    else:
+        family = group_name or "Usage"
+
+    window_code = str(bucket.get("window") or "").strip().lower()
+    bucket_name = str(bucket.get("name") or "").strip()
+    bucket_lower = bucket_name.lower()
+    if (
+        window_code in ("5h", "5-hour")
+        or bucket_id.endswith("-5h")
+        or "five hour" in bucket_lower
+        or "5-hour" in bucket_lower
+        or "5 hour" in bucket_lower
+    ):
+        cadence = "5-hour"
+    elif window_code == "weekly" or bucket_id.endswith("-weekly") or "weekly" in bucket_lower:
+        cadence = "weekly"
+    else:
+        cadence = bucket_name or window_code or "usage"
+
+    return f"{family} {cadence}".strip()
 
 
 def _codexbar_windows(provider, model, usage):
@@ -2892,7 +3067,8 @@ def _codexbar_windows(provider, model, usage):
 
 def _window_blocks_model(provider, model, label):
     if provider == "gemini":
-        is_gemini_model = "gemini" in (model or "").lower()
+        model_lower = (model or "").lower()
+        is_gemini_model = not model_lower or "gemini" in model_lower
         is_gemini_window = "gemini" in label.lower()
         return is_gemini_model == is_gemini_window
     if provider != "anthropic":
@@ -2908,16 +3084,21 @@ def _remaining_percent(used_percent):
 
 
 def _number(value):
+    if isinstance(value, bool):
+        return None
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _parse_timestamp(value):
     if value is None:
         return None
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not math.isfinite(value):
+            return None
         return datetime.fromtimestamp(value, tz=timezone.utc)
     try:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -3356,7 +3537,11 @@ def _monitor_auth_process(process, provider, credential_before=None):
             if not line:
                 continue
             if _browser_code_provider(provider):
-                url = _first_http_url(line)
+                # Antigravity prints its sign-in link inside a TUI that wraps at
+                # the terminal width, so a URL read from this stream stops at the
+                # first wrap (agy 1.5.9). Its browser helper file carries the whole
+                # link; _monitor_antigravity_login_url is the only source for it.
+                url = _first_http_url(line) if provider != "gemini" else None
                 if url and verification_url is None:
                     verification_url = url
                     with _auth_lock:
@@ -3548,6 +3733,14 @@ def _antigravity_cli_env():
         str(ANTIGRAVITY_BROWSER_HELPER_DIR),
         env.get("PATH", ""),
     ))
+    return env
+
+
+def _antigravity_usage_env():
+    env = _antigravity_subscription_env()
+    env["HOME"] = str(CHAOS_AGY_HOME)
+    env["XDG_CONFIG_HOME"] = str(CHAOS_AGY_HOME / ".config")
+    env["BROWSER"] = "/bin/true"
     return env
 
 
@@ -3804,7 +3997,7 @@ def _antigravity_account_status():
         return {"status": "none", "provider": "gemini"}
     try:
         result = subprocess.run(
-            [AGY_BIN, "models"],
+            [AGY_BIN, "--log-file", "/dev/null", "models"],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,

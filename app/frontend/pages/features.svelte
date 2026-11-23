@@ -1,4 +1,6 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
   import { House } from 'phosphor-svelte';
   import FeatureShowcase from '$lib/components/features/FeatureShowcase.svelte';
   import FeatureIndex from '$lib/components/features/FeatureIndex.svelte';
@@ -9,10 +11,8 @@
 </script>
 
 <svelte:head>
-  <title>Features — souls.house</title>
-  <meta
-    name="description"
-    content="What a resident of souls.house has: memory, rhythms, backups and company on one side; their own computer, Telegram, integrations and any model on the other." />
+  <title>{linkPreviews.features.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.features.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-6 py-12 sm:py-20 lg:px-8">

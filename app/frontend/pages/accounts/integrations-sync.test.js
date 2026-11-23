@@ -71,7 +71,6 @@ test('provider edit subscriptions preserve broad maps and reconcile rendered sta
   );
   expect(subscribeToModel).toHaveBeenCalledWith('Agent', 'resident', [
     'agent',
-    'memories',
     'interactions',
     'interactions_pagination',
     'cost_report',

@@ -27,7 +27,6 @@ test('owner can select the export/import tab with no settings submit action', as
   expect(useSync).toHaveBeenCalledWith({
     'Agent:resident': [
       'agent',
-      'memories',
       'interactions',
       'interactions_pagination',
       'cost_report',

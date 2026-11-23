@@ -63,6 +63,26 @@ test('spins a ring for each resident working in a recent conversation', () => {
   expect(screen.getAllByTestId('room-working-ring').map((ring) => ring.dataset.colour)).toEqual(['orange', 'violet']);
 });
 
+test('passes waking_agent_ids through to the recent-conversation spinner label', () => {
+  render(NewChatEmptyState, {
+    accountId: 'account',
+    chats: [
+      {
+        id: 'waking',
+        title: 'Waking',
+        activity_at: '2026-09-25',
+        working_agent_ids: ['l', 'm'],
+        waking_agent_ids: ['l'],
+        participants_json: [
+          { type: 'agent', id: 'm', name: 'Mira', colour: 'violet' },
+          { type: 'agent', id: 'l', name: 'Lume', colour: 'orange' },
+        ],
+      },
+    ],
+  });
+  expect(screen.getByTestId('room-working')).toHaveAttribute('title', 'Lume waking up, Mira working');
+});
+
 const many = Array.from({ length: 12 }, (_, i) => ({
   id: `c${i}`,
   title: `Chat ${i}`,
@@ -79,7 +99,16 @@ test('offers at most ten conversations even when the screen has room', () => {
 
 describe('fitting the screen', () => {
   let rectSpy, parentSpy;
-  const rect = (bottom) => ({ top: bottom - 50, bottom, left: 0, right: 300, width: 300, height: 50, x: 0, y: bottom - 50 });
+  const rect = (bottom) => ({
+    top: bottom - 50,
+    bottom,
+    left: 0,
+    right: 300,
+    width: 300,
+    height: 50,
+    x: 0,
+    y: bottom - 50,
+  });
 
   beforeEach(() => {
     // jsdom has no layout: give the scroller a bottom edge at 300px and stack

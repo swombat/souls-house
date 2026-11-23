@@ -108,7 +108,6 @@ class AgentsController < ApplicationController
       telegram_subscriber_count: -> { @agent.telegram_subscriptions.active.count },
       telegram_groups: -> { TelegramGroupPresentation.list(@agent, account: current_account) },
       can_manage_telegram_groups: -> { current_account.owned_by?(Current.user) },
-      memories: -> { memories_for_display },
       grouped_models: -> { grouped_models },
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
@@ -377,23 +376,6 @@ class AgentsController < ApplicationController
     current_account.update_ai_api_keys!(set: { provider => value })
     audit("update_agent_api_keys", current_account, provider: provider, source: "new_resident")
     false
-  end
-
-  def memories_for_display
-    scope = @agent.memories.where(memory_type: :core)
-      .or(@agent.memories.where(memory_type: :journal, created_at: AgentMemory::JOURNAL_WINDOW.ago..))
-    scope.recent_first.map do |m|
-      {
-        id: m.id,
-        content: m.content,
-        memory_type: m.memory_type,
-        constitutional: m.constitutional?,
-        discarded: m.discarded?,
-        created_at: m.created_at.strftime("%Y-%m-%d %H:%M"),
-        expired: m.expired?,
-        age_in_days: ((Time.current - m.created_at) / 1.day).floor
-      }
-    end
   end
 
   def service_connections_for_agent

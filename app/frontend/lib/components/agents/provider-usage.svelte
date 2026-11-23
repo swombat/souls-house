@@ -23,7 +23,7 @@
         {usageLoading ? 'Refreshing…' : 'Refresh usage'}
       </button>
     </div>
-  {:else if usage?.status === 'unknown' || usageError}
+  {:else if usage?.status === 'unknown' || usageError || (usage && !displayWindows.length)}
     <div class="flex items-center gap-2">
       <p class="text-xs text-muted-foreground">Usage temporarily unavailable</p>
       <button class="text-xs font-medium text-primary hover:underline" type="button" onclick={() => loadUsage(true)}>
