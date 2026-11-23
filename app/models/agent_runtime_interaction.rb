@@ -133,6 +133,17 @@ class AgentRuntimeInteraction < ApplicationRecord
   scope :working, -> {
     active.where("agent_runtime_interactions.execution_state IS NULL OR agent_runtime_interactions.execution_state NOT IN (?)", TERMINAL_STATES)
   }
+  WAKING_PHASE_SQL = <<~SQL.squish.freeze
+    agent_runtime_interactions.execution_state IN ('preparing', 'running')
+    AND COALESCE((
+      SELECT ara.snapshot ->> 'phase' = 'waking' AND COALESCE((ara.snapshot ->> 'fallback')::boolean, false) = false
+      FROM agent_runtime_attempts ara
+      WHERE ara.agent_runtime_interaction_id = agent_runtime_interactions.id
+      ORDER BY ara.number DESC
+      LIMIT 1
+    ), false)
+  SQL
+  scope :waking, -> { working.where(WAKING_PHASE_SQL) }
 
   def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, shown_message_ids: [], provider_auth_mode: "api_key", provider: nil, model: nil, wake_source_kinds: [], requested_at: nil)
     interaction = transaction do

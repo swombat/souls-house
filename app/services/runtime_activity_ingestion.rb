@@ -9,7 +9,7 @@ class RuntimeActivityIngestion
   }.freeze
   # Chaos task states (#864); a Codex todo_list only ever sends the first three.
   PLAN_STEP_STATUSES = %w[pending in_progress blocked completed cancelled].freeze
-  TYPES = %w[attempt.started turn.started turn.finished tool.started tool.finished agent.status_changed stream.started stream.gap commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
+  TYPES = %w[attempt.started turn.started turn.finished wake.started wake.finished tool.started tool.finished agent.status_changed stream.started stream.gap commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
   OUTCOMES = %w[completed failed timed_out outcome_unknown].freeze
 
   def initialize(run, payload)
@@ -24,7 +24,9 @@ class RuntimeActivityIngestion
     events = payload["events"].map { |event| validate_event(event) }
     raise Invalid unless events.map { |event| event["seq"] }.uniq.length == events.length
     broadcast = false
+    refresh_surfaces = false
     run.with_lock do
+      prior_state = run.execution_state
       attempt = run.agent_runtime_attempts.find_by(attempt_id: payload["attempt_id"])
       unless attempt
         first = events.min_by { |event| event["seq"] }
@@ -41,6 +43,7 @@ class RuntimeActivityIngestion
       end
       raise Invalid unless attempt.number == payload["attempt_number"]
       latest = attempt.number == run.agent_runtime_attempts.maximum(:number)
+      prior_phase = attempt.snapshot["phase"]
       @subagents_shared = shared_narration?
       @subagents = RuntimeSubagents.new(@subagents_shared ? attempt.snapshot[RuntimeSubagents::KEY] : nil)
       @subagents.gap! if attempt.last_report_at && attempt.last_report_at < 30.seconds.ago
@@ -81,7 +84,10 @@ class RuntimeActivityIngestion
       snapshot[RuntimeSubagents::KEY] = @subagents.state if @subagents_shared
       attempt.snapshot = snapshot
       attempt.last_report_at = Time.current
-      if latest && (attempt.last_broadcast_at.nil? || attempt.last_broadcast_at < 1.second.ago || run.finished_at?)
+      state_changed = run.execution_state != prior_state
+      phase_changed = attempt.snapshot["phase"] != prior_phase
+      refresh_surfaces = latest && !run.finished_at? && phase_changed && !state_changed
+      if latest && (attempt.last_broadcast_at.nil? || attempt.last_broadcast_at < 1.second.ago || state_changed || phase_changed || run.finished_at?)
         attempt.last_broadcast_at = Time.current
         broadcast = true
       end
@@ -91,6 +97,10 @@ class RuntimeActivityIngestion
       ActionCable.server.broadcast("Chat:#{run.chat.to_param}", {
         action: "runtime_activity_changed", run_id: run.run_id, revision: run.live_activity_json[:revision]
       })
+    end
+    if refresh_surfaces && run.chat
+      ActionCable.server.broadcast("Account:#{run.chat.account.obfuscated_id}", { action: "refresh", prop: "chats" })
+      RoomActivity.refresh_for(run.chat.account)
     end
     collect_turn_promptly if events.any? { |event| event["type"] == "supervisor.finished" }
     {
@@ -161,6 +171,9 @@ class RuntimeActivityIngestion
     when "stream.started", "stream.gap"
       @subagents.gap!
       {}
+    when "wake.started", "wake.finished"
+      raise Invalid unless data.empty?
+      {}
     when "plan.updated"
       raise Invalid unless data["steps"].is_a?(Array) && data["steps"].size <= 100
       steps = data["steps"].map do |step|
@@ -194,6 +207,10 @@ class RuntimeActivityIngestion
           project({ "type" => "tool.started", "data" => operation })
         end
         safe["operations"] = operations.index_by { |operation| operation["operation_id"] }
+      end
+      if data.key?("phase")
+        raise Invalid unless data["phase"].in?([ nil, "waking" ])
+        safe["phase"] = data["phase"]
       end
       safe
     else
@@ -245,6 +262,10 @@ class RuntimeActivityIngestion
       snapshot.merge!(data)
     when "turn.started"
       run.update!(execution_state: "running") if latest && !run.finished_at?
+    when "wake.started"
+      snapshot["phase"] = "waking"
+    when "wake.finished", "stream.started", "stream.gap", "turn.finished"
+      snapshot.delete("phase")
     when "tool.started"
       operations = snapshot.fetch("operations", {}).except(data["operation_id"])
       operations[data["operation_id"]] = data if operations.size < 256
@@ -253,6 +274,9 @@ class RuntimeActivityIngestion
       snapshot["operations"] = snapshot.fetch("operations", {}).except(data["operation_id"])
     when "heartbeat"
       snapshot["operations"] = data["operations"] if data.key?("operations")
+      if data.key?("phase")
+        data["phase"] ? snapshot["phase"] = data["phase"] : snapshot.delete("phase")
+      end
     when "commentary.completed"
       snapshot["commentary"] = data["text"] if data["text"]
     when "plan.updated"
@@ -265,9 +289,11 @@ class RuntimeActivityIngestion
       @subagents.gap!
       snapshot["fallback"] = true
       snapshot["operations"] = {}
+      snapshot.delete("phase")
     when "supervisor.finished"
       @subagents.gap!
       snapshot["operations"] = {}
+      snapshot.delete("phase")
       run.finish_execution!(data["outcome"]) if latest
     end
     attempt.snapshot = snapshot

@@ -76,6 +76,7 @@ RETAINED_EVENT_TYPES = (
 class Reporter:
     SUBAGENT_STATUSES = frozenset(("pending_init", "running", "interrupted", "completed",
                                   "errored", "shutdown", "not_found"))
+    WAKE_HOOK_EVENTS = frozenset(("session_start", "before_turn"))
     CATEGORIES = {
         "command_execution": "command", "file_change": "files",
         "mcp_tool_call": "tool", "web_search": "search",
@@ -101,6 +102,7 @@ class Reporter:
         self.capability = "unknown" if provider in ("openai", "openai-codex") else "unsupported"
         self.operations = {}
         self.subagents = {}
+        self.wake_hooks = set()
         self.attempt_id = None
         self.number = 0
         self.seq = 0
@@ -136,7 +138,11 @@ class Reporter:
                 return
             self.seq += 1
             if kind == "heartbeat":
-                data = {"operations": list(self.operations.values()), "detail_dropped": self.dropped}
+                data = {
+                    "operations": list(self.operations.values()),
+                    "phase": "waking" if self.wake_hooks else None,
+                    "detail_dropped": self.dropped,
+                }
                 if self.share:
                     data["subagents"] = list(self.subagents.values())
             event = {"seq": self.seq, "type": kind, "data": data or {}}
@@ -170,6 +176,7 @@ class Reporter:
             self.seq = 0
             self.operations = {}
             self.subagents = {}
+            self.wake_hooks = set()
             # Each attempt has its own snapshot; send the plan again.
             self.last_plan = None
             self.emit("attempt.started", {"narration_capability": self.capability})
@@ -191,14 +198,34 @@ class Reporter:
                 self.read_native(event.get("plan_id"))
         elif kind == "agent.status_changed":
             self.project_subagent(event)
+        elif kind == "hook.started":
+            hook_id = event.get("id")
+            if event.get("event_name") in self.WAKE_HOOK_EVENTS and isinstance(hook_id, str) and 0 < len(hook_id) <= 512:
+                with self.lock:
+                    if hook_id in self.wake_hooks or len(self.wake_hooks) < 64:
+                        was_waking = bool(self.wake_hooks)
+                        self.wake_hooks.add(hook_id)
+                        if not was_waking:
+                            self.emit("wake.started")
+        elif kind == "hook.completed":
+            hook_id = event.get("id")
+            if event.get("event_name") in self.WAKE_HOOK_EVENTS and isinstance(hook_id, str):
+                with self.lock:
+                    if hook_id in self.wake_hooks:
+                        self.wake_hooks.discard(hook_id)
+                        if not self.wake_hooks:
+                            self.emit("wake.finished")
         elif kind == "turn.started":
             self.emit("turn.started")
             self.poll_plan()
         elif kind in ("turn.completed", "turn.failed"):
+            self._clear_wake_hooks()
             self.emit("turn.finished")
             self.poll_plan()
         elif kind in ("item.started", "item.updated", "item.completed"):
             item = event.get("item") or {}
+            if isinstance(item, dict) and item.get("type") != "error":
+                self._clear_wake_hooks()
             category = self.CATEGORIES.get(item.get("type"))
             if category:
                 operation = {
@@ -422,10 +449,17 @@ class Reporter:
 
     def stream_gap(self, kind="stream.gap"):
         with self.lock:
+            self.wake_hooks.clear()
             for child in self.subagents.values():
                 if child["status"] in ("pending_init", "running"):
                     child["status"] = "unknown"
             self.emit(kind)
+
+    def _clear_wake_hooks(self):
+        with self.lock:
+            if self.wake_hooks:
+                self.wake_hooks.clear()
+                self.emit("wake.finished")
 
     @staticmethod
     def _text(value):
@@ -584,6 +618,7 @@ class Reporter:
                                              self.silence.finish(time.time()))
         with self.lock:
             self.operations = {}
+            self.wake_hooks.clear()
         self.emit("supervisor.finished", {
             "outcome": outcome, "telemetry": self._safe_telemetry(body.get("telemetry")),
             "runtime_status": body.get("status"), "returncode": body.get("returncode"),

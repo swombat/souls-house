@@ -520,6 +520,85 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_equal shown.id, @run.reload.last_included_message_id
   end
 
+  test "waking phase updates live snapshot and broadcasts immediately inside the one second window" do
+    @agent.update!(share_working_narration: false)
+    @run.update!(narration_shared: false)
+    chat_channel = "Chat:#{@chat.to_param}"
+    account_channel = "Account:#{@chat.account.obfuscated_id}"
+    room_channel = "RoomActivity:#{@chat.account.obfuscated_id}"
+
+    freeze_time do
+      assert_broadcasts(chat_channel, 1) do
+        ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+      end
+      assert_equal "is preparing", @run.reload.as_chat_activity_json[:status_label]
+      assert_nil @run.as_chat_activity_json[:snapshot]["phase"]
+
+      travel 0.1.seconds
+      assert_broadcasts(chat_channel, 1) do
+        assert_broadcast_on(account_channel, action: "refresh", prop: "chats") do
+          assert_broadcast_on(room_channel, action: "refresh") do
+            ingest(2, "wake.started")
+          end
+        end
+      end
+      assert_equal "is waking up", @run.reload.as_chat_activity_json[:status_label]
+      assert_equal "waking", @run.as_chat_activity_json[:snapshot]["phase"]
+
+      travel 0.1.seconds
+      RuntimeActivityIngestion.new(@run, {
+        "schema_version" => 1, "run_id" => @run.run_id,
+        "attempt_id" => @attempt_id, "attempt_number" => 1,
+        "events" => [
+          { "seq" => 3, "type" => "wake.finished", "data" => {} },
+          { "seq" => 4, "type" => "turn.started", "data" => {} },
+          { "seq" => 5, "type" => "wake.started", "data" => {} }
+        ]
+      }).call
+      assert_equal "running", @run.reload.execution_state
+      assert_equal "is waking up", @run.as_chat_activity_json[:status_label]
+
+      travel 0.2.seconds
+      assert_broadcasts(chat_channel, 1) do
+        assert_broadcast_on(account_channel, action: "refresh", prop: "chats") do
+          assert_broadcast_on(room_channel, action: "refresh") do
+            ingest(6, "wake.finished")
+          end
+        end
+      end
+      assert_equal "is working", @run.reload.as_chat_activity_json[:status_label]
+      assert_not @run.as_chat_activity_json[:snapshot].key?("phase")
+    end
+  end
+
+  test "waking phase self-heals on heartbeat and never leaks into retries or terminal states" do
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    ingest(2, "turn.started")
+    assert_raises(RuntimeActivityIngestion::Invalid) { ingest(3, "wake.started", { "id" => "secret" }) }
+    assert_raises(RuntimeActivityIngestion::Invalid) { ingest(3, "heartbeat", { "phase" => "sleeping" }) }
+
+    ingest(3, "heartbeat", { "operations" => [], "phase" => "waking", "detail_dropped" => 0 })
+    assert_equal "is waking up", @run.reload.as_chat_activity_json[:status_label]
+    ingest(4, "heartbeat", { "operations" => [], "phase" => nil, "detail_dropped" => 0 })
+    assert_equal "is working", @run.reload.as_chat_activity_json[:status_label]
+
+    ingest(5, "wake.started")
+    ingest(6, "fallback")
+    second = SecureRandom.uuid
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" }, attempt_id: second, number: 2)
+    ingest(2, "turn.started", {}, attempt_id: second, number: 2)
+    assert_equal "is working", @run.reload.as_chat_activity_json[:status_label]
+    assert_not @run.as_chat_activity_json[:snapshot].key?("phase")
+
+    ingest(3, "wake.started", {}, attempt_id: second, number: 2)
+    assert_equal "is waking up", @run.reload.as_chat_activity_json[:status_label]
+    @run.update!(execution_deadline_at: 11.minutes.ago)
+    @run.agent_runtime_attempts.update_all(last_report_at: 11.minutes.ago)
+    @run.reconcile_activity!
+    assert_equal "lost contact; outcome unconfirmed", @run.reload.as_chat_activity_json[:status_label]
+    assert_not @run.as_chat_activity_json[:snapshot].key?("phase")
+  end
+
   private
 
   def start_helpers

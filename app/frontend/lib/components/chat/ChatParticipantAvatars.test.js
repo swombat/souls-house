@@ -43,3 +43,16 @@ test('a resident without a colour keeps the primary ring', () => {
   const { container } = render(ChatParticipantAvatars, { participants, workingAgentIds: ['mira'] });
   expect(container.querySelector('.working-ring')).toHaveClass('text-primary');
 });
+
+test('labels a waking resident as waking up and switches to working when hooks finish', async () => {
+  const { container, rerender } = render(ChatParticipantAvatars, {
+    participants,
+    workingAgentIds: ['mira'],
+    wakingAgentIds: ['mira'],
+  });
+  expect(screen.getByRole('img', { name: 'Mira is waking up' })).toHaveClass('working');
+  expect(container.querySelectorAll('.working-ring')).toHaveLength(1);
+
+  await rerender({ participants, workingAgentIds: ['mira'], wakingAgentIds: [] });
+  expect(screen.getByRole('img', { name: 'Mira is working' })).toHaveClass('working');
+});

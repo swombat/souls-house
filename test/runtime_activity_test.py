@@ -455,6 +455,61 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
         self.assertEqual(1, self.reporter.dropped)
         self.assertLess(len(self.packets), 8)
 
+    def test_wake_hooks_emit_payload_free_phase_transitions_and_scrub_hook_details(self):
+        self.reporter.begin_attempt()
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/PRIVATE_BOOT",
+                               "event_name": "session_start", "status": "running", "command": "PRIVATE_CMD"})
+        self.reporter.emit("heartbeat")
+        self.reporter.project({"type": "hook.completed", "id": "chaos://hooks/PRIVATE_BOOT",
+                               "event_name": "session_start", "status": "completed",
+                               "entries": [{"kind": "context", "text": "PRIVATE_CONTEXT"}]})
+        self.reporter.project({"type": "turn.started"})
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/PRIVATE_MEM_1",
+                               "event_name": "before_turn", "status": "running"})
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/PRIVATE_MEM_2",
+                               "event_name": "before_turn", "status": "running"})
+        self.reporter.project({"type": "hook.completed", "id": "chaos://hooks/PRIVATE_MEM_1",
+                               "event_name": "before_turn", "status": "completed"})
+        self.assertEqual({"chaos://hooks/PRIVATE_MEM_2"}, self.reporter.wake_hooks)
+        self.reporter.project({"type": "hook.completed", "id": "chaos://hooks/PRIVATE_MEM_2",
+                               "event_name": "before_turn", "status": "failed"})
+        self.reporter.emit("heartbeat")
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/PRIVATE_STOP",
+                               "event_name": "stop", "status": "running"})
+        self.reporter.project({"type": "hook.completed", "id": "chaos://hooks/PRIVATE_STOP",
+                               "event_name": "stop", "status": "completed"})
+        self.reporter.finish(({"status": "ok"}, 200))
+
+        wake_events = [event for event in self.events() if event["type"].startswith("wake.")]
+        self.assertEqual(["wake.started", "wake.finished", "wake.started", "wake.finished"],
+                         [event["type"] for event in wake_events])
+        self.assertTrue(all(event["data"] == {} for event in wake_events))
+        heartbeats = [event["data"]["phase"] for event in self.events() if event["type"] == "heartbeat"]
+        self.assertEqual(["waking", None], heartbeats)
+        for secret in ("PRIVATE_BOOT", "PRIVATE_CMD", "PRIVATE_CONTEXT", "PRIVATE_MEM", "PRIVATE_STOP"):
+            self.assertNotIn(secret, json.dumps(self.packets))
+
+    def test_unclosed_wake_hook_clears_on_work_turn_end_gap_or_fallback(self):
+        self.reporter.begin_attempt()
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/wake",
+                               "event_name": "before_turn", "status": "running"})
+        self.reporter.project({"type": "item.started", "item": {"id": "1", "type": "reasoning"}})
+        self.assertIsNone(self.reporter.wake_hooks or None)
+
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/wake",
+                               "event_name": "before_turn", "status": "running"})
+        self.reporter.stream_gap()
+        self.assertEqual(set(), self.reporter.wake_hooks)
+
+        self.reporter.project({"type": "hook.started", "id": "chaos://hooks/wake",
+                               "event_name": "before_turn", "status": "running"})
+        self.reporter.begin_attempt()
+        self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+        attempt_two_hb = [event["data"]["phase"] for packet in self.packets if packet["attempt_number"] == 2
+                          for event in packet["events"] if event["type"] == "heartbeat"]
+        self.assertEqual([None], attempt_two_hb)
+
 
 if __name__ == "__main__":
     unittest.main()

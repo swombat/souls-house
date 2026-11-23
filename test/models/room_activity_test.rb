@@ -79,6 +79,24 @@ class RoomActivityTest < ActiveSupport::TestCase
     assert_no_broadcasts(channel) { @main_chat.update!(room: nil) }
   end
 
+  test "marks a resident waking in a room only while all active runs in that scope are waking" do
+    dev_run = start_run(@lume, @dev_chat, started_at: 1.minute.ago)
+    dev_attempt = dev_run.agent_runtime_attempts.create!(attempt_id: SecureRandom.uuid, number: 1, snapshot: { "phase" => "waking" })
+
+    assert_equal "waking", summary[:rooms].fetch(@room.to_param).first[:phase]
+    assert_equal "waking", summary[:all].first[:phase]
+
+    main_run = start_run(@lume, @main_chat, started_at: 30.seconds.ago)
+    main_run.agent_runtime_attempts.create!(attempt_id: SecureRandom.uuid, number: 1, snapshot: {})
+
+    assert_equal "waking", summary[:rooms].fetch(@room.to_param).first[:phase]
+    assert_nil summary[:rooms].fetch("main").first[:phase]
+    assert_nil summary[:all].first[:phase]
+
+    dev_attempt.update!(snapshot: {})
+    assert_nil summary[:rooms].fetch(@room.to_param).first[:phase]
+  end
+
   private
 
   def summary

@@ -2,7 +2,7 @@
   import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import { initialsFor } from '$lib/chat-display';
 
-  let { participants = [], workingAgentIds = [] } = $props();
+  let { participants = [], workingAgentIds = [], wakingAgentIds = [] } = $props();
 
   // Keep active residents visible even in conversations with more than seven participants.
   const visibleParticipants = $derived(
@@ -24,12 +24,13 @@
   {#each visibleParticipants as participant, i (participant.id || participant.name + i)}
     {#if participant.type === 'agent'}
       {@const working = workingAgentIds.includes(participant.id)}
-      <div
-        class:working
-        class="participant relative"
-        role="img"
-        aria-label={working ? `${participant.name} is working` : participant.name}
-        title={working ? `${participant.name} is working` : participant.name}>
+      {@const waking = working && wakingAgentIds.includes(participant.id)}
+      {@const statusLabel = waking
+        ? `${participant.name} is waking up`
+        : working
+          ? `${participant.name} is working`
+          : participant.name}
+      <div class:working class="participant relative" role="img" aria-label={statusLabel} title={statusLabel}>
         {#if working}
           <span
             class="working-ring {ringClass(participant.colour)}"

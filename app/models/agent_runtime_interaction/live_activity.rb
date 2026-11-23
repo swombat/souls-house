@@ -278,10 +278,12 @@ module AgentRuntimeInteraction::LiveActivity
     attempts = agent_runtime_attempts.order(:number).to_a
     latest = attempts.last
     stored_snapshot = latest&.snapshot || {}
-    snapshot = stored_snapshot.slice("operations", "commentary", "plan", "plan_title", "plan_status", "narration_capability", "fallback")
+    snapshot = stored_snapshot.slice("operations", "commentary", "plan", "plan_title", "plan_status", "narration_capability", "fallback", "phase")
     replies = linked_messages.count
     state = execution_state
     ongoing = !state.in?(TERMINAL_STATES)
+    waking = state.in?(%w[preparing running]) && !stored_snapshot["fallback"] && stored_snapshot["phase"] == "waking"
+    snapshot.delete("phase") unless waking
     health = if latest&.last_report_at
       latest.last_report_at < 30.seconds.ago && ongoing ? "stale" : "live"
     else
@@ -291,16 +293,21 @@ module AgentRuntimeInteraction::LiveActivity
     helpers = RuntimeSubagents.new(helpers_shared ? stored_snapshot[RuntimeSubagents::KEY] : nil)
     helpers.gap! if !ongoing || health != "live" || stored_snapshot["fallback"]
     snapshot.merge!(helpers.public_snapshot)
-    {
-      run_id: run_id, revision: attempts.sum(&:revision) + (ongoing ? 0 : 1_000_000),
-      status: state, active: ongoing,
-      status_label: {
+    status_label = if waking
+      "is waking up"
+    else
+      {
         "queued" => "is queued", "preparing" => "is preparing",
         "running" => "is working", "completed" => "finished",
         "failed" => "finished with an error", "timed_out" => "timed out",
         "cancelled" => "was cancelled", "busy" => "is already busy",
         "outcome_unknown" => "lost contact; outcome unconfirmed"
-      }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label },
+      }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label }
+    end
+    {
+      run_id: run_id, revision: attempts.sum(&:revision) + (ongoing ? 0 : 1_000_000),
+      status: state, active: ongoing,
+      status_label: status_label,
       reporter_health: health, snapshot: snapshot,
       narration_shared: helpers_shared,
       server_time: Time.current.iso8601(3),

@@ -19,28 +19,39 @@ class RoomActivity
     # are account-wide, so they can't show who is working where in one.
     chats = account.chats.kept.listed.where(private: false)
     runs = AgentRuntimeInteraction.working.where(chat_id: chats.select(:id))
-      .group(:chat_id, :agent_id).pluck(:chat_id, :agent_id, Arel.sql("MAX(agent_runtime_interactions.started_at)"))
+      .group(:chat_id, :agent_id)
+      .pluck(
+        :chat_id, :agent_id,
+        Arel.sql("MAX(agent_runtime_interactions.started_at)"),
+        Arel.sql("BOOL_AND(#{AgentRuntimeInteraction::WAKING_PHASE_SQL})")
+      )
     return EMPTY if runs.empty?
 
     room_of = Chat.where(id: runs.map(&:first).uniq).pluck(:id, :room_id).to_h
     agents = Agent.where(id: runs.map(&:second).uniq).index_by(&:id)
 
     latest = Hash.new { |hash, key| hash[key] = {} }
+    waking_in = Hash.new { |hash, key| hash[key] = {} }
     everywhere = {}
-    runs.each do |chat_id, agent_id, started_at|
+    waking_everywhere = {}
+    runs.each do |chat_id, agent_id, started_at, is_waking|
       room_id = room_of[chat_id]
       key = room_id ? Room.encode_id(room_id) : "main"
       latest[key][agent_id] = [ latest[key][agent_id], started_at ].compact.max
+      waking_in[key][agent_id] = waking_in[key].fetch(agent_id, true) && is_waking
       everywhere[agent_id] = [ everywhere[agent_id], started_at ].compact.max
+      waking_everywhere[agent_id] = waking_everywhere.fetch(agent_id, true) && is_waking
     end
 
-    order = ->(starts) {
+    order = ->(starts, waking) {
       starts.sort_by { |agent_id, started_at| [ -started_at.to_f, agent_id ] }.filter_map do |agent_id, _|
-        agent = agents[agent_id]
-        { id: agent.to_param, name: agent.name, colour: agent.colour } if agent
+        next unless (agent = agents[agent_id])
+        entry = { id: agent.to_param, name: agent.name, colour: agent.colour }
+        entry[:phase] = "waking" if waking[agent_id]
+        entry
       end
     }
-    { rooms: latest.transform_values(&order), all: order.(everywhere) }
+    { rooms: latest.to_h { |key, starts| [ key, order.(starts, waking_in[key]) ] }, all: order.(everywhere, waking_everywhere) }
   end
 
   def self.refresh_for(account)

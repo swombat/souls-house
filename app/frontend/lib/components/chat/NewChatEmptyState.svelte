@@ -57,8 +57,14 @@
   // Residents working in a conversation, as the spinner wants them.
   function workingIn(chat) {
     const ids = chat.working_agent_ids || [];
+    const waking = new Set(chat.waking_agent_ids || []);
     const agents = (chat.participants_json || []).filter((p) => p.type === 'agent');
-    return ids.map((id) => agents.find((a) => a.id === id)).filter(Boolean);
+    return ids
+      .map((id) => {
+        const agent = agents.find((a) => a.id === id);
+        return agent && (waking.has(id) ? { ...agent, phase: 'waking' } : agent);
+      })
+      .filter(Boolean);
   }
 </script>
 

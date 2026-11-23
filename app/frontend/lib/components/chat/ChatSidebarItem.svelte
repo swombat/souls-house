@@ -1,12 +1,7 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import {
-    commitmentMarkLabel,
-    handoffStuckLabel,
-    runErrorLabel,
-    shortDate,
-  } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
   import { Archive, ChatText, LockSimple, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
@@ -67,7 +62,10 @@
       </div>
       <div class="flex items-center gap-2 w-full group">
         {#if chat.manual_responses && chat.participants_json?.length > 0}
-          <ChatParticipantAvatars participants={chat.participants_json} workingAgentIds={chat.working_agent_ids} />
+          <ChatParticipantAvatars
+            participants={chat.participants_json}
+            workingAgentIds={chat.working_agent_ids}
+            wakingAgentIds={chat.waking_agent_ids} />
         {:else}
           <div class="text-xs text-muted-foreground flex-1/3 hidden group-hover:block">
             {chat.model_label}

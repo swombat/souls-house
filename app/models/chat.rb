@@ -352,16 +352,24 @@ class Chat < ApplicationRecord
   # Nor must a waiting commitment: it changes without the chat changing.
   def self.sidebar_json_for(chats)
     chats = chats.to_a
-    working = AgentRuntimeInteraction.working
+    active_runs = AgentRuntimeInteraction.working
       .where(chat_id: chats.map(&:id))
-      .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
+      .pluck(:chat_id, :agent_id, Arel.sql(AgentRuntimeInteraction::WAKING_PHASE_SQL))
+    working = Hash.new { |hash, key| hash[key] = [] }
+    waking = Hash.new { |hash, key| hash[key] = {} }
+    active_runs.each do |chat_id, agent_id, is_waking|
+      working[chat_id] << agent_id unless working[chat_id].include?(agent_id)
+      waking[chat_id][agent_id] = waking[chat_id].fetch(agent_id, true) && is_waking
+    end
     waiting = waiting_commitments_for(chats)
     stuck = handoff_stuck_ids_for(chats)
     errored = run_error_residents_for(chats)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
-      ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
-      json.merge("working_agent_ids" => ids, "next_commitment" => waiting[chat.id],
+      ids = working[chat.id].map { |id| Agent.encode_id(id) }
+      waking_ids = waking[chat.id].filter_map { |id, all_waking| Agent.encode_id(id) if all_waking }
+      json.merge("working_agent_ids" => ids, "waking_agent_ids" => waking_ids,
+                 "next_commitment" => waiting[chat.id],
                  "handoff_stuck" => stuck.include?(chat.id),
                  "run_error_residents" => errored[chat.id] || [])
     end
