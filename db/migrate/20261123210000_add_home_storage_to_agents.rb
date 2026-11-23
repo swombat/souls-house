@@ -1,6 +1,7 @@
-# Disk use on a resident's card, measured apart from the journal count and on
-# a slower clock: a walk of a 100 GB home outlasted the count's budget, so the
-# size read "—" forever for the largest homes (jZWPXJ).
+# A VM resident's disk use on its card, walked by its runner (Agents::HomeStorage).
+# Kept apart from storage_usage, which is the house host's disk: the daily
+# walker can't reach a VM's volumes, and the dashboard totals it as host disk.
+# home_storage_requested_at is the card's lease for asking either walker (#1111).
 class AddHomeStorageToAgents < ActiveRecord::Migration[8.0]
 
   def change

@@ -1,28 +1,25 @@
 module Agents
-  # The disk use on a resident's card: allocated bytes across its five
-  # persistent volumes, walked inside the resident by a fixed script. Apart
-  # from the journal count because the walk is slow: 13 s for an 83 GB home
-  # and 17 s for a 122 GB one with a warm cache (jZWPXJ, 23 Nov 2026), past
-  # the 10 s the count script used to give it, so the largest homes read "—"
-  # forever. It runs on its own slower clock (AgentHomeStorageJob).
+  # The disk use on a VM resident's card. A resident on the house host is
+  # walked daily by Agents::StorageUsage (storage_usage), which the card
+  # shows; that walker can't reach a VM's volumes, and its totals are the
+  # house host's disk, so a VM's figure is kept apart, here, in home_storage.
+  # The VM's runner walks the five volumes with its byte-for-byte copy of
+  # SCRIPT under its own short budget (home_stats v3, part "storage"):
+  # it answers one command at a time, so the walk must not hold a turn.
   #
-  # Returns the card's home_storage:
-  #   "measured"   bytes and measured_at are this walk's.
-  #   "too_slow"   the walk ran out of time; bytes, if any, are an older walk's.
-  #   "unavailable" no answer (no container, runner too old, a failed exec);
-  #                bytes, if any, are an older walk's. "reason" says which,
-  #                in the house's words, never the resident's output.
+  # Before #1111 this rode along with the journal count under a 10 s du, and
+  # the largest homes read "—" forever (jZWPXJ: 120 GB took 109 s cold).
+  #
+  # Returns home_storage:
+  #   "measured"    bytes and measured_at are this walk's.
+  #   "too_slow"    the walk ran out of time; bytes, if any, are an older walk's.
+  #   "unavailable" no answer (runner too old, failed, unreadable); bytes, if
+  #                 any, are an older walk's. "reason" says which, in the
+  #                 house's words, never the resident's output.
   # attempted_at is always this attempt.
   class HomeStorage
 
     class MeasurementError < StandardError; end
-
-    # The walk's budget inside a resident on this host, and the exec's
-    # around it. One walk at a time runs here (AgentHomeStorageJob), so a
-    # slow one delays only other walks. A VM's runner gives it far less
-    # (HOME_STORAGE_SECONDS there): it answers commands one at a time.
-    DU_SECONDS = 150
-    EXEC_SECONDS = DU_SECONDS + 20
 
     # Allocated bytes, including hidden files; du does not follow symlinks.
     # Explicit volume roots exclude the image layer and temporary filesystems.
@@ -52,18 +49,21 @@ module Agents
 
     def call
       attempted_at = Time.current.iso8601
-      measurement = Agents::RemoteRuntime.remote?(@agent) ? remote : local
+      raise MeasurementError, "not on its own server" unless Agents::RemoteRuntime.remote?(@agent)
+
+      measurement = Agents::RemoteRuntime.home_storage!(@agent)
+      raise MeasurementError, "unreadable" unless measurement.is_a?(Hash)
+
       bytes = measurement["storage_bytes"]
       if bytes.is_a?(Integer) && bytes >= 0
         return { "status" => "measured", "bytes" => bytes, "measured_at" => attempted_at, "attempted_at" => attempted_at }
       end
       raise MeasurementError, "the walk failed" unless measurement["error"] == "timeout"
 
-      previous.merge("status" => "too_slow", "attempted_at" => attempted_at).except("reason")
+      previous.merge("status" => "too_slow", "attempted_at" => attempted_at)
     rescue Agents::RemoteRuntime::RunnerTooOld
       previous.merge("status" => "unavailable", "reason" => "runner_too_old", "attempted_at" => attempted_at)
-    rescue MeasurementError, Agents::Resources::OwnershipError, Agents::RemoteRuntime::Unavailable,
-           Timeout::Error, SystemCallError, JSON::ParserError
+    rescue MeasurementError, Agents::RemoteRuntime::Unavailable
       previous.merge("status" => "unavailable", "reason" => "failed", "attempted_at" => attempted_at)
     end
 
@@ -72,36 +72,6 @@ module Agents
     # Only an earlier walk's figure is kept, never its status.
     def previous
       @agent.home_storage.to_h.slice("bytes", "measured_at")
-    end
-
-    def local
-      raise MeasurementError, "no container" if @agent.container_name.blank?
-      raise MeasurementError, "another host's resident" if @agent.sandbox_host.present? && @agent.sandbox_host != Config.sandbox_host
-
-      Agents::Resources.new(@agent).verify_existing!
-      result = capture
-      raise MeasurementError, "the walk failed" unless result[:ok]
-
-      parse(result[:stdout])
-    end
-
-    # A resident on its own server: the runner's fixed copy of SCRIPT.
-    def remote
-      measurement = Agents::RemoteRuntime.home_storage!(@agent)
-      raise MeasurementError, "unreadable" unless measurement.is_a?(Hash)
-
-      measurement
-    end
-
-    def capture
-      ResidentPython.run(@agent.container_name, SCRIPT, DU_SECONDS.to_s, seconds: EXEC_SECONDS)
-    end
-
-    def parse(stdout)
-      measurement = JSON.parse(stdout.to_s.strip.lines.last.to_s)
-      raise MeasurementError, "unreadable" unless measurement.is_a?(Hash)
-
-      measurement
     end
 
   end

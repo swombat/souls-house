@@ -1,77 +1,76 @@
 require "test_helper"
 require "tmpdir"
 
+# A VM resident's disk figure (#1111): walked by its runner, kept apart from
+# the house host's storage_usage.
 class Agents::HomeStorageTest < ActiveSupport::TestCase
 
   setup do
     @agent = agents(:research_assistant)
     @agent.update_columns(runtime: "external", container_name: "test-resident", home_storage: {})
-    @service = Agents::HomeStorage.new(@agent)
-    @resources = Struct.new(:verify_existing!).new(true)
   end
 
-  def measure(stdout, ok: true)
-    Agents::Resources.stub(:new, @resources) do
-      @service.stub(:capture, { ok:, stdout: }) { @service.call }
+  def vm!(version: Agents::RemoteRuntime::HOME_STATS_VERSION)
+    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4343)
+    enrollment, token = RunnerEnrollment.mint!(placement:)
+    enrollment.confirm_provider_server!(4343)
+    enrollment.enroll!(token:, public_key: Base64.strict_encode64("k" * 32), reported_server_id: 4343, facts: {},
+                       nonce: SecureRandom.hex(16))
+    enrollment.update!(last_facts: { "home_stats" => version })
+    @agent.reload
+    enrollment
+  end
+
+  def measure(answer)
+    relay = answer.is_a?(Proc) ? answer : ->(*, **) { answer }
+    Agents::RemoteRuntime.stub(:relay!, relay) { Agents::HomeStorage.new(@agent).call }
+  end
+
+  test "a resident on the house host is never walked here" do
+    Agents::RemoteRuntime.stub(:relay!, ->(*, **) { flunk "must not ask a runner" }) do
+      assert_equal [ "unavailable", "failed" ], Agents::HomeStorage.new(@agent).call.values_at("status", "reason")
     end
   end
 
-  test "a finished walk is the card's size" do
-    storage = measure("noise\n{\"storage_bytes\": 89003048960}")
-    assert_equal "measured", storage["status"]
-    assert_equal 89_003_048_960, storage["bytes"]
+  test "the runner's walk is the card's size, asked for as part storage" do
+    vm!
+    asked = []
+    storage = measure(lambda do |agent, kind, payload, **|
+      asked << [ agent.id, kind, payload ]
+      { "storage_bytes" => 89_003_048_960 }
+    end)
+    assert_equal [ "measured", 89_003_048_960 ], storage.values_at("status", "bytes")
     assert_equal storage["measured_at"], storage["attempted_at"]
+    assert_equal [ [ @agent.id, "home_stats", { "container_name" => "test-resident", "part" => "storage" } ] ], asked
   end
 
-  # Mira's 122 GB home took 17 s against the old 10 s (jZWPXJ): a walk that
-  # runs out of time says so, and keeps the last size it had, not a dash.
   test "a walk out of time is too slow, keeping an earlier size as stale" do
-    storage = measure('{"error": "timeout"}')
-    assert_equal "too_slow", storage["status"]
-    assert_nil storage["bytes"]
+    vm!
+    assert_equal [ "too_slow", nil ], measure({ "error" => "timeout" }).values_at("status", "bytes")
 
     earlier = 2.hours.ago.iso8601
     @agent.home_storage = { "status" => "measured", "bytes" => 1024, "measured_at" => earlier }
-    storage = measure('{"error": "timeout"}')
+    storage = measure({ "error" => "timeout" })
     assert_equal [ "too_slow", 1024, earlier ], storage.values_at("status", "bytes", "measured_at")
     assert_operator Time.iso8601(storage["attempted_at"]), :>, Time.iso8601(earlier)
   end
 
-  test "a failed or unreadable walk is unavailable, never zero, and nothing of the output is kept" do
+  test "an old runner is not asked, and a failed or unreadable answer is unavailable, never zero" do
+    vm!(version: 2)
+    storage = measure(->(*, **) { flunk "an old runner must not be asked" })
+    assert_equal [ "unavailable", "runner_too_old" ], storage.values_at("status", "reason")
+
+    RunnerEnrollment.update_all(last_facts: { "home_stats" => Agents::RemoteRuntime::HOME_STORAGE_VERSION })
     @agent.home_storage = { "status" => "measured", "bytes" => 1024, "measured_at" => 1.day.ago.iso8601 }
-    [ [ "private prose", true ], [ '{"error": "failed"}', true ], [ '{"storage_bytes": -1}', true ],
-      [ '{"storage_bytes": "12"}', true ], [ "[1]", true ], [ "", true ], [ '{"storage_bytes": 1}', false ] ].each do |stdout, ok|
-      storage = measure(stdout, ok:)
-      assert_equal [ "unavailable", "failed", 1024 ], storage.values_at("status", "reason", "bytes"), stdout
-      assert_not_includes storage.to_json, "private prose"
+    [ { "error" => "failed" }, { "storage_bytes" => -1 }, { "storage_bytes" => "12" }, "nonsense",
+      ->(*, **) { raise Agents::RemoteRuntime::Unavailable, "did not answer" } ].each do |answer|
+      storage = measure(answer)
+      assert_equal [ "unavailable", "failed", 1024 ], storage.values_at("status", "reason", "bytes"), answer.inspect
     end
-  end
-
-  test "foreign residents and missing containers are never walked" do
-    @service.stub(:capture, -> { flunk "must not execute" }) do
-      @agent.container_name = nil
-      assert_equal "unavailable", @service.call["status"]
-      @agent.container_name = "test"
-      @agent.sandbox_host = "foreign-host"
-      assert_equal "unavailable", @service.call["status"]
-    end
-  end
-
-  test "the walk's budget goes in as one argv value" do
-    argv = nil
-    popen = lambda do |*args, **|
-      argv = args
-      { ok: true, stdout: '{"storage_bytes": 5}' }
-    end
-    Agents::Resources.stub(:new, @resources) do
-      Open3.stub(:popen3, popen) { assert_equal 5, @service.call["bytes"] }
-    end
-    assert_equal [ "test-resident", "timeout", Agents::HomeStorage::EXEC_SECONDS.to_s,
-                   "python3", "-c", Agents::HomeStorage::SCRIPT, Agents::HomeStorage::DU_SECONDS.to_s ], argv.drop(2)
   end
 
   # The script itself, pointed at scratch volumes.
-  def walk(home, budget = "150")
+  def walk(home, budget = "25")
     script = Agents::HomeStorage::SCRIPT
     roots = '"/home/agent/" + name'
     raise "the walk's volume roots moved" unless script.include?(roots)
@@ -101,41 +100,6 @@ class Agents::HomeStorageTest < ActiveSupport::TestCase
     end
   end
 
-  test "a VM resident is walked by its runner, never by a local docker exec, and an old runner is not asked" do
-    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4343)
-    enrollment, token = RunnerEnrollment.mint!(placement:)
-    enrollment.confirm_provider_server!(4343)
-    enrollment.enroll!(token:, public_key: Base64.strict_encode64("k" * 32), reported_server_id: 4343, facts: {},
-                       nonce: SecureRandom.hex(16))
-    enrollment.update!(last_facts: { "home_stats" => 2 })
-    @agent.reload
-    service = Agents::HomeStorage.new(@agent)
-
-    asked = []
-    relay = lambda do |agent, kind, payload, **|
-      asked << [ agent.id, kind, payload ]
-      { "storage_bytes" => 2048 }
-    end
-    Agents::RemoteRuntime.stub(:relay!, relay) do
-      service.stub(:capture, -> { flunk "must not docker exec on the house host" }) do
-        storage = service.call
-        assert_equal [ "unavailable", "runner_too_old" ], storage.values_at("status", "reason")
-        assert_empty asked
-
-        enrollment.update!(last_facts: { "home_stats" => Agents::RemoteRuntime::HOME_STORAGE_VERSION })
-        assert_equal [ "measured", 2048 ], service.call.values_at("status", "bytes")
-      end
-    end
-    assert_equal [ [ @agent.id, "home_stats", { "container_name" => "test-resident", "part" => "storage" } ] ], asked
-
-    Agents::RemoteRuntime.stub(:relay!, ->(*, **) { { "error" => "timeout" } }) do
-      assert_equal "too_slow", service.call["status"]
-    end
-    Agents::RemoteRuntime.stub(:relay!, ->(*, **) { raise Agents::RemoteRuntime::Unavailable, "did not answer" }) do
-      assert_equal [ "unavailable", "failed" ], service.call.values_at("status", "reason")
-    end
-  end
-
   test "the runner carries the house's walk byte for byte" do
     runner = Rails.root.join("host-runner/souls_house_runner.py").read
     copy = runner[/^HOME_STORAGE_SCRIPT = r"""(.*?)"""/m, 1]
@@ -146,14 +110,7 @@ class Agents::HomeStorageTest < ActiveSupport::TestCase
   # Mira on #1111: a VM that was offline must not come back to a queue of
   # measurements nobody is waiting for, ahead of its next turn.
   test "a walk the house stopped waiting for is never delivered; the next command is" do
-    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4343)
-    enrollment, token = RunnerEnrollment.mint!(placement:)
-    enrollment.confirm_provider_server!(4343)
-    enrollment.enroll!(token:, public_key: Base64.strict_encode64("k" * 32), reported_server_id: 4343, facts: {},
-                       nonce: SecureRandom.hex(16))
-    enrollment.update!(last_facts: { "home_stats" => Agents::RemoteRuntime::HOME_STATS_VERSION })
-    @agent.reload
-
+    enrollment = vm!
     2.times do
       assert_raises(Agents::RemoteRuntime::Unavailable) { Agents::RemoteRuntime.home_storage!(@agent, wait: 0, poll: 0) }
     end

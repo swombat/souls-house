@@ -216,10 +216,10 @@
             </span>
           {/if}
         </span>
-        <span class="inline-flex items-center gap-1" title={diskTitle(agent.home_storage)}>
+        <span class="inline-flex items-center gap-1" title={diskTitle(agent.disk)}>
           <HardDrive class="size-4" aria-label="Persistent disk used" />
-          {diskSize(agent.home_storage?.bytes)}
-          {#if diskNote(agent.home_storage)}<span class="opacity-60">{diskNote(agent.home_storage)}</span>{/if}
+          {diskSize(agent.disk?.bytes)}
+          {#if diskNote(agent.disk)}<span class="opacity-60">{diskNote(agent.disk)}</span>{/if}
         </span>
         <span
           class="inline-flex items-center gap-1 {heartbeatEnabled

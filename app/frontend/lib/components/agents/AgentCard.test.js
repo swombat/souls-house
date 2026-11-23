@@ -44,7 +44,7 @@ test('shows the model subtitle, disk and integration permissions, never the prom
     agent: {
       ...agent,
       system_prompt: 'private prompt',
-      home_storage: { status: 'measured', bytes: 1073741824, measured_at: '2026-11-23T20:00:00Z' },
+      disk: { status: 'measured', bytes: 1073741824, measured_at: '2026-11-23T20:00:00Z' },
       integrations: [{ provider: 'github', label: 'owner/repo', enabled: false, status: 'disabled' }],
     },
     accountId: 'test',
@@ -78,12 +78,12 @@ test.each([
     '2.0 GiB (stale)',
     'longer than its time limit',
   ],
-])('tells an unmeasured disk from one too large to walk or unavailable: %o', (home_storage, text, why) => {
-  render(AgentCard, { agent: { ...agent, home_storage }, accountId: 'test' });
-  const disk = screen.getByLabelText('Persistent disk used').parentElement;
-  expect(disk).toHaveTextContent(text);
-  if (why) expect(disk.getAttribute('title')).toContain(why);
-  else expect(disk.getAttribute('title')).toContain('Awaiting background measurement');
+])('tells an unmeasured disk from one too large to walk or unavailable: %o', (disk, text, why) => {
+  render(AgentCard, { agent: { ...agent, disk }, accountId: 'test' });
+  const shown = screen.getByLabelText('Persistent disk used').parentElement;
+  expect(shown).toHaveTextContent(text);
+  if (why) expect(shown.getAttribute('title')).toContain(why);
+  else expect(shown.getAttribute('title')).toContain('Awaiting its first background measurement');
 });
 
 test('shows the daily heartbeat frequency only when enabled and unpaused', () => {

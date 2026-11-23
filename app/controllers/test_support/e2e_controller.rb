@@ -621,8 +621,7 @@ module TestSupport
           provider_auth_modes: { "anthropic" => "oauth_account" }, provider_connections: { "anthropic" => { "status" => "connected" } },
           journal_entry_stats: { count: 27, status: "measured", measured_at: Time.current.iso8601 },
           journal_stats_requested_at: Time.current,
-          home_storage: { status: "measured", bytes: 1073741824, measured_at: Time.current.iso8601 },
-          home_storage_requested_at: Time.current)
+          storage_usage: { status: "measured", bytes: 1073741824, measured_at: Time.current.iso8601 })
         connection = account.service_connections.create!(provider: "github", connected_by_user: primary_user,
           management_scope: "personal", credential_kind: "token", credential_metadata: { "repository" => "example/dashboard" })
         resident.agent_service_accesses.create!(service_connection: connection, enabled: true)
