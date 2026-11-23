@@ -140,7 +140,7 @@ class Backup::AgentResticJobTest < ActiveSupport::TestCase
 
   test "a resident retired after the job started is not backed up and leaves no row" do
     retire = lambda do |_agent, &block|
-      @agent.update_columns(runtime: "deprecated", deprecation_reason: "#{Agents::RetireLocal::REASON_PREFIX}: test")
+      @agent.update_columns(runtime: "deprecated")
       block.call
     end
     Backup::AgentRestic.stub(:docker_environment, []) do
