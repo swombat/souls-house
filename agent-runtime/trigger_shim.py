@@ -3356,7 +3356,11 @@ def _monitor_auth_process(process, provider, credential_before=None):
             if not line:
                 continue
             if _browser_code_provider(provider):
-                url = _first_http_url(line)
+                # Antigravity prints its sign-in link inside a TUI that wraps at
+                # the terminal width, so a URL read from this stream stops at the
+                # first wrap (agy 1.5.9). Its browser helper file carries the whole
+                # link; _monitor_antigravity_login_url is the only source for it.
+                url = _first_http_url(line) if provider != "gemini" else None
                 if url and verification_url is None:
                     verification_url = url
                     with _auth_lock:
