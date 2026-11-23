@@ -42,6 +42,14 @@ class FieldRecordings::ProbeJobTest < ActiveJob::TestCase
     FieldRecordings::ProbeJob.perform_now(recording.id)
     assert recording.reload.probing?
     assert_nil recording.reservation
+
+    probed = queued_recording(account: @account, user: @user)
+    reservation = probed.reservation
+    FieldRecording::Probe.stub(:duration_ms, ->(*) { flunk "an already-probed file is not read again" }) do
+      assert_no_enqueued_jobs { FieldRecordings::ProbeJob.perform_now(probed.id) }
+    end
+    assert probed.reload.queued?
+    assert_equal reservation, probed.reservation
   end
 
 end

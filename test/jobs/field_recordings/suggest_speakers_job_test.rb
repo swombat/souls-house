@@ -86,11 +86,12 @@ class FieldRecordings::SuggestSpeakersJobTest < ActiveJob::TestCase
   end
 
   test "the model sees speaker tags, the title and capped known names, never the word ids" do
+    (FieldRecordings::SuggestSpeakersJob::MAX_NAMES + 5).times { |i| @account.field_voices.create!(name: "Voice #{i}") }
     state = run_with({ "suggestions" => [] }).calls.first[:state]
     assert_equal "Venue call with Priya", state[:title]
     assert_match "S1: Priya, your turn.", state[:transcript]
     assert_no_match "speaker_0", state[:transcript]
-    assert_operator state[:names_this_field_knows].size, :<=, FieldRecordings::SuggestSpeakersJob::MAX_NAMES
+    assert_equal FieldRecordings::SuggestSpeakersJob::MAX_NAMES, state[:names_this_field_knows].size
   end
 
   test "names must be whole words that are known or appear; punctuation-only names never match" do

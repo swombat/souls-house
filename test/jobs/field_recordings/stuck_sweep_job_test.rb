@@ -38,6 +38,14 @@ class FieldRecordings::StuckSweepJobTest < ActiveJob::TestCase
     assert @recording.reload.transcribing?
   end
 
+  test "a long recording is given half its length before it counts as overdue" do
+    long = queued_recording(account: @account, user: @user, duration_ms: 60.minutes.in_milliseconds)
+    long.claim_dispatch!.update_columns(created_at: 25.minutes.ago)
+    FieldRecordings::StuckSweepJob.perform_now(client: FakeScribe.new)
+    assert long.reload.transcribing?, "an hour of audio waits 30 minutes, not the 20-minute floor"
+    assert @recording.reload.queued?, "the one-minute recording beside it is past its wait"
+  end
+
   test "the third abandoned attempt fails the recording and releases the allowance" do
     @recording.update_columns(dispatch_count: FieldRecording::MAX_DISPATCHES)
     FieldRecordings::StuckSweepJob.perform_now(client: FakeScribe.new)
