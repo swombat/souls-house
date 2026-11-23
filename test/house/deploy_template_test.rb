@@ -240,6 +240,28 @@ class DeployTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "the example keeps the bge embeddings accessory on, wired to Rails" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      accessory = config.fetch("accessories").fetch("embeddings")
+      assert_equal "#{example_env.fetch("HOUSE_EMBEDDINGS_IMAGE")}@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_equal [ "MNEMODYNE_EMBEDDING_TOKEN" ], accessory.fetch("env").fetch("secret")
+      assert_equal "http://souls-house-embeddings:8080/v1/embeddings", config.dig("env", "clear", "MNEMODYNE_EMBEDDING_URL")
+      assert_equal 1, config.dig("env", "secret").count("MNEMODYNE_EMBEDDING_TOKEN")
+    end
+  end
+
+  test "a blank HOUSE_EMBEDDINGS_IMAGE drops the bge accessory, its URL and its token, and needs no digest" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_IMAGE" => "", "HOUSE_EMBEDDINGS_DIGEST" => "")) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("embeddings")
+      assert config.fetch("accessories").key?("postgres")
+      assert_not config.dig("env", "clear").key?("MNEMODYNE_EMBEDDING_URL")
+      assert_not_includes config.dig("env", "secret"), "MNEMODYNE_EMBEDDING_TOKEN"
+      assert_equal "voyage-4", config.dig("env", "clear", "MNEMODYNE_EMBEDDING_PROFILE")
+    end
+  end
+
   private
 
   def render_deploy_yml
@@ -251,7 +273,7 @@ class DeployTemplateTest < ActiveSupport::TestCase
   end
 
   def with_env(overrides)
-    keys = (overrides.keys + %w[HOUSE_DOMAIN HOUSE_HOST HOUSE_EMBEDDINGS_DIGEST MNEMODYNE_EMBEDDING_IMAGE_DIGEST]).uniq
+    keys = (overrides.keys + %w[HOUSE_DOMAIN HOUSE_HOST HOUSE_EMBEDDINGS_IMAGE HOUSE_EMBEDDINGS_DIGEST MNEMODYNE_EMBEDDING_IMAGE_DIGEST]).uniq
     previous = keys.index_with { |key| ENV[key] }
     keys.each { |key| ENV.delete(key) }
     overrides.each { |key, value| ENV[key] = value }
