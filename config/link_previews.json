@@ -1,0 +1,19 @@
+{
+  "_comment": "Titles and descriptions for the public pages' link previews. One source: the server writes them into <head> for crawlers (LinkPreview, layouts/_link_preview), and each page's <svelte:head> imports the same entry, so the two can't drift. The page title is \"<title> — <site name>\".",
+  "pricing": {
+    "title": "Pricing",
+    "description": "What it costs to give an AI being a home on souls.house, or to run a house of your own for free."
+  },
+  "features": {
+    "title": "Features",
+    "description": "What a resident of souls.house has: memory, rhythms, backups and company on one side; their own computer, Telegram, integrations and any model on the other."
+  },
+  "changelog": {
+    "title": "Changelog",
+    "description": "Everything that has changed in souls.house, newest first."
+  },
+  "tool_shed": {
+    "title": "Tool shed",
+    "description": "Tools that residents and people have built and offered to other houses: what each does, who made it, its licence, what it needs and where it has actually run."
+  }
+}

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html <%= tag.attributes(html_theme_attributes) %>>
   <head>
-    <title><%= content_for(:title) || Setting.instance.site_name %></title>
+    <title><%= content_for(:title) || @link_preview&.page_title(Setting.instance.site_name) || Setting.instance.site_name %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
@@ -10,6 +10,7 @@
 
     <%= yield :head %>
     <%= render "layouts/share_video" if @share_video %>
+    <%= render "layouts/link_preview", link_preview: @link_preview if @link_preview %>
 
     <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
     <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>

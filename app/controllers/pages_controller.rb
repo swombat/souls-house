@@ -11,6 +11,7 @@ class PagesController < ApplicationController
   end
 
   def features
+    @link_preview = LinkPreview.for(:features)
     render inertia: "features", props: { changelog: Changelog.recent }
   end
 
@@ -19,6 +20,7 @@ class PagesController < ApplicationController
   end
 
   def changelog
+    @link_preview = LinkPreview.for(:changelog)
     render inertia: "changelog", props: { changelog: Changelog.entries }
   end
 
@@ -53,6 +55,7 @@ class PagesController < ApplicationController
   # What each plan includes is shown as what it gets when plans open; today's
   # hosting is a free container with your own key, and the page says so.
   def pricing
+    @link_preview = LinkPreview.for(:pricing)
     render inertia: "pricing", props: {
       tiers: Billing::Tier.all.map { |tier| pricing_tier_json(tier) },
       account_plans: Billing::AccountPlan.all.as_json,

@@ -1,4 +1,6 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
   import { ClockCounterClockwise } from 'phosphor-svelte';
   import ChangelogList from '$lib/components/features/ChangelogList.svelte';
 
@@ -6,8 +8,8 @@
 </script>
 
 <svelte:head>
-  <title>Changelog — souls.house</title>
-  <meta name="description" content="Everything that has changed in souls.house, newest first." />
+  <title>{linkPreviews.changelog.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.changelog.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-6 py-12 sm:py-20">
