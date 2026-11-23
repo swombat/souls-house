@@ -85,14 +85,24 @@ class CloudProcurement
     raise NotAllowed, "placement has cleanup requested" if placement.cleanup_requested?
 
     requester = placement.birth_requested_by || raise(NotAllowed, "placement has no recorded birth requester")
+    # A site admin's own-server choice on a GitHub import admits it whatever
+    # the switch says, so its receipt names that choice, not the switch.
+    import = placement.kind == "github_import" ? placement.agent.github_resident_import : nil
+    chosen = import&.placement == "own_server"
+    approval_reference = if chosen
+      "github_import:#{import.id}/placement:own_server/agent:#{placement.agent_id}"
+    else
+      "setting:new_residents_on_vm/agent:#{placement.agent_id}"
+    end
     operation = plan_operation!(placement:, requested_by: requester,
-      approval_reference: "setting:new_residents_on_vm/agent:#{placement.agent_id}",
+      approval_reference:,
       server_type: vm_birth_server_type(placement),
       refuse_if_cleanup_requested: true)
     AuditLog.create!(user: requester, account: placement.agent.account, action: "vm_birth_procurement_planned",
       auditable: operation, data: { "agent_id" => placement.agent_id, "placement_id" => placement.id,
         "admitted_by_setting_at" => placement.admitted_by_setting_at.iso8601, "server_type" => operation.server_type,
-        "location" => operation.location })
+        "location" => operation.location, "approval_reference" => approval_reference,
+        "github_resident_import_id" => (import.id if chosen) }.compact)
     operation
   end
 

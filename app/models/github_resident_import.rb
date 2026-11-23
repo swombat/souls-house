@@ -4,6 +4,9 @@ class GithubResidentImport < ApplicationRecord
 
   FUTURE_BRANCH_TRUST_NOTICE = "Approval permits ALL code in this repository, including hooks and sync scripts, and future pushes to this branch to run with the resident's container credentials. Fine-grained token format does not prove least privilege. Revoking approval does not kill already running code or recall copied credentials.".freeze
   STATUSES = %w[pending_review approved provisioning needs_runtime_trust ready failed].freeze
+  # Where a site admin chose to make this import's resident. nil: the site
+  # setting decides when the import is admitted, as for everyone else.
+  PLACEMENTS = %w[main_server own_server].freeze
   RUNTIME_TRUST_NOTICE = "The reviewed home is seeded, but Chaos has no supported headless project-trust grant command. A site operator must open Chaos's interactive trust screen for /home/agent/identity in this resident's own runtime home, then retry activation. Trust the OAuth runtime separately if it is used. No repository hooks, sync scripts or first wake are permitted before trust. Do not copy another resident's database or edit trust/hook tables.".freeze
   # The same rule for a resident on its own server (docs/2026-10-10-vm-imports.md,
   # point 4): its runtime home is on that server, so trust is granted there.
@@ -30,6 +33,7 @@ class GithubResidentImport < ApplicationRecord
   validates :name, length: { maximum: 100 }
   validates :status, inclusion: { in: STATUSES }
   validates :sync_strategy, inclusion: { in: %w[existing standard] }
+  validates :placement, inclusion: { in: PLACEMENTS }, allow_nil: true
   validate :valid_sync_configuration
   validates :commit_sha, format: { with: /\A[0-9a-f]{40}\z/ }
   validate :connection_matches_account
@@ -38,6 +42,19 @@ class GithubResidentImport < ApplicationRecord
 
   def self.requestable_by?(account, user)
     account.service_credentials_manageable_by?(user)
+  end
+
+  # Whether this import's resident is made on its own server: the site
+  # admin's choice when there was one, otherwise the site setting now.
+  def own_server?
+    placement.nil? ? Agents::VmBirthPolicy.current.enabled? : placement == "own_server"
+  end
+
+  # Why a new resident can't be placed where this import goes, or nil. A
+  # main-server choice is never refused for the VM switch; an own-server one
+  # skips only the switch, never backups, procurement or the server limit.
+  def placement_refusal
+    Agents::VmBirthPolicy.current.refusal(kind: :import, own_server: own_server?)
   end
 
   # Why this request can't make a resident: a resident in this account

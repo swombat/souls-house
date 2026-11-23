@@ -2000,10 +2000,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210000) do
     t.string "sync_strategy", default: "existing", null: false
     t.jsonb "sync_configuration", default: {}, null: false
     t.jsonb "sync_health", default: {}, null: false
+    t.string "placement"
     t.index ["account_id"], name: "index_github_resident_imports_on_account_id"
     t.index ["approved_by_id"], name: "index_github_resident_imports_on_approved_by_id"
     t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
     t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
+    t.check_constraint "placement IS NULL OR (placement::text = ANY (ARRAY['main_server'::character varying, 'own_server'::character varying]::text[]))", name: "github_resident_import_placement"
     t.check_constraint "sync_strategy::text = ANY (ARRAY['existing'::character varying::text, 'standard'::character varying::text])", name: "github_resident_import_sync_strategy"
   end
 

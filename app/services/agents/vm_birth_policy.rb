@@ -67,8 +67,11 @@ module Agents
     # archive import (staged now, admitted at Activate, so nothing to refuse
     # yet) and :import for a GitHub import, which is checked as a birth.
     # model_id, when given, is the new resident's.
-    def refusal(kind: :birth, model_id: nil)
-      return nil unless enabled?
+    # own_server, when given, says where this resident goes instead of the
+    # switch: a site admin's choice for a GitHub import. false is never
+    # refused here; true is checked as if the switch were on.
+    def refusal(kind: :birth, model_id: nil, own_server: nil)
+      return nil unless own_server.nil? ? enabled? : own_server
       return nil if kind == :archive_import
       return NOT_AVAILABLE_REFUSAL unless vm_backups_available?
       return NOT_CONFIGURED_REFUSAL unless procurement_configured?
@@ -77,8 +80,8 @@ module Agents
       nil
     end
 
-    def refuse!(kind: :birth, model_id: nil)
-      reason = refusal(kind: kind, model_id: model_id)
+    def refuse!(kind: :birth, model_id: nil, own_server: nil)
+      reason = refusal(kind: kind, model_id: model_id, own_server: own_server)
       raise Refused, reason if reason
     end
 
@@ -91,15 +94,19 @@ module Agents
     # runs inside the same transaction once the placement exists: a GitHub
     # import records its staged home there, so an admitted import always has
     # one and a refused one leaves nothing.
-    def admit!(agent:, requested_by:, kind: "birth", now: Time.current)
+    #
+    # chosen: a site admin chose its own server for this GitHub import, so the
+    # switch is not what admits it; every other check still holds.
+    def admit!(agent:, requested_by:, kind: "birth", chosen: false, now: Time.current)
       raise ArgumentError, "unknown admission kind #{kind.inspect}" unless %w[birth github_import].include?(kind)
+      raise ArgumentError, "only a GitHub import is placed by choice" if chosen && kind != "github_import"
 
       AgentPlacement.transaction do
         AgentPlacement.connection.execute("SELECT pg_advisory_xact_lock(#{CloudProcurement::ADMISSION_LOCK})")
         @setting.reload
-        raise Refused, NOT_AVAILABLE_REFUSAL unless enabled?
+        raise Refused, NOT_AVAILABLE_REFUSAL unless enabled? || chosen
 
-        refuse!(kind: :birth, model_id: agent.model_id)
+        refuse!(kind: :birth, model_id: agent.model_id, own_server: true)
         agent.uuid ||= SecureRandom.uuid_v7
         agent.save!
         placement = AgentPlacement.create!(agent:, backend: "hetzner_cloud", kind:, state: "pending",

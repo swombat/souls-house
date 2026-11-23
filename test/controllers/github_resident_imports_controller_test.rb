@@ -161,6 +161,73 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "existing", import_request.sync_strategy
   end
 
+  test "only a site admin chooses where an import is made, and the choice is recorded" do
+    connection = import_connection
+    params = ->(placement) {
+      { github_resident_import: { name: "Placed", model_id: Chat::MODELS.first[:model_id],
+        service_connection_id: connection.public_id, branch: "main", placement: placement } }
+    }
+
+    users(:user_1).update_column(:is_site_admin, false)
+    assert_not users(:user_1).reload.is_site_admin?, "the fixture user must not be a site admin through an account"
+    get new_account_github_resident_import_path(@account)
+    assert_nil inertia_shared_props["placement_options"]
+    Agents::GithubImportSource.stub(:new, source_stub) do
+      post account_github_resident_imports_path(@account), params: params.call("own_server")
+    end
+    assert_nil GithubResidentImport.last.placement, "a non-admin's request follows the site setting"
+    GithubResidentImport.last.destroy!
+
+    users(:user_1).update_column(:is_site_admin, true)
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
+    get new_account_github_resident_import_path(@account)
+    options = inertia_shared_props.fetch("placement_options")
+    assert_equal "site_setting", options.fetch("default")
+    assert_equal %w[site_setting main_server own_server], options.fetch("choices").pluck("value")
+    assert_equal "Follow the site setting (now its own server)", options.fetch("choices").first.fetch("label")
+    # Left alone, the form pins nothing: the switch decides when it is admitted.
+    # (Sent with the switch off: this test house can't order a server.)
+    Setting.instance.update!(new_residents_on_vm: false)
+    Agents::GithubImportSource.stub(:new, source_stub) do
+      post account_github_resident_imports_path(@account), params: params.call("site_setting")
+    end
+    untouched = GithubResidentImport.last
+    assert_nil untouched.placement
+    assert_not untouched.own_server?
+    Setting.instance.update!(new_residents_on_vm: true)
+    assert untouched.own_server?, "an untouched request follows the switch as it is later, not as it was"
+    untouched.destroy!
+    Agents::GithubImportSource.stub(:new, source_stub) do
+      post account_github_resident_imports_path(@account), params: params.call("main_server")
+    end
+    request = GithubResidentImport.last
+    assert_equal "main_server", request.placement,
+                 "main server is never refused for the VM switch, which this test house can't satisfy"
+    assert_not request.own_server?
+    get account_github_resident_import_path(@account, request)
+    assert_equal "main_server", inertia_shared_props.dig("github_import", "placement")
+  end
+
+  test "a site admin's own-server choice is still checked like a birth when the switch is off" do
+    users(:user_1).update_column(:is_site_admin, true)
+    Setting.instance.update!(new_residents_on_vm: false)
+    connection = import_connection
+    get new_account_github_resident_import_path(@account)
+    assert_equal "Follow the site setting (now the main server)",
+                 inertia_shared_props.dig("placement_options", "choices", 0, "label")
+    Agents::GithubImportSource.stub(:new, ->(*) { flunk "a refused request never fetches" }) do
+      assert_no_difference("GithubResidentImport.count") do
+        post account_github_resident_imports_path(@account), params: {
+          github_resident_import: { name: "Own", model_id: Chat::MODELS.first[:model_id],
+            service_connection_id: connection.public_id, branch: "main", placement: "own_server" }
+        }
+      end
+    end
+    expected = Agents::VmBirthPolicy.current.refusal(kind: :import, own_server: true)
+    assert expected, "this test house can't admit a VM, so own server is refused with that reason"
+    assert_redirected_to new_account_github_resident_import_path(@account)
+  end
+
   test "members unconfirmed users and cross-account credentials cannot submit" do
     login_as(users(:existing_user))
     get new_account_github_resident_import_path(accounts(:team_account))

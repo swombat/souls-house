@@ -379,3 +379,29 @@ test('terminal failures do not poll indefinitely', async () => {
     vi.useRealTimers();
   }
 });
+
+test('a site admin can pin main server or its own server; left alone it follows the site setting', async () => {
+  const placementOptions = {
+    default: 'site_setting',
+    choices: [
+      { value: 'site_setting', label: 'Follow the site setting (now its own server)' },
+      { value: 'main_server', label: 'Main server' },
+      { value: 'own_server', label: 'Its own server' },
+    ],
+  };
+  render(GithubImport, { ...props, placement_options: placementOptions });
+  expect(screen.getByRole('radio', { name: 'Follow the site setting (now its own server)' })).toBeChecked();
+  await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Untouched' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Request account approval' }));
+  expect(get(useForm.mock.results.at(-1).value).github_resident_import.placement).toBe('site_setting');
+
+  await fireEvent.click(screen.getByRole('radio', { name: 'Main server' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Request account approval' }));
+  expect(get(useForm.mock.results.at(-1).value).github_resident_import.placement).toBe('main_server');
+});
+
+test('anyone else sees no placement choice and sends none', () => {
+  render(GithubImport, props);
+  expect(screen.queryByTestId('github-import-placement')).not.toBeInTheDocument();
+  expect(useForm.mock.calls.at(-1)[0].github_resident_import).not.toHaveProperty('placement');
+});
