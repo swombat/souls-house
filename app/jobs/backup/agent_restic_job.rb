@@ -3,6 +3,11 @@ module Backup
 
     queue_as :default
 
+    # Raised inside the pause when the resident stopped being one the backup
+    # is for (retired or switched to a VM) after the job started. Nothing is
+    # recorded: it is no longer this job's to back up.
+    class NoLongerEligible < StandardError; end
+
     # busy_attempt: set on a retry queued by Backup::BusyRetry after a busy
     # attempt. A retry that finds the resident busy again records that and
     # queues the next one, instead of raising.
@@ -35,6 +40,11 @@ module Backup
       backup_started_at = Time.current
       checkpoint = nil
       snapshot_id, size, duration_ms, ok, stderr_tail = Backup::AgentRestic.with_quiesced(agent) do
+        # Under the quiesce lock, which Agents::RetireLocal also takes: a
+        # resident retired since the checks above is not backed up, and a
+        # missing volume is reported, never mounted (a mount would create it).
+        raise NoLongerEligible unless still_eligible?(agent)
+        Backup::AgentRestic.verify_source_volumes!(agent)
         # Inside the pause: the transcript paths are checked for links when
         # the resident can no longer change them.
         transcripts = Backup::AgentRestic.transcript_mounts(agent)
@@ -74,12 +84,16 @@ module Backup
 
       Backup::BusyRetry.record!(agent, error, attempt: busy_attempt)
       nil
+    rescue NoLongerEligible
+      nil
     rescue StandardError => error
       if agent && !snapshot
         # A refused transcript path or journal dump says what and why, with no
-        # values in it; other errors keep only their class.
+        # values in it, as does a missing volume; other errors keep only their
+        # class.
         reason = case error
-        when Backup::AgentRestic::TranscriptRefused, Backup::ChaosJournalDump::Error then error.message
+        when Backup::AgentRestic::TranscriptRefused, Backup::ChaosJournalDump::Error,
+             Backup::AgentRestic::SourceVolumeMissing, Backup::AgentRestic::SourceVolumeUnknown then error.message
         else error.class.name
         end
         AgentBackupSnapshot.create!(agent: agent, restic_snapshot_id: "unknown",
@@ -95,9 +109,16 @@ module Backup
       agent.runtime == "offline" && placement&.backend == "hetzner_cloud" && placement.state == "retired"
     end
 
+    def still_eligible?(agent)
+      agent.reload
+      agent.externally_hosted? && !retired?(agent) && !Agents::RemoteRuntime.remote?(agent)
+    end
+
+    # init, forget/prune and fit read only the repository, so they get no
+    # resident volumes: a source mount is a chance to recreate one.
     def init_restic_repo!(agent)
       cmd = restic_env(agent) + [ Backup::AgentRestic::IMAGE, "init" ]
-      _out, err, status = Open3.capture3(*docker_run_cmd(agent, *cmd))
+      _out, err, status = Open3.capture3(*repository_cmd(agent, *cmd))
       return true if status.success? || err.include?("already initialized")
 
       raise "restic init failed: #{err}"
@@ -116,7 +137,7 @@ module Backup
         "--tag", "helixkit_volume_set=v1",
         "--json"
       ]
-      out, err, status = Open3.capture3(*docker_run_cmd(agent, *cmd, graph_mounts: graph_mounts))
+      out, err, status = Open3.capture3(*backup_cmd(agent, *cmd, graph_mounts: graph_mounts))
       duration = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
       parsed = parse_restic_backup(out)
       [ parsed[:snapshot_id], parsed[:total_bytes_processed], duration, status.success?, err.to_s.last(4000) ]
@@ -143,7 +164,7 @@ module Backup
         "--keep-monthly", agent.backup_keep_monthly.to_s,
         "--prune"
       ]
-      _out, err, status = Open3.capture3(*docker_run_cmd(agent, *cmd))
+      _out, err, status = Open3.capture3(*repository_cmd(agent, *cmd))
       status.success? ? nil : err.to_s.last(2000)
     end
 
@@ -151,7 +172,7 @@ module Backup
     # what it holds (Backup::Fit). Returns an error string, or nil.
     def fit!(agent)
       run = lambda do |*args|
-        out, err, status = Open3.capture3(*docker_run_cmd(agent, *restic_env(agent), Backup::AgentRestic::IMAGE, *args))
+        out, err, status = Open3.capture3(*repository_cmd(agent, *restic_env(agent), Backup::AgentRestic::IMAGE, *args))
         raise Backup::Fit::Failed, "restic #{args.first} failed: #{err.to_s.squish.last(500)}" unless status.success?
 
         out
@@ -171,8 +192,12 @@ module Backup
       snapshot.update!(stderr_tail: [ snapshot.stderr_tail.presence, "Prune failed: #{error}" ].compact.join("\n").last(4000))
     end
 
-    def docker_run_cmd(agent, *restic_args, graph_mounts: [])
+    def backup_cmd(agent, *restic_args, graph_mounts: [])
       [ "docker", "run", "--rm", *Backup::AgentRestic.backup_label(agent), *Backup::AgentRestic.backup_mounts(agent), *graph_mounts, *restic_args ]
+    end
+
+    def repository_cmd(agent, *restic_args)
+      [ "docker", "run", "--rm", *Backup::AgentRestic.backup_label(agent), *restic_args ]
     end
 
     def restic_env(agent)

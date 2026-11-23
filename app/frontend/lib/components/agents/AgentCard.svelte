@@ -145,7 +145,7 @@
           {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
-              <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
+              <Badge variant="secondary" title="This resident has been retired. History is preserved.">
                 Deprecated · Unavailable
               </Badge>
             {/if}

@@ -33,6 +33,15 @@ module Backup
 
     class ResidentBusy < ArgumentError; end
     class TranscriptRefused < ArgumentError; end
+    # A volume the backup reads is missing. Never created here: Docker makes
+    # any named volume a `-v` names, and until 23 Nov 2026 the backup of a
+    # resident whose volumes had been removed (50, 20 Nov) brought all four
+    # back empty every night, then failed on the empty Chaos one. A volume
+    # lost by accident would have come back the same way, with an alarm
+    # about its config instead of its absence.
+    class SourceVolumeMissing < ArgumentError; end
+    # Docker did not say whether a volume exists. Not taken for absence.
+    class SourceVolumeUnknown < ArgumentError; end
 
     # Held by a house resident's backup for as long as its container may be
     # paused, and by a runtime roll while it recreates that container (#765,
@@ -294,6 +303,23 @@ module Backup
 
     def backed_up_volumes(agent)
       Agents::VolumeSet.new(agent).names.except(:state)
+    end
+
+    # Every volume the backup mounts must already exist; raises otherwise,
+    # naming the roles. Call it under the quiesce lock, immediately before
+    # the mount, so retirement (Agents::RetireLocal, same lock) cannot remove
+    # a volume between this check and the mount.
+    def verify_source_volumes!(agent)
+      missing = backed_up_volumes(agent).filter_map do |role, volume|
+        _, err, status = Open3.capture3("docker", "volume", "inspect", volume)
+        next if status.success?
+        raise SourceVolumeUnknown, "Cannot inspect the resident's #{role} volume" unless err.to_s.match?(/no such volume/i)
+
+        role
+      end
+      return if missing.empty?
+
+      raise SourceVolumeMissing, "#{missing.join(', ')} volume#{'s' if missing.size > 1} missing; not recreated"
     end
 
     def bucket
