@@ -22,8 +22,11 @@ module Agents
     # The runner fact that says it can measure a resident's card numbers.
     # 2 also counts a journal the resident chose (Agent#journal_source); a
     # runner on 1 still measures the dated daily journals.
-    HOME_STATS_VERSION = 2
+    # 3 also walks the resident's disk use on its own, as part "storage"
+    # (Agents::HomeStorage); before 3 the walk rode along with the count.
+    HOME_STATS_VERSION = 3
     HOME_STATS_CHOSEN_JOURNAL_VERSION = 2
+    HOME_STORAGE_VERSION = 3
 
     class Unavailable < StandardError; end
     # The VM's runner predates the command asked of it (runners ship at birth).
@@ -621,16 +624,40 @@ module Agents
 
       payload = { "container_name" => agent.container_name }
       payload["journal_source"] = source if source
-      relay!(agent, "home_stats", payload, wait:, poll:)
+      relay!(agent, "home_stats", payload, wait:, poll:, abandon_on_timeout: true)
     end
 
-    def relay!(agent, kind, payload, wait:, poll:)
+    # The disk use on a VM resident's card, walked inside it by the runner's
+    # fixed copy of Agents::HomeStorage::SCRIPT, under the runner's own short
+    # budget. Returns { "storage_bytes" } or { "error" => "timeout" }.
+    HOME_STORAGE_WAIT = 90.seconds
+
+    def home_storage!(agent, wait: HOME_STORAGE_WAIT, poll: 2)
+      enrollment = live_enrollment!(agent)
+      version = enrollment.reload.last_facts.to_h["home_stats"]
+      unless version.is_a?(Integer) && version.between?(HOME_STORAGE_VERSION, HOME_STATS_VERSION)
+        raise RunnerTooOld, "its server's runner can't measure its disk use yet; it updates itself"
+      end
+
+      relay!(agent, "home_stats", { "container_name" => agent.container_name, "part" => "storage" }, wait:, poll:,
+             abandon_on_timeout: true)
+    end
+
+    # abandon_on_timeout: a read whose answer is useless once nobody waits
+    # (the card's numbers). If the runner hasn't taken it yet, it is refused
+    # in place, so a VM that comes back from offline doesn't work through a
+    # queue of discarded measurements before its next turn (Mira, #1111).
+    # One conditional UPDATE: a delivery that won the race is left to finish.
+    def relay!(agent, kind, payload, wait:, poll:, abandon_on_timeout: false)
       command = RunnerCommand.enqueue!(enrollment: live_enrollment!(agent), kind:, payload:)
       deadline = Time.current + wait
       loop do
         command.reload
         break if command.terminal?
-        raise Unavailable, "The resident's server did not answer in time. Try again in a moment." if Time.current >= deadline
+        if Time.current >= deadline
+          command.abandon_if_queued!(now: Time.current) if abandon_on_timeout
+          raise Unavailable, "The resident's server did not answer in time. Try again in a moment."
+        end
 
         sleep poll
       end

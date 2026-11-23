@@ -14,7 +14,8 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     Agents::Resources.stub(:new, @resources) do
       @service.stub(:capture, { ok: true, stdout: '{"count":42,"storage_bytes":1024}' }) do
         assert_equal 42, @service.call[:count]
-        assert_equal 1024, @service.call[:storage_bytes]
+        # Disk use is Agents::HomeStorage's now; a figure here is ignored.
+        assert_not @service.call.key?(:storage_bytes)
       end
       @agent.journal_entry_stats = { "count" => 21, "measured_at" => 1.day.ago.iso8601 }
       [ { ok: false }, { ok: true, stdout: '{"count":-1}' },
@@ -63,14 +64,15 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     end
   end
 
-  # The reader as the runner sends it, pointed at a scratch directory. Its du
-  # roots move too: on a resident's own box the real /home/agent volumes exist,
-  # and measuring them ran into the script's 10 s timeout.
+  # The reader as the runner sends it, pointed at a scratch directory.
   def reader_script(directory)
-    script = Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
-    roots = '"/home/agent/" + name'
-    raise "the reader's volume roots moved" unless script.include?(roots)
-    script.sub(roots, "#{directory.to_s.inspect} + \"/\" + name")
+    Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
+  end
+
+  # A walk of a 100 GB home outlasted the count's budget and left the disk
+  # figure empty for the largest homes (jZWPXJ): the count never walks.
+  test "the count script does not walk the disk" do
+    assert_no_match(/\bdu\b|subprocess/, Agents::JournalEntryStats::SCRIPT)
   end
 
   # A resident on its own server has no container on the house host, so its
@@ -107,7 +109,7 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
         stats = @service.call
         assert_equal "measured", stats[:status]
         assert_equal 37, stats[:count]
-        assert_equal 2048, stats[:storage_bytes]
+        assert_not stats.key?(:storage_bytes), "an older runner's disk figure is not the card's"
       end
     end
     assert_equal [ [ @agent.id, "home_stats", { "container_name" => "test-resident" } ] ], asked

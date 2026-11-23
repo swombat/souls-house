@@ -28,6 +28,7 @@
 
   import ResidentActivity from './ResidentActivity.svelte';
   import ResidentSessionsSpinner from './ResidentSessionsSpinner.svelte';
+  import { diskNote, diskSize, diskTitle } from '$lib/disk-usage.js';
   const integrationIcons = {
     telegram: TelegramLogo,
     github: GithubLogo,
@@ -38,13 +39,6 @@
     withings: Scales,
     xero: Receipt,
   };
-  function diskSize(bytes) {
-    if (bytes == null) return '—';
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KiB`;
-    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
-    return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
-  }
-
   let {
     agent,
     sessions = null,
@@ -125,10 +119,17 @@
             </p>
           {/if}
           {#if agent.hosting?.kind === 'cloud' && agent.hosting.kernel}
-            <p class="text-xs text-muted-foreground mt-0.5 tabular-nums truncate" data-testid="resident-kernel"
+            <p
+              class="text-xs text-muted-foreground mt-0.5 tabular-nums truncate"
+              data-testid="resident-kernel"
               title={`Running ${agent.hosting.kernel.running}; installed ${agent.hosting.kernel.installed || 'unknown'}`}>
-              Kernel {agent.hosting.kernel.running}{#if agent.hosting.kernel.installed && agent.hosting.kernel.installed !== agent.hosting.kernel.running}
-                · <span class="font-medium">{agent.hosting.kernel.installed} installed{agent.hosting.kernel.reboot_required ? ', reboot pending' : ''}</span>{/if}
+              Kernel {agent.hosting.kernel
+                .running}{#if agent.hosting.kernel.installed && agent.hosting.kernel.installed !== agent.hosting.kernel.running}
+                · <span class="font-medium"
+                  >{agent.hosting.kernel.installed} installed{agent.hosting.kernel.reboot_required
+                    ? ', reboot pending'
+                    : ''}</span
+                >{/if}
             </p>
           {/if}
           {#if admin && agent.hosting?.kind === 'local' && !agent.deprecated}
@@ -215,14 +216,10 @@
             </span>
           {/if}
         </span>
-        <span
-          class="inline-flex items-center gap-1"
-          title={`Persistent disk usage across identity, Chaos, repo, work and state volumes. ${agent.journal_entry_stats?.measured_at ? `Measured ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}.` : 'Awaiting background measurement.'}`}>
+        <span class="inline-flex items-center gap-1" title={diskTitle(agent.disk)}>
           <HardDrive class="size-4" aria-label="Persistent disk used" />
-          {diskSize(agent.journal_entry_stats?.storage_bytes)}
-          {#if agent.journal_entry_stats?.status === 'unavailable' && agent.journal_entry_stats?.storage_bytes != null}<span
-              class="opacity-60">(stale)</span
-            >{/if}
+          {diskSize(agent.disk?.bytes)}
+          {#if diskNote(agent.disk)}<span class="opacity-60">{diskNote(agent.disk)}</span>{/if}
         </span>
         <span
           class="inline-flex items-center gap-1 {heartbeatEnabled
