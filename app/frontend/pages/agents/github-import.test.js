@@ -357,7 +357,7 @@ test('polls setup props only and cleans up its timer on navigation', async () =>
     const { unmount } = render(GithubImport, { ...props, github_import: { ...request, status: 'provisioning' } });
     await vi.advanceTimersByTimeAsync(5000);
     expect(router.reload).toHaveBeenCalledWith({
-      only: ['github_import', 'approve_url', 'can_approve', 'refresh_url', 'retry_activation_url'],
+      only: ['github_import', 'approve_url', 'can_approve', 'refresh_url', 'retry_activation_url', 'move'],
       preserveScroll: true,
     });
     unmount();
