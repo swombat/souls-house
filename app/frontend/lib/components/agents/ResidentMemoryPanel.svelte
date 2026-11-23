@@ -7,6 +7,7 @@
   let { overviewUrl, historyUrl = null } = $props();
   let overview = $state(null);
   let overviewError = $state(null);
+  let expanded = $state(false);
   let summaryController;
 
   async function getJson(url, signal) {
@@ -95,7 +96,12 @@
 
   {#if historyUrl}
     <AdminOnlySection>
-      <ResidentMemoryHistory {historyUrl} />
+      <button type="button" class="underline" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
+        {expanded ? 'Collapse' : 'Expand'} memory history
+      </button>
+      {#if expanded}
+        <ResidentMemoryHistory {historyUrl} />
+      {/if}
     </AdminOnlySection>
   {/if}
 </div>

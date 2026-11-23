@@ -33,6 +33,19 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+const expandHistory = () => fireEvent.click(screen.getByRole('button', { name: 'Expand memory history' }));
+
+test('admin history is neither requested nor displayed until expanded', async () => {
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await screen.findByText('17');
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/overview']);
+  expect(screen.queryByRole('region', { name: 'Memory history' })).not.toBeInTheDocument();
+  await expandHistory();
+  await screen.findByText(entry.body);
+  await fireEvent.click(screen.getByRole('button', { name: 'Collapse memory history' }));
+  expect(screen.queryByText(entry.body)).not.toBeInTheDocument();
+});
+
 test('shows counts and both fourteen-day charts without fetching private history for members', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview' });
   expect(await screen.findByText('17')).toBeInTheDocument();
@@ -44,6 +57,7 @@ test('shows counts and both fourteen-day charts without fetching private history
 
 test('admin filters default on, hide deselected kinds, and pagination preserves filters', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByText('A journal entry')).toBeInTheDocument();
   expect(screen.getAllByRole('checkbox')).toHaveLength(5);
   screen.getAllByRole('checkbox').forEach((box) => expect(box).toBeChecked());
@@ -61,6 +75,7 @@ test('admin filters default on, hide deselected kinds, and pagination preserves 
 
 test('journal content is rendered as text, not executable HTML', async () => {
   const { container } = render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByText(entry.body)).toBeInTheDocument();
   expect(container.querySelector('script')).toBeNull();
 });
@@ -78,6 +93,7 @@ test('unavailable journals are unknown and do not produce an empty chart', async
 
 test('all-off is sent explicitly rather than falling back to every type', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   await screen.findByText('A journal entry');
   for (const box of screen.getAllByRole('checkbox')) await fireEvent.click(box);
   await waitFor(() => expect(fetch.mock.calls.at(-1)[0]).toBe('/history?kinds='));
@@ -86,6 +102,7 @@ test('all-off is sent explicitly rather than falling back to every type', async 
 test('shows request failures with a retry instead of stale contents', async () => {
   fetch.mockImplementation(async (url) => ({ ok: url === '/overview', status: 403, json: async () => overview }));
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByRole('alert')).toHaveTextContent('Access denied.');
   expect(screen.getByRole('button', { name: 'Retry from newest' })).toBeInTheDocument();
 });
@@ -112,6 +129,7 @@ test('uses progressively deeper blues for journal layers and peach for nodes', a
     json: async () => (url === '/overview' ? overview : { ...history, items }),
   }));
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   for (const [kind, background] of Object.entries(backgrounds)) {
     const heading = await screen.findByRole('heading', { name: `Item ${kind}` });
     expect(heading.closest('li')).toHaveClass(background);
@@ -121,6 +139,7 @@ test('uses progressively deeper blues for journal layers and peach for nodes', a
 
 test('memory history sits in the red site-admins-only box; members get no box', async () => {
   const { unmount } = render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   const region = await screen.findByRole('region', { name: 'Memory history' });
   const box = region.closest('[data-admin-only]');
   expect(box).not.toBeNull();
