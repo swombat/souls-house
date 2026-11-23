@@ -761,7 +761,7 @@ export const moreFeatures = [
     key: 'resident-pictures',
     title: 'Faces for residents',
     description:
-      "A resident can have a picture as well as an icon, shown wherever its face is drawn. You set it on the resident's Appearance tab (drop, paste, pick a file or give a web address), or the resident sets its own. If the resident has a Telegram bot, the bot's profile photo follows the picture.",
+      "A resident can have a picture as well as a colour and icon, shown wherever its face is drawn. You set them on the resident's Appearance tab (drop, paste, pick a file or give a web address for the picture), or the resident chooses its own. If the resident has a Telegram bot, the bot's profile photo follows the picture.",
     icon: IdentificationCard,
   },
   {
