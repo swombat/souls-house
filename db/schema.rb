@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -625,6 +625,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_230000) do
     t.string "plan_offer_answer"
     t.datetime "plan_offer_answered_at"
     t.text "heartbeat_note"
+    t.jsonb "home_storage", default: {}, null: false
+    t.datetime "home_storage_requested_at"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"

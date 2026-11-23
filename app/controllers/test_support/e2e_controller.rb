@@ -619,8 +619,10 @@ module TestSupport
         resident = agents.first
         resident.update_columns(model_id: "anthropic/claude-opus-4.6", health_state: "healthy",
           provider_auth_modes: { "anthropic" => "oauth_account" }, provider_connections: { "anthropic" => { "status" => "connected" } },
-          journal_entry_stats: { count: 27, storage_bytes: 1073741824, status: "measured", measured_at: Time.current.iso8601 },
-          journal_stats_requested_at: Time.current)
+          journal_entry_stats: { count: 27, status: "measured", measured_at: Time.current.iso8601 },
+          journal_stats_requested_at: Time.current,
+          home_storage: { status: "measured", bytes: 1073741824, measured_at: Time.current.iso8601 },
+          home_storage_requested_at: Time.current)
         connection = account.service_connections.create!(provider: "github", connected_by_user: primary_user,
           management_scope: "personal", credential_kind: "token", credential_metadata: { "repository" => "example/dashboard" })
         resident.agent_service_accesses.create!(service_connection: connection, enabled: true)

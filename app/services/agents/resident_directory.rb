@@ -22,6 +22,7 @@ module Agents
 
       agents.map do |agent|
         AgentJournalStatsJob.request_refresh(agent)
+        AgentHomeStorageJob.request_refresh(agent)
         agent.as_json(as: :resident_card).merge(
           activity: activity.fetch(agent.id),
           integrations: integrations.for(agent),

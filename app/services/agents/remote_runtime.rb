@@ -22,8 +22,11 @@ module Agents
     # The runner fact that says it can measure a resident's card numbers.
     # 2 also counts a journal the resident chose (Agent#journal_source); a
     # runner on 1 still measures the dated daily journals.
-    HOME_STATS_VERSION = 2
+    # 3 also walks the resident's disk use on its own, as part "storage"
+    # (Agents::HomeStorage); before 3 the walk rode along with the count.
+    HOME_STATS_VERSION = 3
     HOME_STATS_CHOSEN_JOURNAL_VERSION = 2
+    HOME_STORAGE_VERSION = 3
 
     class Unavailable < StandardError; end
     # The VM's runner predates the command asked of it (runners ship at birth).
@@ -622,6 +625,21 @@ module Agents
       payload = { "container_name" => agent.container_name }
       payload["journal_source"] = source if source
       relay!(agent, "home_stats", payload, wait:, poll:)
+    end
+
+    # The disk use on a VM resident's card, walked inside it by the runner's
+    # fixed copy of Agents::HomeStorage::SCRIPT, under the runner's own short
+    # budget. Returns { "storage_bytes" } or { "error" => "timeout" }.
+    HOME_STORAGE_WAIT = 90.seconds
+
+    def home_storage!(agent, wait: HOME_STORAGE_WAIT, poll: 2)
+      enrollment = live_enrollment!(agent)
+      version = enrollment.reload.last_facts.to_h["home_stats"]
+      unless version.is_a?(Integer) && version.between?(HOME_STORAGE_VERSION, HOME_STATS_VERSION)
+        raise RunnerTooOld, "its server's runner can't measure its disk use yet; it updates itself"
+      end
+
+      relay!(agent, "home_stats", { "container_name" => agent.container_name, "part" => "storage" }, wait:, poll:)
     end
 
     def relay!(agent, kind, payload, wait:, poll:)

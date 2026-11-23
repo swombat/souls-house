@@ -44,7 +44,7 @@ test('shows the model subtitle, disk and integration permissions, never the prom
     agent: {
       ...agent,
       system_prompt: 'private prompt',
-      journal_entry_stats: { storage_bytes: 1073741824 },
+      home_storage: { status: 'measured', bytes: 1073741824, measured_at: '2026-11-23T20:00:00Z' },
       integrations: [{ provider: 'github', label: 'owner/repo', enabled: false, status: 'disabled' }],
     },
     accountId: 'test',
@@ -54,6 +54,36 @@ test('shows the model subtitle, disk and integration permissions, never the prom
   expect(screen.queryByText('private prompt')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Persistent disk used').parentElement).toHaveTextContent('1.0 GiB');
   expect(screen.getByTitle('owner/repo · disabled')).toHaveClass('text-muted-foreground/35');
+});
+
+test.each([
+  [{}, '—', null],
+  [
+    { status: 'too_slow', attempted_at: '2026-11-23T20:00:00Z' },
+    '(too large to measure)',
+    'longer than its time limit',
+  ],
+  [
+    { status: 'unavailable', reason: 'runner_too_old', attempted_at: '2026-11-23T20:00:00Z' },
+    '(unavailable)',
+    'updates itself',
+  ],
+  [
+    {
+      status: 'too_slow',
+      bytes: 2 * 1024 ** 3,
+      measured_at: '2026-11-22T20:00:00Z',
+      attempted_at: '2026-11-23T20:00:00Z',
+    },
+    '2.0 GiB (stale)',
+    'longer than its time limit',
+  ],
+])('tells an unmeasured disk from one too large to walk or unavailable: %o', (home_storage, text, why) => {
+  render(AgentCard, { agent: { ...agent, home_storage }, accountId: 'test' });
+  const disk = screen.getByLabelText('Persistent disk used').parentElement;
+  expect(disk).toHaveTextContent(text);
+  if (why) expect(disk.getAttribute('title')).toContain(why);
+  else expect(disk.getAttribute('title')).toContain('Awaiting background measurement');
 });
 
 test('shows the daily heartbeat frequency only when enabled and unpaused', () => {
