@@ -1,5 +1,7 @@
 class GithubResidentImportsController < ApplicationController
 
+  GENERAL_IMPORT_FAILURE = "Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest.".freeze
+
   require_feature_enabled :agents
   before_action :require_import_authority!
   before_action :set_import, only: [ :show, :approve, :refresh, :retry_activation ]
@@ -42,8 +44,13 @@ class GithubResidentImportsController < ApplicationController
     # them), so the person sees which check failed instead of a list to guess
     # through (2026-11-01: a missing validator read as "check your manifest").
     import_request_failed("Import request failed: #{error.message}.")
-  rescue ActiveRecord::RecordInvalid, ArgumentError, KeyError
-    import_request_failed("Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest.")
+  rescue ActiveRecord::RecordInvalid => error
+    # A home another resident already holds is the one refusal here a person
+    # can act on from its own sentence; the rest stay general.
+    held = error.record.is_a?(GithubResidentImport) && error.record.errors[:portable_home_id].first
+    import_request_failed(held ? "Import request failed. #{held}" : GENERAL_IMPORT_FAILURE)
+  rescue ArgumentError, KeyError
+    import_request_failed(GENERAL_IMPORT_FAILURE)
   end
 
   def approve

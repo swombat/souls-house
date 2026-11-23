@@ -188,4 +188,101 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     assert_nil request.approval_error
   end
 
+  # A first import of the home, left waiting for runtime trust, as Reed's was
+  # (JroAMY, 23 Nov).
+  def import_until_trust(request)
+    volume = Object.new
+    volume.define_singleton_method(:seed_from_directory!) { |_| }
+    sandbox = Object.new
+    sandbox.define_singleton_method(:imported_runtime_trusted?) { false }
+    Agents::GithubImportSource.stub(:new, source_stub(request)) do
+      Agents::Volume.stub(:new, volume) do
+        Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+      end
+    end
+    assert_equal "needs_runtime_trust", request.reload.status
+    request.agent
+  end
+
+  test "a second import of a home another resident holds fails with a sentence and is never left provisioning" do
+    first = import_request
+    second = import_request(connection: first.service_connection, name: "Second try")
+    approve_fixture(first)
+    holder = import_until_trust(first)
+    approve_fixture(second)
+    Agents::GithubImportSource.stub(:new, ->(*) { flunk "refused before the repository is fetched" }) do
+      assert_no_difference "Agent.count" do
+        GithubResidentImportJob.perform_now(second.id)
+      end
+    end
+    second.reload
+    assert_equal "failed", second.status
+    assert_equal second.home_holder_error, second.last_error
+    assert_equal "This home is already linked to #{holder.name}. To continue with that resident, open the original import request.", second.last_error
+    assert_nil second.agent
+    assert_equal "needs_runtime_trust", first.reload.status, "the resident that holds the home is untouched"
+  end
+
+  test "a home taken while the repository is fetched is refused before a home is made" do
+    first = import_request
+    second = import_request(connection: first.service_connection, name: "Second try")
+    approve_fixture(first)
+    approve_fixture(second)
+    source = Object.new
+    source.define_singleton_method(:with_checkout) do |branch:, commit_sha: nil, &block|
+      # The first import makes its resident while this one is fetching.
+      first.account.agents.new(github_resident_import_id: first.id, name: first.name, model_id: first.model_id,
+        home_profile: "portable_v1", portable_home_id: first.portable_home_id,
+        runtime: "offline", active: false, paused: true).save!(validate: false)
+      block.call("/synthetic-home", { "identity_id" => second.portable_home_id }, commit_sha || "a" * 40, branch.presence || "main")
+    end
+    Agents::GithubImportSource.stub(:new, source) do
+      GithubResidentImportJob.perform_now(second.id)
+    end
+    second.reload
+    assert_equal "failed", second.status
+    assert_includes second.last_error, "already linked to"
+    assert_nil second.agent
+  end
+
+  test "the failure rescue marks the request failed even when the resident it built can't be saved" do
+    first = import_request
+    second = import_request(connection: first.service_connection, name: "Second try")
+    approve_fixture(first)
+    import_until_trust(first)
+    approve_fixture(second)
+    # The holder appears between the check and the save (a race the check
+    # can't close): the unique home makes saving the new resident fail.
+    second = GithubResidentImport.find(second.id)
+    second.define_singleton_method(:home_holder_error) { nil }
+    GithubResidentImport.stub(:find, second) do
+      Agents::GithubImportSource.stub(:new, source_stub(second)) do
+        Agents::Volume.stub(:new, ->(*) { flunk "no home is seeded" }) do
+          assert_raises(ActiveRecord::RecordInvalid) { GithubResidentImportJob.perform_now(second.id) }
+        end
+      end
+    end
+    fresh = GithubResidentImport.find_by(id: second.id)
+    assert_equal "failed", fresh.status, "never left provisioning with no message"
+    assert_match(/Import or runtime setup failed/, fresh.last_error)
+    assert_nil fresh.agent
+  end
+
+  test "a home held in another account fails like any setup failure and confirms nothing" do
+    first = import_request
+    second = import_request(connection: first.service_connection, name: "Second try")
+    approve_fixture(second)
+    accounts(:team_account).agents.new(name: "Elsewhere", model_id: first.model_id, home_profile: "portable_v1",
+      portable_home_id: first.portable_home_id, runtime: "offline", active: false, paused: true).save!(validate: false)
+    Agents::GithubImportSource.stub(:new, ->(*) { flunk "refused before the repository is fetched" }) do
+      assert_no_difference "Agent.count" do
+        GithubResidentImportJob.perform_now(second.id)
+      end
+    end
+    second.reload
+    assert_equal "failed", second.status
+    assert_equal GithubResidentImportJob::FAILURE_MESSAGE, second.last_error
+    assert_nil second.agent
+  end
+
 end
