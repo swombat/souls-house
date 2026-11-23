@@ -63,6 +63,30 @@ class ChatSidebarActivityTest < ActiveSupport::TestCase
     assert_broadcast_on(channel, action: "refresh", prop: "chats") { interaction.destroy! }
   end
 
+  test "sidebar exposes waking_agent_ids only while the latest attempt is waking" do
+    interaction = create_run
+    attempt = interaction.agent_runtime_attempts.create!(
+      attempt_id: SecureRandom.uuid, number: 1, last_report_at: Time.current, snapshot: { "phase" => "waking" }
+    )
+    assert_equal [ @agent.to_param ], sidebar(@chat)["working_agent_ids"]
+    assert_equal [ @agent.to_param ], sidebar(@chat)["waking_agent_ids"]
+
+    attempt.update!(last_report_at: 31.seconds.ago)
+    assert_equal [ @agent.to_param ], sidebar(@chat)["working_agent_ids"]
+    assert_empty sidebar(@chat)["waking_agent_ids"]
+
+    attempt.update!(last_report_at: Time.current)
+    assert_equal [ @agent.to_param ], sidebar(@chat)["waking_agent_ids"]
+
+    attempt.update!(snapshot: {})
+    assert_equal [ @agent.to_param ], sidebar(@chat)["working_agent_ids"]
+    assert_empty sidebar(@chat)["waking_agent_ids"]
+
+    attempt.update!(snapshot: { "phase" => "waking", "fallback" => true })
+    interaction.agent_runtime_attempts.create!(attempt_id: SecureRandom.uuid, number: 2, last_report_at: Time.current, snapshot: {})
+    assert_empty sidebar(@chat)["waking_agent_ids"]
+  end
+
   private
 
   def sidebar(chat)
