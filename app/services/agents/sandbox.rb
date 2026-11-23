@@ -326,6 +326,13 @@ module Agents
     def imported_runtime_trusted?
       return true unless agent.github_resident_import
       verify_resources!
+      # The home is seeded before this runs (GithubResidentImportJob), so a
+      # missing identity volume is a lost home. The `-v` below would bring it
+      # back empty, and a retry with identity_seeded_at set never reseeds.
+      identity_volume = Agents::Volume.new(agent).volume_name
+      unless volume_exists?(identity_volume)
+        raise SandboxError, "identity volume missing; not recreated"
+      end
       chaos_volume = Agents::Resources.new(agent).volumes.fetch(:chaos)
       unless volume_exists?(chaos_volume)
         docker_system("volume", "create", *Agents::Resources.new(agent).labels, chaos_volume) ||
@@ -333,7 +340,7 @@ module Agents
         return false
       end
       result = docker_capture("run", "--rm",
-        "-v", "#{Agents::Volume.new(agent).volume_name}:#{IDENTITY_PATH}:ro",
+        "-v", "#{identity_volume}:#{IDENTITY_PATH}:ro",
         "-v", "#{chaos_volume}:/home/agent/.chaos:ro",
         "-e", "SOULSHOUSE_HOME_PROFILE=portable_v1",
         "-e", "SOULSHOUSE_HOME_ROOT=#{IDENTITY_PATH}",

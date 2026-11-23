@@ -7,7 +7,9 @@ module Agents
     HARNESS_ATTRIBUTES = %w[container_name endpoint_url outbound_api_key_id birth_committed_at].freeze
 
     def self.inventory
-      Agent.where(runtime: %w[inline migrating deprecated]).order(:id).map do |agent|
+      # Retired shared-host residents (Agents::RetireLocal) are deprecated
+      # too, but were never inline: they are not this transition's to review.
+      Agent.where(runtime: %w[inline migrating deprecated]).where.not(id: RetireLocal.retired_local_ids).order(:id).map do |agent|
         {
           id: agent.id, runtime: agent.runtime, updated_at: agent.updated_at.iso8601(6),
           harness_metadata: HARNESS_ATTRIBUTES.select { |attribute| agent[attribute].present? }

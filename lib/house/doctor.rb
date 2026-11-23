@@ -20,7 +20,7 @@ module House
     # Mirrors config/deploy.yml's `house.call(...)` list.
     REQUIRED_KEYS = %w[
       HOUSE_DOMAIN HOUSE_HOST HOUSE_SSH_USER HOUSE_SSH_PORT HOUSE_IMAGE
-      HOUSE_REGISTRY_USER HOUSE_EMBEDDINGS_IMAGE HOUSE_AGENT_IMAGE
+      HOUSE_REGISTRY_USER HOUSE_AGENT_IMAGE
       HOUSE_STORAGE HOUSE_SITE_NAME
     ].freeze
 
@@ -28,7 +28,12 @@ module House
     OPTIONAL_KEYS = %w[
       HOUSE_DOCKER_GID HOUSE_BUILDER_REMOTE HOUSE_AGENT_RUNTIME_DOCKER_HOST
       HOUSE_MAIL_FROM HOUSE_SOURCE_REPO HOUSE_TRANSITION_ALIASES
+      HOUSE_EMBEDDINGS_IMAGE
     ].freeze
+
+    # Secrets .kamal/secrets resolves that deploy.yml only uses while the
+    # bge embeddings accessory is on (HOUSE_EMBEDDINGS_IMAGE set).
+    EMBEDDINGS_SECRETS = %w[MNEMODYNE_EMBEDDING_TOKEN].freeze
 
     # Mirrors .kamal/secrets' resolution of each secret.
     SECRETS = {
@@ -102,7 +107,15 @@ module House
       end
     end
 
+    def embeddings_accessory?
+      present?(@env["HOUSE_EMBEDDINGS_IMAGE"])
+    end
+
     def check_embeddings_digest
+      unless embeddings_accessory?
+        return record("INFO", "Embeddings accessory", "off (HOUSE_EMBEDDINGS_IMAGE blank); memory needs a voyage-* MNEMODYNE_EMBEDDING_PROFILE")
+      end
+
       digest = @env["HOUSE_EMBEDDINGS_DIGEST"].to_s.strip
       if digest.empty?
         record("WARN", "HOUSE_EMBEDDINGS_DIGEST", "blank — run bin/house release-embeddings")
@@ -210,7 +223,9 @@ module House
 
     def check_secrets
       SECRETS.each do |name, relative_path|
-        if present?(@env[name])
+        if EMBEDDINGS_SECRETS.include?(name) && !embeddings_accessory?
+          record("INFO", name, "not needed while the embeddings accessory is off")
+        elsif present?(@env[name])
           record("PASS", name, "from environment")
         elsif File.exist?(File.join(@root, relative_path))
           record("PASS", name, "from #{relative_path}")

@@ -2,12 +2,14 @@
   import { onMount } from 'svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
+  import AgentModelSelect from '$lib/components/agents/AgentModelSelect.svelte';
   import GithubTokenAuthority from '$lib/components/agents/github-token-authority.svelte';
   import GithubImportApproval from '$lib/components/agents/github-import-approval.svelte';
   import GithubImportStatus from '$lib/components/agents/github-import-status.svelte';
   import GithubSyncOptions from '$lib/components/agents/github-sync-options.svelte';
   import GithubSyncReview from '$lib/components/agents/github-sync-review.svelte';
   import GithubSyncHealth from '$lib/components/agents/github-sync-health.svelte';
+  import { groupModelsByProvider } from '$lib/agent-models';
   import { accountAgentsPath, accountPersonalServicesPath } from '@/routes';
 
   let {
@@ -42,6 +44,7 @@
       (connection) => String(connection.id) === String($form.github_resident_import.service_connection_id)
     )
   );
+  let groupedModels = $derived(groupModelsByProvider(models).groups);
   let eligible = $derived(selectedConnection?.token_metadata?.token_kind === 'fine_grained');
   let canSubmit = $derived(
     !request &&
@@ -161,18 +164,15 @@
       {#if errorsFor('name')}
         <p role="alert" class="text-sm text-destructive">{errorsFor('name')}</p>
       {/if}
-      <label class="block space-y-2">
-        <span class="text-sm font-medium">Model</span>
-        <select
-          class="w-full rounded-md border bg-background p-2"
+      <div class="space-y-2">
+        <label for="github-import-model" class="block text-sm font-medium">Model</label>
+        <AgentModelSelect
+          id="github-import-model"
+          {groupedModels}
           bind:value={$form.github_resident_import.model_id}
-          disabled={$form.processing}
-          required>
-          {#each models as model}
-            <option value={model.model_id}>{model.label}</option>
-          {/each}
-        </select>
-      </label>
+          triggerClass="w-full"
+          disabled={$form.processing || models.length === 0} />
+      </div>
       {#if errorsFor('model_id')}
         <p role="alert" class="text-sm text-destructive">{errorsFor('model_id')}</p>
       {/if}

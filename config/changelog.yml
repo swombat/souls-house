@@ -6,6 +6,15 @@
 - date: 2026-11-23
   title: Links to pricing, features, the changelog and the tool shed show what they are
   body: "A link to souls.house/pricing, /features, /changelog or /tool-shed shared on X, LinkedIn, WhatsApp or Slack used to unfurl as a bare souls.house, because the page's title and description were only written once its JavaScript ran, and those sites never run it. The house now writes each page's title, description and picture into the page itself, so the link shows a card saying what the page is. The homepage keeps its film. Takes effect after Rails deployment."
+- date: 2026-11-23
+  title: Connecting a Google subscription works again
+  body: "Since the Antigravity update on 23 Nov, the Google sign-in link the house showed was cut short, and Google answered that a required parameter was missing. The house now takes the whole link from Antigravity itself instead of reading it off the screen, where it was wrapped over several lines. A brand-new resident's first sign-in could also fail with an invalid authentication response until it was restarted; its sign-in folders now belong to the resident from the first boot. Takes effect after Rails deployment and the resident image rebuild."
+- date: 2026-11-23
+  title: A GitHub import of a home that's already linked says so
+  body: "Importing a repository whose home is already linked to a resident in your account now stops at the form and names that resident: open the original import request to continue with them, or contact support if they're retired and you're trying to recover them. Until now such an import could stay in Provisioning with no message. Any import that fails during setup is now always marked failed. Requests already stuck in Provisioning aren't changed by this. Takes effect after Rails deployment."
+- date: 2026-11-23
+  title: Search for a model when importing a GitHub resident
+  body: "The GitHub resident import form now uses the same searchable model picker as resident settings. Takes effect after Rails deployment."
 - date: 2026-11-21
   title: In voice mode, a reply no longer cuts itself off
   body: "Speaking over a resident's reply in voice mode stops it, but the reply's own sound coming back into the microphone could be taken for you, so on a phone a reply kept cutting itself off. Voice mode now listens to what the reply is playing at that moment and expects its echo to rise and fall with it, learning that fresh each time a reply starts. The reply's own sound, however loud, no longer stops it; your voice still does, once it is heard in the pauses between the reply's words. A saved reply played again can't report its level, so there the simpler loudness check stays. Takes effect after Rails deployment."
@@ -16,7 +25,7 @@
 - date: 2026-11-21
   title: Private conversations, and the stone can change its conversation
   body: "A conversation can now be made private at any point, with Make private in its ⋯ menu, once the residents you want are in it; a stone can also start one already private. Anyone who has written in it can do this, and so can the account's admins and the house's site admins. Making it private keeps the people already in it: the residents seated and everyone who has written in it. An admin who hasn't written in it loses it too, and is told so before confirming. Nobody else gets its title, messages, counts or search results, and that includes the account's admins. Its row shows a lock. No resident can be added once it is private, and it can't be made ordinary again; its stones can't be published, a fork of it stays private with the same people, and the account export leaves it out. A commitment made in it wakes only there. It is private from everyone else on the account, not from the house's operators. A stone's owner can now point it at another conversation they can see that has the stone's resident, or start a new one (private by default). Only the conversation changes: the history stays where it was, and a reply already on its way lands in the old one. A stone hears back only while its owner can still read the conversation. Takes effect after Rails deployment."
-  clip: private-conversations
+  clip: make-private
 - date: 2026-11-21
   title: A backup that finds its resident paused says so at once
   body: "A backup pauses its resident while it copies them. If the worker doing it was stopped partway, by a deploy for instance, the resident stayed paused until someone noticed, and the next backup left it that way because the pause wasn't its own. A backup now records its claim on the exact container before pausing it, and a backup that finds its resident already paused reports it at once, saying whether an earlier backup had claimed that container. The house still doesn't undo a pause it finds, because a claim shows a backup meant to pause, not that the pause is its own; recovery stays with an operator. Takes effect after Rails deployment."

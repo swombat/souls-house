@@ -34,9 +34,34 @@ class GithubResidentImport < ApplicationRecord
   validates :commit_sha, format: { with: /\A[0-9a-f]{40}\z/ }
   validate :connection_matches_account
   validate :reviewed_configuration_is_immutable, on: :update
+  validate :home_not_already_held, on: :create
 
   def self.requestable_by?(account, user)
     account.service_credentials_manageable_by?(user)
+  end
+
+  # Why this request can't make a resident: a resident in this account
+  # already holds its home (agents.portable_home_id is unique, and a retired
+  # resident keeps its home). A sentence a person can act on, or nil. The
+  # resident this request itself made is not "another". A holder in another
+  # account is never confirmed here: see home_held_elsewhere?.
+  def home_holder_error
+    holder = home_holder
+    return unless holder && holder.account_id == account_id
+
+    if holder.deprecated_at
+      "This home is still linked to retired resident #{holder.name}. Contact support if you're trying to recover that resident."
+    else
+      "This home is already linked to #{holder.name}. To continue with that resident, open the original import request."
+    end
+  end
+
+  # Whether a resident in another account holds this home. Only the job asks,
+  # and it fails with its general message, so a requester can't learn from
+  # the form which ids are taken elsewhere.
+  def home_held_elsewhere?
+    holder = home_holder
+    holder.present? && holder.account_id != account_id
   end
 
   def approvable_by?(user)
@@ -238,6 +263,17 @@ class GithubResidentImport < ApplicationRecord
     return unless service_connection
     errors.add(:service_connection, "must be a GitHub connection in this account") unless
       service_connection.account_id == account_id && service_connection.provider == "github"
+  end
+
+  def home_holder
+    holder = Agent.find_by(portable_home_id: portable_home_id) if portable_home_id.present?
+    holder unless holder && persisted? && holder.github_resident_import_id == id
+  end
+
+  def home_not_already_held
+    return if portable_home_id.blank?
+    error = home_holder_error
+    errors.add(:portable_home_id, error) if error
   end
 
   def reviewed_configuration_is_immutable
