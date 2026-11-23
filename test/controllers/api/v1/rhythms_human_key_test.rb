@@ -78,6 +78,8 @@ class Api::V1::RhythmsHumanKeyTest < ActionDispatch::IntegrationTest
       assert_equal %w[07:00 12:00 17:00 21:00], response.parsed_body.dig("rhythm", "times_of_day")
       get preview_api_v1_rhythms_path, params: { rhythm: attrs.merge(times_of_day: [ "07:00", "" ]) }, headers: @headers
       assert_response :unprocessable_entity
+      assert_equal [ "times_of_day" ], response.parsed_body.fetch("errors").keys
+      assert_equal 1, response.parsed_body.dig("errors", "times_of_day").size
     end
   end
 

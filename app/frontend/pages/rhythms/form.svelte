@@ -24,6 +24,7 @@
     roomChoiceFromSelect,
     roomSelectValue,
     submittableValues,
+    timeRowErrors,
     zoneIdentifier,
   } from '$lib/rhythms';
 
@@ -72,6 +73,9 @@
   const serverErrors = $derived({ ...(rhythm?.errors ?? {}), ...($form.errors ?? {}) });
   const errorsFor = (field) => fieldErrors(serverErrors, field);
   let droppedTimes = $state([]);
+  const invalidTimes = $derived(
+    $form.rhythm.times_of_day.some((_, index) => timeRowErrors($form.rhythm.times_of_day, index).length > 0)
+  );
 
   function changeCadence(event) {
     const cadence = event.currentTarget.value;
@@ -92,13 +96,22 @@
 
   $effect(() => {
     const query = previewQuery($form.rhythm);
+    const locallyInvalid = invalidTimes;
     clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => loadPreview(query), 250);
-    return () => clearTimeout(previewTimer);
+    const seq = ++previewSeq;
+    previewErrors = null;
+    if (locallyInvalid) {
+      preview = null;
+    } else {
+      previewTimer = setTimeout(() => loadPreview(query, seq), 250);
+    }
+    return () => {
+      clearTimeout(previewTimer);
+      ++previewSeq;
+    };
   });
 
-  async function loadPreview(query) {
-    const seq = ++previewSeq;
+  async function loadPreview(query, seq) {
     try {
       const response = await fetch(`${rhythmPreviewPath(account.id)}?${query}`, {
         headers: { Accept: 'application/json' },
@@ -349,7 +362,7 @@
             : 'In shorter months, it happens on the last day of the month.'}
         </p>
       {/if}
-      {#each ['cadence', 'weekday', 'month_day', 'month', 'time_of_day', 'times_of_day', 'timezone'] as field}
+      {#each ['cadence', 'weekday', 'month_day', 'month', 'time_of_day', 'times_of_day', 'timezone'].filter((field) => !invalidTimes || !['time_of_day', 'times_of_day'].includes(field)) as field}
         {#each [...errorsFor(field), ...fieldErrors(previewErrors, field)] as error}<p class="text-sm text-destructive">
             {error}
           </p>{/each}
@@ -361,7 +374,7 @@
           First one:
           <span class="font-medium"
             >{formatWhen(preview.next_run_at, zoneIdentifier($form.rhythm.timezone, timezones))}</span>
-        {:else if previewErrors}
+        {:else if previewErrors || invalidTimes}
           <span class="text-muted-foreground">Fill in the details above to see when it will first happen.</span>
         {:else}
           <span class="text-muted-foreground">Working out when it happens…</span>

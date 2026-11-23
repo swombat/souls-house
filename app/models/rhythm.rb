@@ -34,12 +34,13 @@ class Rhythm < ApplicationRecord
   enum :cadence, %w[daily weekly monthly yearly].index_with(&:itself), validate: true
   enum :room_choice, ROOM_CHOICES.index_with(&:itself), prefix: :room_choice, validate: true
 
-  validates :title, :time_of_day, :timezone, :next_run_at, presence: true
+  validates :title, :timezone, presence: true
   validates :opening, presence: true, unless: -> { validation_context == :preview }
   validates :title, length: { maximum: 255 }
   validates :opening, length: { maximum: 20_000 }
-  validates :time_of_day, format: { with: CLOCK_TIME }
-  validate :valid_schedule_times
+  validates :time_of_day, presence: true, format: { with: CLOCK_TIME }, if: -> { self[:times_of_day].nil? }
+  validate :valid_schedule_times, unless: -> { self[:times_of_day].nil? }
+  validates :next_run_at, presence: true, unless: -> { errors.include?(:times_of_day) }
   validates :timezone, inclusion: { in: ActiveSupport::TimeZone.all.map(&:name) }
   validates :weekday, inclusion: { in: 0..6 }, if: :weekly?
   validates :month_day, inclusion: { in: 1..31 }, if: -> { monthly? || yearly? }
@@ -564,9 +565,9 @@ class Rhythm < ApplicationRecord
 
   def valid_schedule_times
     return errors.add(:times_of_day, "must contain 1 to #{MAX_DAILY_TIMES} times") unless times_of_day.is_a?(Array) && times_of_day.size.in?(1..MAX_DAILY_TIMES)
-    errors.add(:times_of_day, "must contain valid HH:MM times") unless times_of_day.all? { |t| t.is_a?(String) && CLOCK_TIME.match?(t) }
-    errors.add(:times_of_day, "must contain distinct times") unless times_of_day.uniq == times_of_day
-    errors.add(:times_of_day, "can contain several times only for a daily rhythm") if !daily? && times_of_day.many?
+    return errors.add(:times_of_day, "must contain valid HH:MM times") unless times_of_day.all? { |t| t.is_a?(String) && CLOCK_TIME.match?(t) }
+    return errors.add(:times_of_day, "must contain distinct times") unless times_of_day.uniq == times_of_day
+    return errors.add(:times_of_day, "can contain several times only for a daily rhythm") if !daily? && times_of_day.many?
     if times_of_day.many? && time_of_day != times_of_day.first
       errors.add(:time_of_day, "cannot change a multi-time schedule; send times_of_day instead")
     end

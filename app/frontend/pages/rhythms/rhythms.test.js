@@ -251,6 +251,59 @@ test('daily time editing stops at twelve slots', async () => {
   expect(screen.getByRole('button', { name: 'Add time' })).not.toBeDisabled();
 });
 
+test.each(['blank', 'duplicate'])(
+  'locally %s daily rows suppress previews across debounce and recover',
+  async (invalid) => {
+    vi.useFakeTimers();
+    let resolveStale;
+    globalThis.fetch.mockImplementationOnce(() => new Promise((resolve) => (resolveStale = resolve)));
+    const view = render(RhythmForm, {
+      account,
+      rhythm: rhythmFixture({ cadence: 'daily', errors: { times_of_day: ['Server list error'] } }),
+      residents,
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(250);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      await fireEvent.click(screen.getByRole('button', { name: 'Add time' }));
+      if (invalid === 'duplicate') {
+        await fireEvent.input(screen.getByLabelText('Time 2'), { target: { value: '09:00' } });
+      }
+      expect(screen.queryByText('Server list error')).not.toBeInTheDocument();
+      resolveStale({ ok: false, json: async () => ({ errors: { times_of_day: ['Stale preview error'] } }) });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Stale preview error')).not.toBeInTheDocument();
+      await fireEvent.input(screen.getByLabelText('Time 2'), { target: { value: '18:00' } });
+      await vi.advanceTimersByTimeAsync(249);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Weekly reflection — 5 Oct 2026')).toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  }
+);
+
+test('adding a blank row cancels the pending preview debounce', async () => {
+  vi.useFakeTimers();
+  const view = render(RhythmForm, { account, rhythm: rhythmFixture({ cadence: 'daily' }), residents });
+  try {
+    await vi.advanceTimersByTimeAsync(100);
+    await fireEvent.click(screen.getByRole('button', { name: 'Add time' }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove time 2' }));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
 test('daily preview sends every time and renders the full server description', async () => {
   globalThis.fetch.mockResolvedValue({
     ok: true,

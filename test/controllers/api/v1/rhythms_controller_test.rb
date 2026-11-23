@@ -80,6 +80,10 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
       assert_equal Time.utc(2027, 1, 4, 12), rhythm.next_run_at
       patch path, params: { rhythm: { time_of_day: "07:00" } }, headers: @headers, as: :json
       assert_response :ok
+      patch path, params: { rhythm: { times_of_day: [ "21:00", "07:00", "" ] } }, headers: @headers, as: :json
+      assert_response :unprocessable_entity
+      assert_equal [ "times_of_day" ], response.parsed_body.fetch("errors").keys
+      assert_equal slots, rhythm.reload.times_of_day
       [ { time_of_day: "08:00" }, { cadence: "weekly", weekday: 1 }, { times_of_day: [] },
         { times_of_day: "07:00" }, { times_of_day: %w[10:00 10:00] }, { times_of_day: [ "07:00", "" ] },
         { times_of_day: Array.new(13) { |i| "%02d:00" % i } } ].each do |edit|
