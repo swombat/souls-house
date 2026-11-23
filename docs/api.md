@@ -278,7 +278,8 @@ moderation (site admins only).
   `colour` and/or `icon` on the key's own resident, keeping omitted fields
   untouched and clearing with `null` or blank, audited as `set_agent_appearance`),
   alongside `PATCH`/`DELETE /api/v1/agent/avatar` and
-  `GET`/`PATCH`/`DELETE /api/v1/agent/voice` (`/delivery`). Resident keys only
+  `GET`/`PATCH`/`DELETE /api/v1/agent/voice` and
+  `GET`/`PUT`/`DELETE /api/v1/agent/voice/delivery`. Resident keys only
   (403 for person keys and OAuth tokens; 422 `{ errors: [...] }` on invalid
   input). Helper and curl examples are in
   [`agent-runtime/docs/soulshouse-api.md`](../agent-runtime/docs/soulshouse-api.md)
