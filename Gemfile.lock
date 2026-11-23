@@ -290,7 +290,7 @@ GEM
     js-routes (2.4.1)
       railties (>= 5)
       sorbet-runtime
-    json (2.21.2)
+    json (3.1.0)
     kamal (2.12.0)
       activesupport (>= 7.0)
       base64 (~> 0.2)
@@ -386,7 +386,7 @@ GEM
       minitest (~> 6.0)
     padded_cell (0.4.0-x86_64-linux-musl)
       minitest (~> 6.0)
-    pagy (43.8.2)
+    pagy (43.8.5)
       json
       uri
       yaml
@@ -686,7 +686,7 @@ DEPENDENCIES
   minitest (~> 6.1)
   minitest-mock
   padded_cell (~> 0.4.0)
-  pagy (~> 43.8.2)
+  pagy (~> 43.8.5)
   paper_trail (~> 17.0)
   pg (~> 1.7)
   public_suffix (~> 7.0)
