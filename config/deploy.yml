@@ -62,11 +62,14 @@
   transition_aliases = house_optional.call("HOUSE_TRANSITION_ALIASES").to_s.split(",").map(&:strip).reject(&:empty?)
 
   # Memory embeddings (services/mnemodyne-embeddings, the bge-small accessory).
-  # On while HOUSE_EMBEDDINGS_IMAGE is set, which is the default in
-  # config/house.env.example, so forks and self-hosted houses keep bge. A house
-  # whose MNEMODYNE_EMBEDDING_PROFILE is voyage-* never calls it and may leave
+  # On while HOUSE_EMBEDDINGS_IMAGE is set, as in config/house.env.example. The
+  # accessory being on does not choose the backend: MNEMODYNE_EMBEDDING_PROFILE
+  # below does, and it renders voyage-4. A house that wants bge must set the bge
+  # profile there. A house on voyage-* never calls the accessory and may leave
   # HOUSE_EMBEDDINGS_IMAGE blank: then the accessory, MNEMODYNE_EMBEDDING_URL
   # and MNEMODYNE_EMBEDDING_TOKEN all drop out, like voice-embeddings below.
+  # Blanking it does not remove a running accessory (Kamal can no longer name
+  # it); see docs/operations/upstream-house.md.
   # Canonical HOUSE_EMBEDDINGS_DIGEST; MNEMODYNE_EMBEDDING_IMAGE_DIGEST is kept
   # as a compatibility override (it predates the HOUSE_* vocabulary).
   house_embeddings_image = house_optional.call("HOUSE_EMBEDDINGS_IMAGE")
