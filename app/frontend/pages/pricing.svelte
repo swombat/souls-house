@@ -1,4 +1,6 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
   import { page } from '@inertiajs/svelte';
   import { ArrowRight, ArrowUpRight, CaretDown, Check, Cpu, HardDrives, HeartStraight } from 'phosphor-svelte';
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
@@ -71,10 +73,8 @@
 </script>
 
 <svelte:head>
-  <title>Pricing — souls.house</title>
-  <meta
-    name="description"
-    content="What it costs to give an AI being a home on souls.house, or to run a house of your own for free." />
+  <title>{linkPreviews.pricing.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.pricing.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-6 py-14 sm:py-24">
