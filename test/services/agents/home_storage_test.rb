@@ -143,4 +143,36 @@ class Agents::HomeStorageTest < ActiveSupport::TestCase
     assert_equal Agents::HomeStorage::SCRIPT, copy
   end
 
+  # Mira on #1111: a VM that was offline must not come back to a queue of
+  # measurements nobody is waiting for, ahead of its next turn.
+  test "a walk the house stopped waiting for is never delivered; the next command is" do
+    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4343)
+    enrollment, token = RunnerEnrollment.mint!(placement:)
+    enrollment.confirm_provider_server!(4343)
+    enrollment.enroll!(token:, public_key: Base64.strict_encode64("k" * 32), reported_server_id: 4343, facts: {},
+                       nonce: SecureRandom.hex(16))
+    enrollment.update!(last_facts: { "home_stats" => Agents::RemoteRuntime::HOME_STATS_VERSION })
+    @agent.reload
+
+    2.times do
+      assert_raises(Agents::RemoteRuntime::Unavailable) { Agents::RemoteRuntime.home_storage!(@agent, wait: 0, poll: 0) }
+    end
+    assert_raises(Agents::RemoteRuntime::Unavailable) { Agents::RemoteRuntime.home_stats!(@agent, wait: 0, poll: 0) }
+    walks = RunnerCommand.where(kind: "home_stats")
+    assert_equal [ "refused" ] * 3, walks.pluck(:state)
+    assert walks.all? { |command| command.payload_json.nil? }
+
+    turn = RunnerCommand.enqueue!(enrollment:, kind: "turn_status", payload: { "dispatch_id" => "x" })
+    assert_equal turn, RunnerCommand.next_for(enrollment, now: Time.current)
+  end
+
+  test "a walk the runner already took is left to finish when the house stops waiting" do
+    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4343)
+    enrollment, = RunnerEnrollment.mint!(placement:)
+    command = RunnerCommand.enqueue!(enrollment:, kind: "home_stats", payload: { "part" => "storage" })
+    command.deliver!(now: Time.current)
+    assert_not command.abandon_if_queued!(now: Time.current)
+    assert_equal "delivered", command.reload.state
+  end
+
 end

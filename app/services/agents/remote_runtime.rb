@@ -624,7 +624,7 @@ module Agents
 
       payload = { "container_name" => agent.container_name }
       payload["journal_source"] = source if source
-      relay!(agent, "home_stats", payload, wait:, poll:)
+      relay!(agent, "home_stats", payload, wait:, poll:, abandon_on_timeout: true)
     end
 
     # The disk use on a VM resident's card, walked inside it by the runner's
@@ -639,16 +639,25 @@ module Agents
         raise RunnerTooOld, "its server's runner can't measure its disk use yet; it updates itself"
       end
 
-      relay!(agent, "home_stats", { "container_name" => agent.container_name, "part" => "storage" }, wait:, poll:)
+      relay!(agent, "home_stats", { "container_name" => agent.container_name, "part" => "storage" }, wait:, poll:,
+             abandon_on_timeout: true)
     end
 
-    def relay!(agent, kind, payload, wait:, poll:)
+    # abandon_on_timeout: a read whose answer is useless once nobody waits
+    # (the card's numbers). If the runner hasn't taken it yet, it is refused
+    # in place, so a VM that comes back from offline doesn't work through a
+    # queue of discarded measurements before its next turn (Mira, #1111).
+    # One conditional UPDATE: a delivery that won the race is left to finish.
+    def relay!(agent, kind, payload, wait:, poll:, abandon_on_timeout: false)
       command = RunnerCommand.enqueue!(enrollment: live_enrollment!(agent), kind:, payload:)
       deadline = Time.current + wait
       loop do
         command.reload
         break if command.terminal?
-        raise Unavailable, "The resident's server did not answer in time. Try again in a moment." if Time.current >= deadline
+        if Time.current >= deadline
+          command.abandon_if_queued!(now: Time.current) if abandon_on_timeout
+          raise Unavailable, "The resident's server did not answer in time. Try again in a moment."
+        end
 
         sleep poll
       end
