@@ -65,6 +65,9 @@ class GithubResidentImportJob < ApplicationJob
       # operator investigation; do not infer completeness from non-emptiness.
       volume.seed_from_directory!(root) unless agent.identity_seeded_at
       agent.update!(identity_seeded_at: Time.current) unless agent.identity_seeded_at
+      # A home brought back from its own server kept its reviewed copy until
+      # now (bring_home!): the house's seed has succeeded, so it can go.
+      agent.import_stages.delete_all if agent.import_stages.exists?
       agent.agent_service_accesses.find_or_create_by!(service_connection: request.service_connection) do |access|
         access.enabled = true
         access.follows_default = false
@@ -120,7 +123,9 @@ class GithubResidentImportJob < ApplicationJob
   # A never-started import a site admin moved to the main server. Only once
   # VmCleanupJob has retired its placement (the server deleted, its slot
   # freed) does the placement become local at the next generation, as
-  # Agents::VmMigration#return_to_house! does. The VM-derived container name
+  # Agents::VmMigration#return_to_house! does; the staged reviewed home is
+  # kept until the house's seed succeeds, in case the approved revision can't
+  # be fetched again (Mira, #1109). The VM-derived container name
   # and runtime are then cleared and the house's own provisioning prepares
   # them, so the local ownership check (Agents::Resources#validate!) sees
   # this house's names on a namespaced house too (Mira, #1109). Returns
@@ -138,7 +143,6 @@ class GithubResidentImportJob < ApplicationJob
           house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
           cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
           location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil)
-        agent.import_stages.delete_all
         agent.update_columns(container_name: nil, sandbox_host: nil, endpoint_url: nil, runtime: "provisioning",
           active: false, paused: true, health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil,
           updated_at: Time.current)

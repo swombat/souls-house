@@ -293,13 +293,12 @@ class GithubResidentImport < ApplicationRecord
     @moving_placement = false
   end
 
-  # Its own server, never started: still waiting for its first start, or
-  # already released (the trust deadline requests cleanup and fails the
-  # placement; VmCleanupJob then retires it). Either way it holds no home
-  # anyone has run.
+  # Its own server, still waiting for its first start. A released (failed
+  # or retired) placement is not proof it never started: a first backup can
+  # fail after the start (Mira, #1109), so those are left to recovery.
   def on_own_server_never_started?(resident = agent, placement_row = resident&.placement)
     placement_row.present? && placement_row.backend == "hetzner_cloud" && placement_row.kind == "github_import" &&
-      placement_row.state.in?(%w[pending failed retired]) &&
+      placement_row.state == "pending" && !placement_row.cleanup_requested? &&
       resident.runtime_ready_at.nil? && resident.identity_seeded_at.nil? && !resident.active? && resident.paused?
   end
 
@@ -329,7 +328,7 @@ class GithubResidentImport < ApplicationRecord
       raise MoveRefused, MOVE_SERVER_STATE unless on_own_server_never_started?(resident, placement_row)
 
       RunnerEnrollment.where(agent_placement_id: placement_row.id, revoked_at: nil).find_each(&:revoke!)
-      placement_row.request_cleanup!(MOVED_TO_MAIN_SERVER) unless placement_row.state == "retired"
+      placement_row.request_cleanup!(MOVED_TO_MAIN_SERVER)
       from = placement
       moving_placement { update!(placement: "main_server", status: "needs_runtime_trust", last_error: MOVE_RELEASING) }
       AuditLog.create!(action: "github_import_returned_to_house", user: by, account:, auditable: resident,

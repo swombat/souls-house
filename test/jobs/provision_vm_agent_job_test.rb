@@ -1068,7 +1068,20 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         end
         sandbox = Object.new
         sandbox.define_singleton_method(:imported_runtime_trusted?) { false }
+        staged = agent.import_stages.pluck(:sha256)
+        # GitHub no longer serves the approved revision: the home is brought
+        # back, but its reviewed copy is kept until a seed has succeeded.
         request.retry_activation!(@user)
+        gone = Object.new
+        gone.define_singleton_method(:with_checkout) { |**| raise Agents::GithubImportSource::Error, "gone" }
+        assert_raises(Agents::GithubImportSource::Error) do
+          Agents::GithubImportSource.stub(:new, gone) { GithubResidentImportJob.perform_now(request.id) }
+        end
+        assert_equal "local", placement.reload.backend
+        assert_equal staged, agent.reload.import_stages.pluck(:sha256), "the reviewed home is not dropped before the seed"
+        assert_equal "failed", request.reload.status
+        approve_fixture(request)
+
         Agents::DockerLocalGuard.stub(:check!, true) do
           Agents::BoundedCommand.stub(:capture3, [ "", "Error: No such object", absent ]) do
             Agents::GithubImportSource.stub(:new, github_source(request, reviewed_checkout)) do
@@ -1128,7 +1141,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         VmCleanupJob.perform_now(placement.id)
         assert_equal "retired", placement.reload.state
         assert_equal 0, Agents::VmBirthPolicy.current.vm_count
-        assert_equal "main_server", request.reload.movable_to, "a released import that never started can still come home"
+        assert_nil request.reload.movable_to, "a released server is not proof it never started; this action leaves it alone"
 
         serve_creates_as(4343)
         request.retry_activation!(@user)
