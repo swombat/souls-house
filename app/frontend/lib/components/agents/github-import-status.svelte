@@ -1,8 +1,25 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  let { request, retryActivationUrl = null, runtimeTrustNotice = '' } = $props();
+  let { request, retryActivationUrl = null, runtimeTrustNotice = '', move = null } = $props();
   let retrying = $state(false);
+  let moving = $state(false);
+  let moveError = $state('');
+
+  function moveImport() {
+    if (moving || !move) return;
+    moving = true;
+    moveError = '';
+    router.post(
+      move.url,
+      { destination: move.destination },
+      {
+        preserveScroll: true,
+        onError: () => (moveError = 'The import was not moved.'),
+        onFinish: () => (moving = false),
+      }
+    );
+  }
   let retryError = $state('');
   const states = {
     pending_review: ['Waiting for account approval', 'No imported repository code is approved to run yet.'],
@@ -72,6 +89,15 @@
     {#if retryError}
       <p role="alert" class="text-sm text-destructive">{retryError}</p>
     {/if}
+  {/if}
+  {#if move}
+    <div class="space-y-1" data-testid="github-import-move">
+      <Button variant="outline" onclick={moveImport} disabled={moving}>{moving ? 'Moving…' : move.label}</Button>
+      <p class="text-xs text-muted-foreground">Site admin: it has not started yet, so it can still change server.</p>
+      {#if moveError}
+        <p role="alert" class="text-sm text-destructive">{moveError}</p>
+      {/if}
+    </div>
   {/if}
   {#if request.agent_edit_url}
     <Button href={request.agent_edit_url} variant="outline">Open resident settings</Button>

@@ -22,6 +22,7 @@
     can_approve: canApprove = false,
     refresh_url: refreshUrl = null,
     retry_activation_url: retryActivationUrl = null,
+    move = null,
     runtime_trust_notice: runtimeTrustNotice = '',
     future_branch_trust_notice: futureBranchTrustNotice = '',
     placement_options: placementOptions = null,
@@ -70,7 +71,7 @@
     const interval = setInterval(() => {
       if (request && ['pending_review', 'approved', 'provisioning'].includes(request.status)) {
         router.reload({
-          only: ['github_import', 'approve_url', 'can_approve', 'refresh_url', 'retry_activation_url'],
+          only: ['github_import', 'approve_url', 'can_approve', 'refresh_url', 'retry_activation_url', 'move'],
           preserveScroll: true,
         });
       }
@@ -109,7 +110,7 @@
   </div>
 
   {#if request}
-    <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} />
+    <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} {move} />
     {#if request.sync_strategy === 'standard'}
       <GithubSyncHealth health={request.sync_health} />
     {/if}

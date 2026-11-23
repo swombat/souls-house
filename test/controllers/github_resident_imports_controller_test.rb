@@ -208,6 +208,24 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "main_server", inertia_shared_props.dig("github_import", "placement")
   end
 
+  test "only a site admin sees and uses the move control" do
+    request = import_request
+    users(:user_1).update_column(:is_site_admin, false)
+    get account_github_resident_import_path(@account, request)
+    assert_nil inertia_shared_props["move"]
+    post move_account_github_resident_import_path(@account, request), params: { destination: "own_server" }
+    assert_response :forbidden
+    assert_nil request.reload.placement
+
+    users(:user_1).update_column(:is_site_admin, true)
+    get account_github_resident_import_path(@account, request)
+    move = inertia_shared_props.fetch("move")
+    assert_equal "own_server", move.fetch("destination"), "the switch is off here, so it would go to the main server"
+    post move.fetch("url"), params: { destination: move.fetch("destination") }
+    assert_redirected_to account_github_resident_import_path(@account, request)
+    assert_equal "own_server", request.reload.placement
+  end
+
   test "a site admin's own-server choice is still checked like a birth when the switch is off" do
     users(:user_1).update_column(:is_site_admin, true)
     Setting.instance.update!(new_residents_on_vm: false)

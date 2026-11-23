@@ -225,6 +225,7 @@ Rails.application.routes.draw do
       post :approve, on: :member
       post :refresh, on: :member
       post :retry_activation, on: :member
+      post :move, on: :member
     end
 
     resources :chats, except: :destroy do
