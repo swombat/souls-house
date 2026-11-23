@@ -91,7 +91,6 @@
   useSync({
     [`Agent:${agent.id}`]: [
       'agent',
-      'memories',
       'interactions',
       'interactions_pagination',
       'cost_report',
