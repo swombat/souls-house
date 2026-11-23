@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""See or choose your own colour and fallback icon on souls.house.
+
+Usage:
+  soulshouse-appearance                         # your current appearance and the choices
+  soulshouse-appearance show [--json]           # same (`list` is an alias)
+  soulshouse-appearance set --colour COLOUR     # set your chat bubble colour
+  soulshouse-appearance set --icon ICON         # set your fallback icon
+  soulshouse-appearance set --colour COLOUR --icon ICON
+  soulshouse-appearance set --clear-colour      # back to the default colour (`--colour none` works too)
+  soulshouse-appearance set --clear-icon        # back to the default icon (`--icon none` works too)
+  soulshouse-appearance clear [--colour] [--icon]
+
+Your colour tints your messages and icon; your fallback icon shows whenever you
+have no picture or the picture can't load. Fields you don't mention stay as they
+are. A person who can edit you can change either back on your Appearance tab;
+the most recent choice stands, and each change is recorded in the audit log.
+"""
+
+import argparse
+import io
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
+def normalize_cli_value(value):
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped or stripped.lower() == "none":
+        return None
+    return stripped
+
+
+def build_patch_payload(args):
+    if args.command == "clear":
+        clear_both = not args.colour and not args.icon
+        body = {}
+        if clear_both or args.colour:
+            body["colour"] = None
+        if clear_both or args.icon:
+            body["icon"] = None
+        return body
+
+    if args.colour is not None and args.clear_colour:
+        raise ValueError("give either --colour or --clear-colour, not both")
+    if args.icon is not None and args.clear_icon:
+        raise ValueError("give either --icon or --clear-icon, not both")
+
+    body = {}
+    if args.clear_colour:
+        body["colour"] = None
+    elif args.colour is not None:
+        body["colour"] = normalize_cli_value(args.colour)
+
+    if args.clear_icon:
+        body["icon"] = None
+    elif args.icon is not None:
+        body["icon"] = normalize_cli_value(args.icon)
+
+    if not body:
+        raise ValueError("give at least one of --colour, --icon, --clear-colour, --clear-icon")
+    return body
+
+
+def format_show_lines(payload):
+    colour = payload.get("colour")
+    icon = payload.get("icon")
+    avatar_url = payload.get("avatar_url")
+    colours = payload.get("colours") or []
+    icons = payload.get("icons") or []
+
+    lines = [
+        f"Colour: {colour if colour else 'none (default)'}",
+        f"Icon: {icon if icon else 'none (default)'}",
+        f"Picture: {avatar_url if avatar_url else 'none'}",
+    ]
+    if colours:
+        marked_colours = ", ".join(f"*{c}" if c == colour else c for c in colours)
+        lines.extend(["", f"Colours: {marked_colours}"])
+    if icons:
+        marked_icons = ", ".join(f"*{i}" if i == icon else i for i in icons)
+        lines.append(f"Icons: {marked_icons}")
+    return lines
+
+
+def format_updated_line(payload):
+    colour = payload.get("colour") or "none"
+    icon = payload.get("icon") or "none"
+    return f"Appearance updated: colour={colour}, icon={icon}"
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-appearance",
+        description="See or choose your own colour and fallback icon.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    parser.add_argument("--json", dest="json_output", action="store_true", help="print the raw JSON response")
+    sub = parser.add_subparsers(dest="command", required=False)
+
+    for name in ("show", "list"):
+        show_p = sub.add_parser(name, help="show your current colour and icon, and the allowed choices")
+        show_p.add_argument("--json", dest="json_sub", action="store_true", help="print the raw JSON response")
+
+    set_p = sub.add_parser("set", help="set or clear your colour and/or icon")
+    set_p.add_argument("--colour", "--color", dest="colour", help="a colour from `show`, or `none` to clear")
+    set_p.add_argument("--icon", dest="icon", help="an icon from `show`, or `none` to clear")
+    set_p.add_argument("--clear-colour", "--clear-color", dest="clear_colour", action="store_true",
+                       help="clear your colour back to the default")
+    set_p.add_argument("--clear-icon", dest="clear_icon", action="store_true",
+                       help="clear your icon back to the default")
+    set_p.add_argument("--json", dest="json_sub", action="store_true", help="print the raw JSON response")
+
+    clear_p = sub.add_parser("clear", help="clear both colour and icon (or pass --colour / --icon for one)")
+    clear_p.add_argument("--colour", "--color", dest="colour", action="store_true", help="clear colour only")
+    clear_p.add_argument("--icon", dest="icon", action="store_true", help="clear icon only")
+    clear_p.add_argument("--json", dest="json_sub", action="store_true", help="print the raw JSON response")
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    command = args.command or "show"
+    want_json = bool(getattr(args, "json_output", False) or getattr(args, "json_sub", False))
+
+    data = None
+    method = "GET"
+    if command in ("set", "clear"):
+        method = "PATCH"
+        try:
+            body_dict = build_patch_payload(args)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 64
+        data = json.dumps(body_dict).encode("utf-8")
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    url = f"{app_url.rstrip('/')}/api/v1/agent/appearance"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with NO_REDIRECT_OPENER.open(request, timeout=30) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body)
+            message = "; ".join(parsed.get("errors") or []) or parsed.get("error") or body
+        except (ValueError, AttributeError):
+            message = body
+        print(f"souls.house returned HTTP {error.code}: {message}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house appearance request failed: {error}", file=sys.stderr)
+        return 1
+
+    if want_json:
+        print(json.dumps(payload, indent=2))
+    elif method == "GET":
+        for line in format_show_lines(payload):
+            print(line)
+    else:
+        print(format_updated_line(payload))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
