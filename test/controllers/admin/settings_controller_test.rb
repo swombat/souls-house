@@ -333,6 +333,7 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
   test "each Linux download needs its own sha256, shows on every page, and clears on its own" do
     sign_in @admin
     base = "https://github.com/swombat/souls-house-companion/releases/download/early-unsigned-abc"
+    installer = "#{base}/install-linux.sh"
     amd = "#{base}/souls-house-companion-dev-abc-linux-amd64.tar.gz"
     arm = "#{base}/souls-house-companion-dev-abc-linux-arm64.tar.gz"
 
@@ -347,10 +348,13 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_nil Setting.instance.reload.companion_linux_amd64_download_url
 
     patch admin_settings_path, params: { setting: {
+      companion_linux_installer_download_url: installer, companion_linux_installer_download_sha256: "EF" * 32,
       companion_linux_amd64_download_url: amd, companion_linux_amd64_download_sha256: "AB" * 32,
       companion_linux_arm64_download_url: arm, companion_linux_arm64_download_sha256: "cd" * 32
     } }
     setting = Setting.instance.reload
+    assert_equal installer, setting.companion_linux_installer_download_url
+    assert_equal "ef" * 32, setting.companion_linux_installer_download_sha256
     assert_equal amd, setting.companion_linux_amd64_download_url
     assert_equal "ab" * 32, setting.companion_linux_amd64_download_sha256
     assert_equal arm, setting.companion_linux_arm64_download_url
@@ -358,6 +362,8 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
 
     get companion_path
     shared = inertia_shared_props["site_settings"]
+    assert_equal installer, shared["companion_linux_installer_download_url"]
+    assert_equal "ef" * 32, shared["companion_linux_installer_download_sha256"]
     assert_equal amd, shared["companion_linux_amd64_download_url"]
     assert_equal "cd" * 32, shared["companion_linux_arm64_download_sha256"]
 

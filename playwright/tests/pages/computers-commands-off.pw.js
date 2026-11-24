@@ -7,7 +7,7 @@ const mac = {
   paused: false,
   connected: true,
   commands_off_locally: true,
-  residents: [{ id: 'lume', name: 'Lume', execute: true, desktop: false, volumes: [] }],
+  residents: [{ id: 'lume', name: 'Lume', execute: true, desktop: false, volumes: [{ volume: 'darwin-volume:main', access: 'read' }] }],
 };
 
 for (const width of [390, 1100]) {

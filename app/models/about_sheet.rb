@@ -64,9 +64,9 @@ class AboutSheet
   def self.companion_platforms(settings: Setting.instance)
     platforms = []
     platforms << "Mac" if settings.companion_mac_download_url.present?
-    linux = %w[amd64 arm64].any? do |arch|
-      settings.public_send("companion_linux_#{arch}_download_url").present? &&
-        settings.public_send("companion_linux_#{arch}_download_sha256").present?
+    linux = %w[installer amd64 arm64].any? do |kind|
+      settings.public_send("companion_linux_#{kind}_download_url").present? &&
+        settings.public_send("companion_linux_#{kind}_download_sha256").present?
     end
     platforms << "Linux computer" if linux
     platforms

@@ -178,6 +178,7 @@ class Accounts::CompanionDevicesController < ApplicationController
           id: resident["id"],
           name: agent&.name || "Resident no longer here",
           execute: resident["execute"] == true,
+          commands_off_locally: device.commands_off_locally?(resident["id"]),
           desktop: resident["desktop"] == true,
           volumes: resident.fetch("volumes")
         }

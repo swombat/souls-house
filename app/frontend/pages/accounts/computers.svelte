@@ -105,7 +105,12 @@
   const statusLabel = { online: 'Online', paused: 'Paused', offline: 'Offline' };
 
   function platform(device) {
-    const kinds = device.residents.flatMap((r) => r.volumes.map((v) => String(v.volume).split(':')[0]));
+    const kinds = [
+      ...device.residents.flatMap((r) => r.volumes.map((v) => String(v.volume).split(':')[0])),
+      ...Object.values(device.ceiling?.residents ?? {}).flatMap((vols) =>
+        vols.map((v) => String(v.volume).split(':')[0])
+      ),
+    ];
     if (kinds.includes('darwin-volume')) return 'mac';
     if (kinds.includes('linux-volume')) return 'linux';
     return null;
@@ -411,11 +416,26 @@
                           disabled={!manages(device) || busy}
                           onCheckedChange={(value) => authority(device, resident, 'execute', value)} />
                       </div>
-                      {#if resident.execute && device.commands_off_locally}
+                      {#if resident.execute && (resident.commands_off_locally ?? device.commands_off_locally)}
                         <p class="mt-2 flex gap-1.5 text-xs text-muted-foreground" data-testid="commands-off-locally">
                           <WarningCircle size={14} class="mt-px shrink-0" />
-                          This Mac hasn't allowed commands yet. Turn on “Let residents run commands on this Mac” in its menu
-                          bar.
+                          {#if platform(device) === 'mac'}
+                            This Mac hasn't allowed commands yet. Turn on “Let residents run commands on this Mac” in
+                            its menu bar.
+                          {:else if platform(device) === 'linux'}
+                            {#if device.commands_off_locally === false && resident.commands_off_locally}
+                              This computer hasn't allowed commands for {resident.name} yet. Run
+                              <code class="font-mono">souls-house-companion commands on --all</code> (or
+                              <code class="font-mono">policy apply</code>) there.
+                            {:else}
+                              This computer hasn't allowed commands yet. Run
+                              <code class="font-mono">souls-house-companion commands on</code> there (or use the tray
+                              icon).
+                            {/if}
+                          {:else}
+                            This computer hasn't allowed commands yet. Allow commands in the companion on that
+                            computer.
+                          {/if}
                         </p>
                       {/if}
                     </div>

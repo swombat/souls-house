@@ -171,4 +171,33 @@ class CompanionDeviceVolumeTest < ActiveSupport::TestCase
     assert_equal [ true, true ], @device.policy.dig("residents", 0).values_at("execute", "desktop")
   end
 
+  test "per-resident execute in reported ceiling flags only residents disallowed locally" do
+    other = Agent.create!(account: @account, name: "Lume", model_id: "test-model")
+    @device.update!(policy: {
+      "residents" => [
+        { "id" => @agent.obfuscated_id, "execute" => true, "desktop" => false, "volumes" => [ { "volume" => "Data", "access" => "read" } ] },
+        { "id" => other.obfuscated_id, "execute" => true, "desktop" => false, "volumes" => [ { "volume" => "Data", "access" => "read" } ] }
+      ]
+    })
+    mixed = {
+      "residents" => [
+        { "id" => @agent.obfuscated_id, "execute" => false, "volumes" => [ { "volume" => "Data", "access" => "read" } ] },
+        { "id" => other.obfuscated_id, "execute" => true, "volumes" => [ { "volume" => "Data", "access" => "read" } ] }
+      ]
+    }
+    assert report(mixed, accepted: true)
+    @device.reload
+    assert_not @device.commands_off_locally?
+    assert @device.commands_off_locally?(@agent.obfuscated_id)
+    assert_not @device.commands_off_locally?(other.obfuscated_id)
+
+    # Stale epoch or offline clears per-resident off signal too.
+    @device.update!(connection_epoch: "epoch-2")
+    assert_not @device.commands_off_locally?(@agent.obfuscated_id)
+
+    # Non-boolean execute is rejected as an invalid ceiling report.
+    bad = { "residents" => [ { "id" => @agent.obfuscated_id, "execute" => "no", "volumes" => [] } ] }
+    assert_not report(bad, epoch: "epoch-2", accepted: true)
+  end
+
 end
