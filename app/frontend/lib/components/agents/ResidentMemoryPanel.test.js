@@ -17,7 +17,7 @@ const entry = {
   id: 'one',
   kind: 'journals',
   title: 'A journal entry',
-  path: 'daily-journals/2026-09-22.md',
+  path: 'shared/memory/daily-journals/2026-09-22/morning note.md',
   occurred_at: '2026-09-22T10:00:00.000000Z',
   timestamp_basis: 'journal heading',
   body: '<script>alert("not executable")</script>',
@@ -33,6 +33,19 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+const expandHistory = () => fireEvent.click(screen.getByRole('button', { name: 'Expand memory history' }));
+
+test('admin history is neither requested nor displayed until expanded', async () => {
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await screen.findByText('17');
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/overview']);
+  expect(screen.queryByRole('region', { name: 'Memory history' })).not.toBeInTheDocument();
+  await expandHistory();
+  await screen.findByText(entry.body);
+  await fireEvent.click(screen.getByRole('button', { name: 'Collapse memory history' }));
+  expect(screen.queryByText(entry.body)).not.toBeInTheDocument();
+});
+
 test('shows counts and both fourteen-day charts without fetching private history for members', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview' });
   expect(await screen.findByText('17')).toBeInTheDocument();
@@ -44,6 +57,7 @@ test('shows counts and both fourteen-day charts without fetching private history
 
 test('admin filters default on, hide deselected kinds, and pagination preserves filters', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByText('A journal entry')).toBeInTheDocument();
   expect(screen.getAllByRole('checkbox')).toHaveLength(5);
   screen.getAllByRole('checkbox').forEach((box) => expect(box).toBeChecked());
@@ -61,6 +75,7 @@ test('admin filters default on, hide deselected kinds, and pagination preserves 
 
 test('journal content is rendered as text, not executable HTML', async () => {
   const { container } = render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByText(entry.body)).toBeInTheDocument();
   expect(container.querySelector('script')).toBeNull();
 });
@@ -76,8 +91,42 @@ test('unavailable journals are unknown and do not produce an empty chart', async
   expect(screen.getByText('—')).toBeInTheDocument();
 });
 
+test('a journal that is not shared says so and draws no journal chart', async () => {
+  fetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ ...overview, journals: { count: null, status: 'not_shared' } }),
+  });
+  render(ResidentMemoryPanel, { overviewUrl: '/overview' });
+  expect(await screen.findByText(/journal is not shared/)).toBeInTheDocument();
+  expect(screen.queryByText(/unknown, not zero/)).not.toBeInTheDocument();
+  expect(screen.getAllByRole('img')).toHaveLength(1);
+});
+
+test('history shows the home-relative path as the reader gave it', async () => {
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
+  expect(await screen.findByText('shared/memory/daily-journals/2026-09-22/morning note.md')).toBeInTheDocument();
+  expect(screen.queryByText(/^memory\/shared/)).not.toBeInTheDocument();
+});
+
+test('history says a journal is not shared rather than empty, and still shows graph nodes', async () => {
+  const node = { ...entry, id: 'node:1', kind: 'nodes', title: 'A graph node', node: { id: 1 }, edges: [], edge_count: 0 };
+  fetch.mockImplementation(async (url) => ({
+    ok: true,
+    json: async () =>
+      url === '/overview'
+        ? { ...overview, journals: { count: null, status: 'not_shared' } }
+        : { items: url.includes('kinds=journals') && !url.includes('nodes') ? [] : [node], next_cursor: null, archive_status: 'not_shared' },
+  }));
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
+  expect(await screen.findByText(/no journal layer is shown/)).toBeInTheDocument();
+  expect(screen.queryByText('No matching memory items.')).not.toBeInTheDocument();
+});
+
 test('all-off is sent explicitly rather than falling back to every type', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   await screen.findByText('A journal entry');
   for (const box of screen.getAllByRole('checkbox')) await fireEvent.click(box);
   await waitFor(() => expect(fetch.mock.calls.at(-1)[0]).toBe('/history?kinds='));
@@ -86,6 +135,7 @@ test('all-off is sent explicitly rather than falling back to every type', async 
 test('shows request failures with a retry instead of stale contents', async () => {
   fetch.mockImplementation(async (url) => ({ ok: url === '/overview', status: 403, json: async () => overview }));
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByRole('alert')).toHaveTextContent('Access denied.');
   expect(screen.getByRole('button', { name: 'Retry from newest' })).toBeInTheDocument();
 });
@@ -112,6 +162,7 @@ test('uses progressively deeper blues for journal layers and peach for nodes', a
     json: async () => (url === '/overview' ? overview : { ...history, items }),
   }));
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   for (const [kind, background] of Object.entries(backgrounds)) {
     const heading = await screen.findByRole('heading', { name: `Item ${kind}` });
     expect(heading.closest('li')).toHaveClass(background);
@@ -121,6 +172,7 @@ test('uses progressively deeper blues for journal layers and peach for nodes', a
 
 test('memory history sits in the red site-admins-only box; members get no box', async () => {
   const { unmount } = render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   const region = await screen.findByRole('region', { name: 'Memory history' });
   const box = region.closest('[data-admin-only]');
   expect(box).not.toBeNull();

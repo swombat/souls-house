@@ -5,11 +5,12 @@ require "open3"
 class Agents::MemoryArchiveTest < ActiveSupport::TestCase
 
   setup do
-    @root = Pathname.new(Dir.mktmpdir).realpath
+    @home = Pathname.new(Dir.mktmpdir).realpath
+    @root = @home.join("memory")
     %w[daily weekly monthly yearly].each { |layer| @root.join("#{layer}-journals").mkpath }
   end
 
-  teardown { FileUtils.remove_entry(@root) }
+  teardown { FileUtils.remove_entry(@home) }
 
   test "splits entries outside fences and returns only aggregates for overview" do
     write("daily-journals/2026-09-22.md", "# Journal\n## 09:10 — Private first\nsecret α\n```md\n## fake\n```\n## 10:20 — Second\nother secret\n")
@@ -48,7 +49,8 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     write("daily-journals/2026-09-20.md", "A headingless memory")
     File.symlink(@root.join("daily-journals/2026-09-20.md"), @root.join("daily-journals/2026-09-21.md"))
     result = run_reader(mode: "catalog")
-    assert_equal "partial", result["status"]
+    # A link is not a file the rule reads, here or on the card.
+    assert_equal "measured", result["status"]
     assert_equal 1, result["count"]
     assert_equal "Untitled entry", result["items"].first["title"]
   end
@@ -67,7 +69,9 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     write("daily-journals/2026-99-99.md", "## Invalid date")
     catalog = run_reader(mode: "catalog")
     assert_equal "partial", catalog["status"]
-    assert_equal 1, catalog["count"]
+    # Counted like the card counts it; only the undatable one has no item.
+    assert_equal 2, catalog["count"]
+    assert_equal 1, catalog["items"].size
     body = run_reader(mode: "bodies", items: catalog["items"]).values.first
     assert_equal "truncated", body["body_status"]
     assert_equal 65_536, body["body"].bytesize
@@ -82,12 +86,177 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     @root.join("people").mkpath
     write("people/anna.md", "private, not a journal")
     write("daily-journals/notes.txt", "private, not a day file")
-    %w[people/anna.md daily-journals/notes.txt].each do |path|
-      data = @root.join(path).binread
-      item = { id: "x", path: path, fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
-      out, _err, status = execute(mode: "bodies", items: [ item ])
-      refute status.success?, path
-      refute_includes out, "private"
+    @root.join("weekly-journals").delete
+    @root.join("weekly-journals").mkpath
+    write("daily-journals/2026-09-22.md", "## ordinary\nshown\n")
+    @home.join("resident-home.json").write("{}")
+    good = run_reader(mode: "catalog")["items"].find { |item| item["path"] == "memory/daily-journals/2026-09-22.md" }
+    foreign = %w[memory/people/anna.md memory/daily-journals/notes.txt resident-home.json memory/../memory/people/anna.md].map do |path|
+      data = @home.join(path).binread
+      { id: path, path: path, fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
+    end
+    bodies = run_reader(mode: "bodies", items: foreign + [ good ])
+    foreign.each { |item| assert_equal({ "body_status" => "unavailable" }, bodies.fetch(item[:id]), item[:path]) }
+    assert_equal "complete", bodies.fetch(good["id"])["body_status"], "a refusal is the item's alone"
+    refute_includes bodies.to_json, "private"
+  end
+
+  test "a declared journal of day folders is read by the card's rule, one entry per file" do
+    journal = @home.join("shared/memory/daily-journals")
+    journal.join("2026-11-21").mkpath
+    journal.join("2026-11-20.md").write("## 09:00 old one\nold prose\n## 10:00 old two\n")
+    journal.join("2026-11-21/0900-morning.md").write("## 09:00 morning\nsecret\n## What happened\n## What is open\n")
+    journal.join("2026-11-21/later.md").write("no heading\n")
+    journal.join("2026-11-21/README.md").write("## guide\n")
+    journal.join("2026-11-21/.gitkeep").write("")
+    write("daily-journals/2026-11-19.md", "## not the declared journal\n")
+    write("weekly-journals/2026-11-16.md", "## 2026-11-17 (Tuesday)\nsummary\n")
+    declare({ "path" => "shared/memory/daily-journals" })
+
+    overview = run_reader(mode: "overview")
+    assert_equal 4, overview["count"]
+    assert_equal({ "2026-11-20" => 2, "2026-11-21" => 2 }, overview["daily_counts"])
+
+    catalog = run_reader(mode: "catalog")
+    journals = catalog["items"].select { |item| item["kind"] == "journals" }
+    assert_equal [ "later", "09:00 morning", "10:00 old two", "09:00 old one" ].sort, journals.map { |item| item["title"] }.sort
+    morning = journals.find { |item| item["title"] == "09:00 morning" }
+    assert_equal "shared/memory/daily-journals/2026-11-21/0900-morning.md", morning["path"]
+    assert_equal "2026-11-21T09:00:00.000000Z", morning["occurred_at"]
+    assert_equal 1, catalog["items"].count { |item| item["kind"] == "day_summaries" }, "summary layers stay where they were"
+
+    body = run_reader(mode: "bodies", items: [ morning ]).fetch(morning["id"])
+    assert_equal "complete", body["body_status"]
+    assert_includes body["body"], "## What is open", "the whole file is the one entry"
+  end
+
+  test "an entry file with an ordinary spaced name round-trips beside another" do
+    journal = @home.join("journal/2026-11-21")
+    journal.mkpath
+    journal.join("morning note.md").write("## 09:00 morning\nspaced body\n")
+    journal.join("later.md").write("## 18:00 later\nplain body\n")
+    journal.join("café ☕.md").write("## 20:00 unicode\nunicode body\n")
+    declare({ "path" => "journal" })
+    catalog = run_reader(mode: "catalog")
+    assert_equal 3, catalog["count"]
+    bodies = run_reader(mode: "bodies", items: catalog["items"])
+    assert_equal %w[complete complete complete], bodies.values.map { |body| body["body_status"] }
+    assert_includes bodies.to_json, "spaced body"
+  end
+
+  test "journal false closes the count and every journal layer" do
+    write("daily-journals/2026-11-20.md", "## one\nprivate\n")
+    write("weekly-journals/2026-11-16.md", "## 2026-11-17 (Tuesday)\nprivate\n")
+    catalog = run_reader(mode: "catalog")
+    declare(false)
+    overview = run_reader(mode: "overview")
+    assert_equal "not_shared", overview["status"]
+    assert_nil overview["count"]
+    closed = run_reader(mode: "catalog")
+    assert_equal [], closed["items"]
+    bodies = run_reader(mode: "bodies", items: catalog["items"])
+    assert bodies.values.all? { |body| body == { "body_status" => "unavailable" } }
+    refute_includes bodies.to_json, "private"
+  end
+
+  test "bodies are only read from the journal the home declares" do
+    write("daily-journals/2026-11-20.md", "## one\nprivate default\n")
+    @home.join("journal").mkpath
+    @home.join("journal/2026-11-20.md").write("## one\nshared\n")
+    data = @root.join("daily-journals/2026-11-20.md").binread
+    stale = { id: "x", path: "memory/daily-journals/2026-11-20.md", fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
+    declare({ "path" => "journal" })
+    out, err, status = execute(mode: "bodies", items: [ stale ])
+    assert status.success?, err
+    assert_equal({ "x" => { "body_status" => "unavailable" } }, JSON.parse(out))
+    refute_includes out, "private"
+  end
+
+  test "a declared journal that is missing or linked leaves the tab unavailable, not empty" do
+    @home.join("real").mkpath
+    File.symlink(@home.join("real"), @home.join("linked"))
+    [ { "path" => "missing" }, { "path" => "linked" }, { "path" => "../real" } ].each do |journal|
+      declare(journal)
+      _out, _err, status = execute(mode: "overview")
+      refute status.success?, journal.inspect
+    end
+  end
+
+  test "an admin's chosen file is the journal only when the home declares nothing" do
+    write("growth.md", "## one\n## two\n")
+    write("daily-journals/2026-11-20.md", "## daily\n")
+    assert_equal 2, run_reader(mode: "overview", journal_source: "memory/growth.md")["count"]
+    declare({ "path" => "memory/daily-journals" })
+    assert_equal 1, run_reader(mode: "overview", journal_source: "memory/growth.md")["count"]
+  end
+
+  # Mira, #1113: a cached overview or catalog must not outlive "journal": false.
+  test "the current declaration gates a cached overview and catalog" do
+    write("daily-journals/2026-11-20.md", "## 09:00 private title\nbody\n")
+    agent = agents(:research_assistant)
+    agent.update_columns(runtime: "external", container_name: "test-resident", sandbox_host: nil)
+    archive = Agents::MemoryArchive.new(agent)
+    calls = Hash.new(0)
+    local = lambda do |_script, request|
+      calls[JSON.parse(request)["mode"]] += 1
+      out, err, status = execute(JSON.parse(request))
+      assert status.success?, err
+      out
+    end
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      Agents::Resources.stub(:new, Struct.new(:verify_existing!).new(true)) do
+        archive.stub(:capture, local) do
+          assert_equal 1, archive.overview["count"]
+          assert_equal "09:00 private title", archive.catalog["items"].first["title"]
+          archive.overview
+          assert_equal 1, calls["overview"], "the overview is cached"
+          declare(false)
+          closed = archive.overview
+          assert_equal "not_shared", closed["status"]
+          assert_nil closed["count"]
+          assert_equal [], archive.catalog["items"]
+          refute_includes Agents::MemoryHistory.new(agent, archive: archive).call(kinds: %w[journals]).to_json, "private title"
+          declare({ "path" => "memory/daily-journals" })
+          assert_equal 1, archive.overview["count"]
+        end
+      end
+    end
+  end
+
+  # Reed, #1113: hooks/kit.py writes "## 2026-11-23T21:35:48.228101+00:00 — ...",
+  # where the T leaves no word boundary for \b to find.
+  test "full ISO headings keep their date and clock in day folders and in a single file" do
+    heading = "## 2026-11-23T21:35:48.228101+00:00 — a kit entry\nbody\n"
+    @home.join("journal/2026-11-23").mkpath
+    @home.join("journal/2026-11-23/entry.md").write(heading)
+    declare({ "path" => "journal" })
+    entry = run_reader(mode: "catalog")["items"].find { |item| item["kind"] == "journals" }
+    assert_equal "2026-11-23T21:35:48.000000Z", entry["occurred_at"]
+
+    @home.join("single.md").write(heading + "## Note at 09:15, 2026-11-22\n")
+    declare({ "path" => "single.md" })
+    catalog = run_reader(mode: "catalog")
+    times = catalog["items"].select { |item| item["kind"] == "journals" }.map { |item| item["occurred_at"] }.sort
+    assert_equal [ "2026-11-22T09:15:00.000000Z", "2026-11-23T21:35:48.000000Z" ], times
+    assert_equal({ "2026-11-22" => 1, "2026-11-23" => 1 }, run_reader(mode: "overview")["daily_counts"])
+  end
+
+  # Mira and Reed, #1113: the same missing folder is an empty journal by
+  # default and unavailable once declared, so a cached 0 must not answer for it.
+  test "declaring the default place is not served the undeclared cache" do
+    @root.join("daily-journals").rmtree
+    agent = agents(:research_assistant)
+    agent.update_columns(runtime: "external", container_name: "test-resident", sandbox_host: nil)
+    archive = Agents::MemoryArchive.new(agent)
+    local = ->(_script, request) { execute(JSON.parse(request)).first.then { |out| out.empty? ? raise(Errno::EIO) : out } }
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      Agents::Resources.stub(:new, Struct.new(:verify_existing!).new(true)) do
+        archive.stub(:capture, local) do
+          assert_equal [ "measured", 0 ], archive.overview.values_at("status", "count")
+          declare({ "path" => "memory/daily-journals" })
+          assert_equal "unavailable", archive.overview["status"]
+        end
+      end
     end
   end
 
@@ -103,8 +272,12 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
 
   def write(path, body) = @root.join(path).write(body)
 
+  def declare(journal)
+    @home.join("resident-home.json").write({ "format" => "souls-home/v1", "journal" => journal }.to_json)
+  end
+
   def execute(request)
-    script = Rails.root.join("app/services/agents/memory_archive.py").read.sub('"/home/agent/identity/memory"', @root.to_s.to_json)
+    script = Agents::MemoryArchive::SCRIPT.sub('HOME = "/home/agent/identity"', "HOME = #{@home.to_s.to_json}")
     Open3.capture3("python3", "-c", script, stdin_data: request.to_json)
   end
 

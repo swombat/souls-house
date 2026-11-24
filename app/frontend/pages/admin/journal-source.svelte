@@ -50,7 +50,8 @@
         class="h-9 w-full rounded-md border bg-background px-3 font-mono text-sm" />
       <span class="block text-muted-foreground">
         One .md file under memory/, relative to the identity volume. Leave blank for the dated daily journals
-        (memory/daily-journals/YYYY-MM-DD.md). Entries are second-level headings outside code fences.
+        (memory/daily-journals/YYYY-MM-DD.md). Entries are second-level headings outside code fences. Used only
+        while the resident's own resident-home.json declares no "journal"; its declaration wins.
       </span>
     </label>
     <Button type="submit">Save</Button>
@@ -61,6 +62,8 @@
       Last count {stats.count.toLocaleString()}{#if stats.status === 'unavailable'}
         (stale){/if}{#if stats.measured_at}
         · {new Date(stats.measured_at).toLocaleString()}{/if}
+    {:else if stats?.status === 'not_shared'}
+      Not shared: the resident's home declares its journal is not for the house to count.
     {:else if stats?.status === 'unavailable'}
       Not countable yet: the file is missing, unreadable or behind a link, or the resident's runner is too old.
     {:else}

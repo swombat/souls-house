@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -181,15 +182,69 @@ class ParityTest(unittest.TestCase):
         self.assertNotIn("du", runner.HOME_STATS_SCRIPT.split())
         self.assertNotIn("subprocess", runner.HOME_STATS_SCRIPT)
 
+    def home_script(self, home):
+        return runner.HOME_STATS_SCRIPT.replace('HOME = "/home/agent/identity"', "HOME = " + json.dumps(home))
+
+    def run_script(self, home, *argv):
+        return runner.subprocess.run([sys.executable, "-c", self.home_script(home), *argv], capture_output=True, text=True)
+
+    def write(self, home, relative, text):
+        path = os.path.join(home, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write(text)
+
     def test_the_home_stats_script_counts_entries_in_a_real_home(self):
         home = tempfile.mkdtemp()
-        journals = os.path.join(home, "daily-journals")
-        os.makedirs(journals)
-        with open(os.path.join(journals, "2026-10-29.md"), "w") as handle:
-            handle.write("# Day\n\n## 09:00 one\nprose\n```\n## fenced\n```\n## 10:00 two\n")
-        script = runner.HOME_STATS_SCRIPT.replace("/home/agent/identity/memory/daily-journals", journals)
-        out = runner.subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True).stdout
-        self.assertEqual(2, runner.json.loads(out)["count"])
+        self.write(home, "memory/daily-journals/2026-10-29.md", "# Day\n\n## 09:00 one\nprose\n```\n## fenced\n```\n## 10:00 two\n")
+        out = self.run_script(home)
+        self.assertEqual(0, out.returncode, out.stderr)
+        self.assertEqual(2, runner.json.loads(out.stdout)["count"])
+
+    # The same shapes as the house's own fixtures (journal_entry_stats_test.rb):
+    # the copy must read a declared journal exactly as the house does.
+    def test_the_home_stats_script_reads_the_declared_journal_in_every_shape(self):
+        home = tempfile.mkdtemp()
+        journal = "shared/memory/daily-journals"
+        self.write(home, "memory/daily-journals/2026-11-20.md", "## default\n")
+        self.write(home, journal + "/2026-11-20.md", "## 09:00 one\n## 10:00 two\n")
+        self.write(home, journal + "/2026-11-21/0900.md", "## morning\n## sub one\n## sub two\n")
+        self.write(home, journal + "/2026-11-21/README.md", "## guide\n")
+        self.write(home, journal + "/2026-11-21/.gitkeep", "")
+        self.write(home, journal + "/2026-11-21/empty.md", "")
+        self.write(home, journal + "/README.md", "## guide\n")
+        self.write(home, journal + "/index.md", "## not a day\n")
+
+        def declare(value):
+            self.write(home, "resident-home.json", json.dumps({"format": "souls-home/v1", "journal": value}))
+
+        def count(*argv):
+            out = self.run_script(home, *argv)
+            return runner.json.loads(out.stdout) if out.returncode == 0 else "failed"
+
+        self.assertEqual({"count": 1}, count())
+        declare({"path": journal})
+        self.assertEqual({"count": 3}, count())
+        declare({"path": journal + "/2026-11-20.md"})
+        self.assertEqual({"count": 2}, count())
+        declare(False)
+        self.assertEqual({"status": "not_shared"}, count("memory/daily-journals/2026-11-20.md"))
+        os.symlink(os.path.join(home, journal), os.path.join(home, "linked"))
+        for bad in ({"path": "linked"}, {"path": "../x"}, {"path": "missing"}, {"path": "/abs"}, True, None, {}):
+            with self.subTest(declaration=bad):
+                declare(bad)
+                self.assertEqual("failed", count())
+
+    def test_home_stats_passes_not_shared_through_and_nothing_else_like_it(self):
+        self.host.start_resident(spec())
+        payload = {"container_name": "agent-pilot-1"}
+        self.host.docker = lambda argv, timeout=120: (True, '{"status": "not_shared"}')
+        self.assertEqual({"status": "not_shared"}, self.host.home_stats(payload))
+        for answer in ('{"status": "shared"}', '{"status": "not_shared", "x": 1}', '{"status": "NOT_SHARED"}'):
+            with self.subTest(answer=answer):
+                self.host.docker = lambda argv, timeout=120, answer=answer: (True, answer)
+                with self.assertRaises(runner.CommandFailed):
+                    self.host.home_stats(payload)
 
     def test_home_stats_passes_a_chosen_journal_as_one_argv_value(self):
         self.host.start_resident(spec())
@@ -210,39 +265,24 @@ class ParityTest(unittest.TestCase):
 
     def test_the_home_stats_script_counts_a_chosen_journal_and_refuses_a_missing_or_linked_one(self):
         identity = os.path.join(tempfile.mkdtemp(), "identity")
-        journals = os.path.join(identity, "memory", "daily-journals")
-        os.makedirs(journals)
-        with open(os.path.join(identity, "memory", "growth-journal.md"), "w") as handle:
-            handle.write("## one\n~~~\n## fenced\n~~~\n## two\n")
+        self.write(identity, "memory/daily-journals/.keep", "")
+        self.write(identity, "memory/growth-journal.md", "## one\n~~~\n## fenced\n~~~\n## two\n")
         os.symlink(os.path.join(identity, "memory", "growth-journal.md"), os.path.join(identity, "memory", "linked.md"))
-        script = runner.HOME_STATS_SCRIPT.replace("/home/agent/identity/memory/daily-journals", journals)
-
-        def run(*argv):
-            return runner.subprocess.run([sys.executable, "-c", script, *argv], capture_output=True, text=True)
-
-        self.assertEqual(2, runner.json.loads(run("memory/growth-journal.md").stdout)["count"])
+        self.assertEqual(2, runner.json.loads(self.run_script(identity, "memory/growth-journal.md").stdout)["count"])
         for source in ("memory/missing.md", "memory/linked.md", "memory/../x.md"):
             with self.subTest(source=source):
-                self.assertNotEqual(0, run(source).returncode)
+                self.assertNotEqual(0, self.run_script(identity, source).returncode)
 
     def test_the_home_stats_script_refuses_a_linked_identity_volume_or_directory_at_open(self):
         base = tempfile.mkdtemp()
         real = os.path.join(base, "real-identity")
-        os.makedirs(os.path.join(real, "memory", "daily-journals"))
-        os.makedirs(os.path.join(real, "memory", "sub"))
-        with open(os.path.join(real, "memory", "sub", "g.md"), "w") as handle:
-            handle.write("## one\n")
+        self.write(real, "memory/daily-journals/.keep", "")
+        self.write(real, "memory/sub/g.md", "## one\n")
         os.symlink(os.path.join(real, "memory", "sub"), os.path.join(real, "memory", "via"))
         os.symlink(real, os.path.join(base, "identity"))
-
-        def run(identity, source):
-            script = runner.HOME_STATS_SCRIPT.replace("/home/agent/identity/memory/daily-journals",
-                                                      os.path.join(identity, "memory", "daily-journals"))
-            return runner.subprocess.run([sys.executable, "-c", script, source], capture_output=True, text=True)
-
-        self.assertEqual(1, runner.json.loads(run(real, "memory/sub/g.md").stdout)["count"])
-        self.assertNotEqual(0, run(real, "memory/via/g.md").returncode)
-        self.assertNotEqual(0, run(os.path.join(base, "identity"), "memory/sub/g.md").returncode)
+        self.assertEqual(1, runner.json.loads(self.run_script(real, "memory/sub/g.md").stdout)["count"])
+        self.assertNotEqual(0, self.run_script(real, "memory/via/g.md").returncode)
+        self.assertNotEqual(0, self.run_script(os.path.join(base, "identity"), "memory/sub/g.md").returncode)
 
     def test_the_runner_and_the_house_share_the_journal_source_rule(self):
         self.assertTrue(runner.valid_journal_source("memory/growth-journal.md"))

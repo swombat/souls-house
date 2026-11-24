@@ -24,8 +24,12 @@ module Agents
     # runner on 1 still measures the dated daily journals.
     # 3 also walks the resident's disk use on its own, as part "storage"
     # (Agents::HomeStorage); before 3 the walk rode along with the count.
-    HOME_STATS_VERSION = 3
-    HOME_STATS_CHOSEN_JOURNAL_VERSION = 2
+    # 4 reads the journal the home declares in resident-home.json, and can
+    # answer "not shared". The house can't tell from here whether a home
+    # declares one, so a count is only asked of a runner on 4: an older one
+    # would count memory/daily-journals and be confidently wrong.
+    HOME_STATS_VERSION = 4
+    HOME_STATS_JOURNAL_DECLARATION_VERSION = 4
     HOME_STORAGE_VERSION = 3
 
     class Unavailable < StandardError; end
@@ -607,18 +611,17 @@ module Agents
 
     # The journal entry count and disk use on a VM resident's card, measured
     # inside it by the runner's fixed copy of Agents::JournalEntryStats::SCRIPT.
-    # Returns the runner's { "count", "storage_bytes" }. A runner that has not
-    # yet updated itself to one that measures is not asked (RunnerTooOld), and
-    # neither is one that would count the daily journals when the resident
-    # chose another: the card stays unavailable rather than confidently wrong.
+    # Returns the runner's { "count" } or { "status" => "not_shared" }. A
+    # runner that has not yet updated itself to one that reads the home's
+    # declaration is not asked (RunnerTooOld): the card stays unavailable
+    # rather than confidently wrong.
     HOME_STATS_WAIT = 60.seconds
 
     def home_stats!(agent, wait: HOME_STATS_WAIT, poll: 1)
       enrollment = live_enrollment!(agent)
       source = agent.journal_source
-      needed = source ? HOME_STATS_CHOSEN_JOURNAL_VERSION : 1
       version = enrollment.reload.last_facts.to_h["home_stats"]
-      unless version.is_a?(Integer) && version.between?(needed, HOME_STATS_VERSION)
+      unless version.is_a?(Integer) && version.between?(HOME_STATS_JOURNAL_DECLARATION_VERSION, HOME_STATS_VERSION)
         raise RunnerTooOld, "its server's runner can't measure its home yet; it updates itself"
       end
 

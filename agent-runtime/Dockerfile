@@ -307,6 +307,14 @@ ENV CHAOS_ANTHROPIC_CACHE_TTL=1h
 # Each run lists the Chaos hooks it will load (ids and status only) so the
 # house can see a wake hook go missing (jaMBVj). 0 turns the listing off.
 ENV SOULSHOUSE_HOOK_INVENTORY=1
+# One cargo build cache per resident, on its work volume, instead of a fresh
+# target/ in every checkout: forgotten per-checkout target dirs filled the
+# host twice (98 GB on 11 Nov, 56.5 GB on 20 Nov; eLmorj). Cargo keys
+# artifacts by package, features and profile, so checkouts and branches can
+# share it; concurrent builds wait on its lock instead. Override per command
+# (CARGO_TARGET_DIR=... cargo build) when a separate dir is wanted. The daily
+# storage walk reports any cargo dir over 20 GB (Agents::StorageUsage).
+ENV CARGO_TARGET_DIR=/home/agent/work/.cargo-target
 EXPOSE 4000
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/entrypoint.sh"]

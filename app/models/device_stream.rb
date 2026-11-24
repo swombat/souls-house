@@ -14,6 +14,8 @@ class DeviceStream < ApplicationRecord
   MAX_BATCHES = 2_000_000
   MAX_SESSIONS = 1_000
   BATCHES_PER_MINUTE = 600
+  # throttle_machines 0.5 counts windows in Integer nanoseconds.
+  BATCH_WINDOW = 60 * ThrottleMachines::NS_PER_SECOND
   UUID = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/
 
   belongs_to :account
@@ -123,7 +125,7 @@ class DeviceStream < ApplicationRecord
   private
 
   def throttle_batch!
-    ThrottleMachines.limiter("device_stream:#{id}:batches", limit: BATCHES_PER_MINUTE, period: 60).throttle!
+    ThrottleMachines.limiter("device_stream:#{id}:batches", limit: BATCHES_PER_MINUTE, period: BATCH_WINDOW).throttle!
   rescue ThrottleMachines::ThrottledError
     raise Rejected.new("Upload rate exceeded; retry later", :too_many_requests)
   end

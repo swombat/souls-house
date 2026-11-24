@@ -41,7 +41,7 @@ for (const admin of [false, true]) {
                     title: older ? 'Older journal entry' : 'A moment noticed',
                     occurred_at: '2026-09-22T10:00:00.000000Z',
                     timestamp_basis: 'journal heading',
-                    path: 'daily-journals/2026-09-22.md',
+                    path: 'memory/daily-journals/2026-09-22.md',
                     body: '## 10:00 — A moment noticed\nA separate entry, preserved without flattening the whole file.',
                     body_status: 'complete',
                   },
@@ -62,6 +62,8 @@ for (const admin of [false, true]) {
       await expect(page.getByText('123', { exact: true })).toBeVisible();
       await expect(page.getByRole('img', { name: /last 14 days/ })).toHaveCount(2);
       if (admin) {
+        await expect(page.getByRole('region', { name: 'Memory history' })).toHaveCount(0);
+        await page.getByRole('button', { name: 'Expand memory history' }).click();
         await expect(page.getByRole('heading', { name: 'A moment noticed' })).toBeVisible();
         for (const label of ['Journals', 'Day summaries', 'Week summaries', 'Month summaries', 'Nodes']) {
           await expect(page.getByRole('checkbox', { name: label, exact: true })).toBeChecked();

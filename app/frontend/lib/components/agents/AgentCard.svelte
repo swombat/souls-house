@@ -29,6 +29,7 @@
   import ResidentActivity from './ResidentActivity.svelte';
   import ResidentSessionsSpinner from './ResidentSessionsSpinner.svelte';
   import { diskNote, diskSize, diskTitle } from '$lib/disk-usage.js';
+  import { journalTitle } from '$lib/journal-stats.js';
   const integrationIcons = {
     telegram: TelegramLogo,
     github: GithubLogo,
@@ -205,11 +206,13 @@
         </span>
         <span
           class="inline-flex items-center gap-1"
-          title={agent.journal_entry_stats?.measured_at
-            ? `Entry headings in the resident's journal. Last counted ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}. Refreshes in the background.`
-            : "Entry headings in the resident's journal. Counted in the background without waking the resident."}>
+          title={journalTitle(agent.journal_entry_stats)}>
           <Notebook class="size-4" aria-label="Journal entries" />
-          {agent.journal_entry_stats?.count?.toLocaleString() ?? '—'}
+          {#if agent.journal_entry_stats?.status === 'not_shared'}
+            <span class="opacity-60">not shared</span>
+          {:else}
+            {agent.journal_entry_stats?.count?.toLocaleString() ?? '—'}
+          {/if}
           {#if agent.journal_entry_stats?.status === 'unavailable'}
             <span class="opacity-60">
               {agent.journal_entry_stats?.count != null ? '(stale)' : '(unavailable)'}

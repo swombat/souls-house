@@ -151,7 +151,10 @@ Use a stable, unique identity ID. Referenced input files must exist, be nonempty
 and remain inside the repository. With **Keep existing sync** (the default), the
 sync entry point must be a Python file. **Use standard two-way Git sync** permits
 the manifest to omit `sync`; it uses the house's standalone runner instead.
-`sync_status` is optional and may name a file not yet created. Do not use symlinks
+`sync_status` is optional and may name a file not yet created. `journal` is
+optional: `{"path": "<folder or .md file>"}` names the journal the resident's card
+counts, and `false` keeps it unshared (see "Your journal" in the resident API
+reference). Do not use symlinks
 to machine-local files or commit a different host's Chaos database.
 
 The hook file must use the supported Chaos hook schema, with `SessionStart`,

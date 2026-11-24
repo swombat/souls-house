@@ -41,13 +41,12 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
   end
 
   test "reader counts entries not files and ignores fenced headings and symlinks" do
-    Dir.mktmpdir do |directory|
-      root = Pathname.new(directory)
+    with_home do |home, script|
+      root = home.join("memory/daily-journals")
       root.join("2026-09-05.md").write("# Daily journal\n\n## 09:00 — First\nprivate prose\n## 10:00 — Second\n")
       root.join("2026-09-06.md").write("## Third\n```markdown\n## example\n```\n~~~\n## another example\n~~~\n### subsection\n")
       root.join("README.md").write("## Not an entry\n")
       File.symlink(root.join("2026-09-05.md"), root.join("2026-09-04.md"))
-      script = reader_script(directory)
       stdout, stderr, status = Open3.capture3("python3", "-c", script)
       assert status.success?, stderr
       assert_equal 3, JSON.parse(stdout)["count"]
@@ -55,18 +54,170 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     end
   end
 
-  test "an empty journal directory is a measured zero" do
-    Dir.mktmpdir do |directory|
-      script = reader_script(directory)
-      stdout, _, status = Open3.capture3("python3", "-c", script)
-      assert status.success?
-      assert_equal 0, JSON.parse(stdout)["count"]
+  test "an empty journal directory is a measured zero, and so is a home that has not started one" do
+    with_home do |home, script|
+      assert_equal 0, read(script)
+      FileUtils.remove_entry(home.join("memory"))
+      assert_equal 0, read(script)
     end
   end
 
-  # The reader as the runner sends it, pointed at a scratch directory.
-  def reader_script(directory)
-    Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
+  # The reader as the runner sends it, pointed at a scratch home.
+  def reader_script(home)
+    Agents::JournalEntryStats::SCRIPT.sub('HOME = "/home/agent/identity"', "HOME = #{home.to_s.to_json}")
+  end
+
+  def with_home
+    Dir.mktmpdir do |directory|
+      home = Pathname.new(directory).join("identity")
+      home.join("memory/daily-journals").mkpath
+      yield home, reader_script(home)
+    end
+  end
+
+  def declare(home, journal)
+    home.join("resident-home.json").write({ "format" => "souls-home/v1", "journal" => journal }.to_json)
+  end
+
+  def read(script, *argv)
+    stdout, _, status = Open3.capture3("python3", "-c", script, *argv)
+    return :failed unless status.success?
+
+    measured = JSON.parse(stdout)
+    measured.key?("count") ? measured["count"] : measured["status"]
+  end
+
+  # JLmxrY: the resident declares its journal in resident-home.json, and one
+  # rule reads whatever the path names (journal_rule.py).
+  test "every declared shape is counted by the one rule" do
+    with_home do |home, script|
+      home.join("memory/daily-journals/2026-11-20.md").write("## 09:00 one\n## 10:00 two\n")
+      assert_equal 2, read(script), "no manifest: memory/daily-journals"
+      home.join("resident-home.json").write({ "format" => "souls-home/v1" }.to_json)
+      assert_equal 2, read(script), "a manifest without the key: the default"
+
+      # One file per entry in day folders, beside older day files.
+      journal = home.join("shared/memory/daily-journals")
+      journal.join("2026-11-21").mkpath
+      journal.join("2026-11-22").mkpath
+      journal.join("2026-11-20.md").write("## 09:00 old one\n```\n## fenced\n```\n## 10:00 old two\n")
+      journal.join("2026-11-21/0900-morning.md").write("## 09:00 morning\n\n## What happened\n## What is open\nprose\n")
+      journal.join("2026-11-21/1400.md").write("no heading at all, still one entry\n")
+      journal.join("2026-11-21/empty.md").write("")
+      journal.join("2026-11-21/blank.md").write("\n  \n")
+      journal.join("2026-11-21/.gitkeep").write("")
+      journal.join("2026-11-21/.draft.md").write("## hidden\n")
+      journal.join("2026-11-21/README.md").write("## a guide\n")
+      journal.join("2026-11-21/notes.txt").write("## not markdown\n")
+      journal.join("2026-11-21.md").write("## 23:00 same day, older file\n")
+      journal.join("2026-11-22/one.md").write("## one\n")
+      journal.join("2026-11-22/nested").mkpath
+      journal.join("2026-11-22/nested/deep.md").write("## too deep\n")
+      journal.join("README.md").write("## guide\n")
+      journal.join(".gitkeep").write("")
+      journal.join("index.md").write("## not a day\n")
+      journal.join("archive").mkpath
+      journal.join("archive/2026-01-01.md").write("## swept up?\n")
+      File.symlink(journal.join("2026-11-22/one.md"), journal.join("2026-11-22/linked.md"))
+      File.symlink(journal.join("2026-11-22"), journal.join("2026-11-23"))
+      declare(home, { "path" => "shared/memory/daily-journals" })
+      # 2 (day file) + 2 (day folder) + 1 (same-day file) + 1 (next day folder)
+      assert_equal 6, read(script)
+
+      declare(home, { "path" => "shared/memory/daily-journals/2026-11-20.md" })
+      assert_equal 2, read(script), "a single file: its headings"
+      declare(home, { "path" => "memory/daily-journals" })
+      assert_equal 2, read(script)
+    end
+  end
+
+  test "journal false is not shared, whatever an admin chose" do
+    with_home do |home, script|
+      home.join("memory/growth.md").write("## one\n")
+      declare(home, false)
+      assert_equal "not_shared", read(script)
+      assert_equal "not_shared", read(script, "memory/growth.md")
+    end
+  end
+
+  test "a declaration overrides the admin's chosen file; without one the chosen file is read" do
+    with_home do |home, script|
+      home.join("memory/growth.md").write("## one\n## two\n## three\n")
+      home.join("journal").mkpath
+      home.join("journal/2026-11-20.md").write("## one\n")
+      assert_equal 3, read(script, "memory/growth.md")
+      declare(home, { "path" => "journal" })
+      assert_equal 1, read(script, "memory/growth.md")
+    end
+  end
+
+  test "a declared journal that is linked, escapes, is missing or is malformed is unavailable, never zero" do
+    with_home do |home, script|
+      home.join("journal").mkpath
+      home.join("journal/2026-11-20.md").write("## one\n")
+      home.join("one.md").write("## one\n")
+      File.symlink(home.join("journal"), home.join("linked"))
+      File.symlink(home.join("one.md"), home.join("linked.md"))
+      home.join("via").mkpath
+      File.symlink(home.join("journal"), home.join("via/inner"))
+      outside = Pathname.new(Dir.mktmpdir)
+      outside.join("2026-11-20.md").write("## escaped\n")
+      File.symlink(outside, home.join("escape"))
+      home.join("notes.txt").write("## one\n")
+      File.mkfifo(home.join("pipe.md"))
+      [ { "path" => "linked" }, { "path" => "linked.md" }, { "path" => "via/inner" }, { "path" => "escape" },
+        { "path" => "../identity/journal" }, { "path" => "/journal" }, { "path" => "journal/" }, { "path" => "journal//x" },
+        { "path" => "./journal" }, { "path" => "missing" }, { "path" => "notes.txt" }, { "path" => "pipe.md" },
+        { "path" => "" }, { "path" => 7 }, { "path" => "journal", "share" => "count" }, {}, true, "journal", nil, [] ].each do |journal|
+        declare(home, journal)
+        assert_equal :failed, read(script), journal.inspect
+      end
+      declare(home, { "path" => "journal" })
+      assert_equal 1, read(script)
+      FileUtils.remove_entry(outside)
+    end
+  end
+
+  test "a linked or malformed manifest is unavailable, not the default" do
+    with_home do |home, script|
+      home.join("memory/daily-journals/2026-11-20.md").write("## one\n")
+      home.join("elsewhere.json").write({ "journal" => false }.to_json)
+      File.symlink(home.join("elsewhere.json"), home.join("resident-home.json"))
+      assert_equal :failed, read(script)
+      home.join("resident-home.json").delete
+      [ "not json", "[1]", "\"journal\"" ].each do |text|
+        home.join("resident-home.json").write(text)
+        assert_equal :failed, read(script), text
+      end
+      home.join("resident-home.json").delete
+      assert_equal 1, read(script)
+    end
+  end
+
+  test "an unreadable day file fails the count instead of shrinking it" do
+    with_home do |home, script|
+      day = home.join("memory/daily-journals/2026-11-20.md")
+      day.write("## one\n")
+      day.chmod(0o000)
+      skip "running as root reads anything" if File.readable?(day)
+      assert_equal :failed, read(script)
+    ensure
+      day&.chmod(0o644)
+    end
+  end
+
+  test "the house reports not shared, and keeps no old count beside it" do
+    @agent.journal_entry_stats = { "count" => 12, "status" => "measured" }
+    Agents::Resources.stub(:new, @resources) do
+      @service.stub(:capture, { ok: true, stdout: '{"status": "not_shared"}' }) do
+        stats = @service.call
+        assert_equal "not_shared", stats[:status]
+        assert_not stats.key?(:count)
+      end
+      @service.stub(:capture, { ok: true, stdout: '{"status": "shared?"}' }) do
+        assert_equal "unavailable", @service.call["status"]
+      end
+    end
   end
 
   # A walk of a 100 GB home outlasted the count's budget and left the disk
@@ -148,20 +299,13 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     end
   end
 
-  # A chosen journal (JqRaEY): one file under memory/, named as argv.
+  # A chosen journal (JqRaEY): one file under memory/, named as argv, read
+  # only when the home declares nothing.
   def with_identity
-    Dir.mktmpdir do |directory|
-      identity = Pathname.new(directory).join("identity")
-      journals = identity.join("memory/daily-journals")
-      journals.mkpath
-      journals.join("2026-11-20.md").write("## 09:00 daily\n")
-      yield identity, reader_script(journals.to_s)
+    with_home do |identity, script|
+      identity.join("memory/daily-journals/2026-11-20.md").write("## 09:00 daily\n")
+      yield identity, script
     end
-  end
-
-  def read(script, *argv)
-    stdout, _, status = Open3.capture3("python3", "-c", script, *argv)
-    status.success? ? JSON.parse(stdout)["count"] : :failed
   end
 
   test "a chosen journal file is counted alone, fence-aware, and only the number comes back" do
@@ -209,30 +353,35 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     assert_equal [ "python3", "-c", Agents::JournalEntryStats::SCRIPT, "memory/growth-journal.md" ], argv.last(4)
   end
 
-  test "runner versions: either measures the daily journals; only v2 is asked for a chosen journal" do
+  test "runner versions: only a runner that reads the home's declaration is asked for a count" do
     asked = []
     relay = lambda do |_agent, _kind, payload, **|
       asked << payload
-      { "count" => 7, "storage_bytes" => 1 }
+      { "count" => 7 }
     end
     enrollment = vm!(facts: { "home_stats" => 1 })
+    @agent.journal_entry_stats = { "count" => 3 }
     Agents::RemoteRuntime.stub(:relay!, relay) do
+      [ 1, 2, 3 ].each do |version|
+        enrollment.update!(last_facts: { "home_stats" => version })
+        stats = @service.call
+        assert_equal "unavailable", stats["status"], "v#{version} would count memory/daily-journals"
+        assert_equal 3, stats["count"]
+      end
+      enrollment.update!(last_facts: { "home_stats" => 4 })
       assert_equal 7, @service.call[:count]
-      enrollment.update!(last_facts: { "home_stats" => 2 })
-      assert_equal 7, @service.call[:count]
-
       @agent.update!(journal_source: "memory/growth-journal.md")
-      @agent.journal_entry_stats = { "count" => 3 }
-      enrollment.update!(last_facts: { "home_stats" => 1 })
-      stats = @service.call
-      assert_equal "unavailable", stats["status"]
-      assert_equal 3, stats["count"]
-
-      enrollment.update!(last_facts: { "home_stats" => 2 })
       assert_equal 7, @service.call[:count]
     end
-    assert_equal [ { "container_name" => "test-resident" }, { "container_name" => "test-resident" },
+    assert_equal [ { "container_name" => "test-resident" },
                    { "container_name" => "test-resident", "journal_source" => "memory/growth-journal.md" } ], asked
+  end
+
+  test "a VM runner's not shared reaches the card" do
+    vm!(facts: { "home_stats" => Agents::RemoteRuntime::HOME_STATS_VERSION })
+    Agents::RemoteRuntime.stub(:relay!, ->(*, **) { { "status" => "not_shared" } }) do
+      assert_equal "not_shared", @service.call[:status]
+    end
   end
 
   test "the chosen-journal rule is one rule" do
