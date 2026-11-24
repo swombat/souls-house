@@ -172,12 +172,12 @@ class AgentRepoCreator
   end
 
   def with_repo_retry
-    base = (repo_retry_delay * NS_PER_SECOND).round
-    # The 0.12 executor's defaults, made explicit: doubling from the base,
-    # capped at ten seconds, no jitter.
-    backoff = ChronoMachines::Exponential.new(
-      base: base, multiplier: 2.0, max: [ base, REPO_RETRY_MAX_DELAY * NS_PER_SECOND ].max, jitter: 0.0
-    )
+    # The 1 s base and no jitter are ours; doubling and the 10 s cap were the
+    # chrono_machines 0.12 defaults, written out now that 0.13 has none. The
+    # cap holds even if repo_retry_delay is set above it.
+    max = REPO_RETRY_MAX_DELAY * NS_PER_SECOND
+    base = [ (repo_retry_delay * NS_PER_SECOND).round, max ].min
+    backoff = ChronoMachines::Exponential.new(base: base, multiplier: 2.0, max: max, jitter: 0.0)
     ChronoMachines.retry(
       backoff, REPO_ATTEMPTS,
       retryable: [ GitHubError ],
