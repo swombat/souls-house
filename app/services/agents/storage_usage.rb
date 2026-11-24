@@ -23,6 +23,13 @@ module Agents
     # never cost the home's total. Any traversal or sizing error, and any
     # tag path with a newline in it, fails the whole walk: a partial list
     # must never read as a complete one.
+    #
+    # BusyBox find (1.37) only propagates a failed `-exec … +` batch when it
+    # is the last one; an earlier batch's failure (or a spawn error such as
+    # E2BIG) becomes a false predicate and the walk still exits 0 (Mira's
+    # review of f9adedb, 1,700 tags: 449 rows, exit 0). So every failure in
+    # the script also writes to stderr, and any stderr at all fails the walk.
+    # The exit status alone is not trusted.
     CACHE_SECONDS = 240
     CACHE_RUN_SECONDS = CACHE_SECONDS + 30
     CACHE_VOLUMES = %w[work state].freeze
@@ -34,15 +41,15 @@ module Agents
     CACHE_SCRIPT = <<~'SH'.freeze
       status=0
       for root in "$@"; do
-        [ -d "$root" ] || exit 3
+        [ -d "$root" ] || { echo "cache-dirs: missing root" >&2; exit 3; }
         find "$root" -xdev -type f -name CACHEDIR.TAG -exec sh -c '
           nl="
       "
           for tag; do
-            case "$tag" in *"$nl"*) exit 4 ;; esac
-            du -sk "${tag%/CACHEDIR.TAG}" || exit 5
+            case "$tag" in *"$nl"*) echo "cache-du: newline in path" >&2; exit 4 ;; esac
+            du -sk "${tag%/CACHEDIR.TAG}" || { echo "cache-du: du failed" >&2; exit 5; }
           done
-        ' cache-du {} + || status=1
+        ' cache-du {} + || { echo "cache-dirs: find failed" >&2; status=1; }
       done
       exit "$status"
     SH
@@ -129,7 +136,8 @@ module Agents
         "sh", "-c", CACHE_SCRIPT, "cache-dirs", *keys.map { |key| "/measure/#{key}" },
         seconds: CACHE_RUN_SECONDS
       )
-      return { cache_dirs_failure: "walk_failed" } unless result[:ok]
+      # stderr is a failure signal, never stored: see CACHE_SCRIPT.
+      return { cache_dirs_failure: "walk_failed" } unless result[:ok] && result[:stderr].to_s.empty?
 
       stdout = result[:stdout].to_s.dup.force_encoding(Encoding::UTF_8)
       return { cache_dirs_failure: "unreadable" } unless stdout.valid_encoding?

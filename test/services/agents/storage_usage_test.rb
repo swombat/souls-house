@@ -203,25 +203,47 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
     end
   end
 
+  test "a cache walk that exits 0 with partial output and stderr is a failed walk" do
+    # BusyBox find drops an earlier -exec batch's failure from its exit status.
+    partial = "#{2 * 1024 * 1024}\t/measure/work/a/target\n"
+    capture = lambda do |*args, **|
+      next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
+      next { ok: true, stdout: partial, stderr: "find: sh: Argument list too long\n" } unless args.include?("du")
+
+      { ok: true, stdout: Agents::VolumeSet.new(@agent).names.keys.map { |key| "3\t/measure/#{key}\n" }.join, stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call
+      assert_equal "measured", result[:status]
+      assert_equal 5 * 3 * 1024, result[:bytes]
+      assert_equal "walk_failed", result[:cache_dirs_failure]
+      assert_not result.key?(:cache_dirs)
+      assert_not_includes result.to_s, "Argument list"
+    end
+  end
+
   test "the cache walk script fails on a missing root, a newline in a name, and finds tags at any depth" do
     Dir.mktmpdir do |dir|
       deep = File.join(dir, "work", *Array.new(10) { |i| "d#{i}" }, "target")
       FileUtils.mkdir_p(deep)
       File.write(File.join(deep, "CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n")
-      run = ->(*roots) { Open3.capture2("sh", "-c", Agents::StorageUsage::CACHE_SCRIPT, "cache-dirs", *roots) }
+      run = ->(*roots) { Open3.capture3("sh", "-c", Agents::StorageUsage::CACHE_SCRIPT, "cache-dirs", *roots) }
 
-      out, status = run.call(File.join(dir, "work"))
+      out, err, status = run.call(File.join(dir, "work"))
       assert status.success?
+      assert_empty err
       assert_match %r{\A\d+\t#{Regexp.escape(deep)}\n\z}, out
 
-      _, status = run.call(File.join(dir, "work"), File.join(dir, "missing"))
+      _, err, status = run.call(File.join(dir, "work"), File.join(dir, "missing"))
       assert_not status.success?, "a missing root must fail the walk, not drop out of it"
+      assert_not_empty err, "every failure must also speak on stderr"
 
       odd = File.join(dir, "work", "odd\nname")
       FileUtils.mkdir_p(odd)
       File.write(File.join(odd, "CACHEDIR.TAG"), "")
-      _, status = run.call(File.join(dir, "work"))
+      _, err, status = run.call(File.join(dir, "work"))
       assert_not status.success?, "a newline in a tag path must fail the walk"
+      assert_not_empty err, "every failure must also speak on stderr"
     end
   end
 
