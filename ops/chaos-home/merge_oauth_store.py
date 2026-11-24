@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Merge one resident's old subscription Chaos store into their main store.
 
-Run on the house host, as a user in the docker group, for one resident at a
-time, with that resident's container STOPPED (that is what keeps every writer
-of both stores still):
+Run on the Docker host holding the resident (house host or resident VM), as a
+user in the docker group, for one resident at a time, with that resident's
+container STOPPED and kept stopped (that is what keeps every writer of both
+stores still):
 
     ops/chaos-home/merge_oauth_store.py <agent uuid> [--dry-run]
 
-1. Refuses if the container is running.
+1. Refuses if the container is running, or its Chaos home is not backed by
+   an existing plain local Docker volume. Never creates a volume.
 2. Reads `.chaos/config.toml` and `.chaos/oauth-runtime/config.toml` from the
    resident's chaos-home volume and takes only the database names (and checks
    both name the same server). No connection string is printed or passed on.
@@ -22,6 +24,12 @@ of both stores still):
 
 The source database is kept. Start the resident afterwards and check that one
 of its subscription threads resumes.
+
+If migrations differ, back up the source first. In a maintenance container
+using the resident's Chaos binary, home mount and database environment, run
+`CHAOS_HOME=/home/agent/.chaos/oauth-runtime chaos hooks list` to migrate the
+source. Keep the normal resident stopped; close the maintenance container
+before repeating the dry run. The merge script does not do this for you.
 """
 import argparse
 import json
@@ -35,6 +43,8 @@ from urllib.parse import urlparse
 
 MERGE_SQL = Path(__file__).with_name("oauth_store_merge.sql")
 MOVED_NAME = "config.toml.merged-into-main"
+CHAOS_HOME = "/home/agent/.chaos"
+MISSING_FILE = 44  # reserved exit status of the read helper (not a Docker error)
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 DBNAME = re.compile(r"^[a-z0-9_]+$")
 
@@ -72,7 +82,6 @@ class Merge:
         if not UUID.match(agent):
             raise Refused("agent must be the resident's uuid")
         self.container = f"hk-agent-{agent}"
-        self.volume = f"chaos-home-{agent}"
         self.pg = pg_container
         self.run = run
         self.out = out
@@ -81,17 +90,40 @@ class Merge:
         data = json.loads(self.run("inspect", self.container).stdout)[0]
         if data["State"]["Running"]:
             raise Refused(f"{self.container} is running; stop it first")
+        mounts = [mount for mount in data.get("Mounts", []) if mount["Destination"] == CHAOS_HOME]
+        if len(mounts) != 1 or mounts[0]["Type"] != "volume" or not mounts[0].get("Name"):
+            raise Refused(f"{self.container} needs exactly one named volume mounted at {CHAOS_HOME}")
+        name = mounts[0]["Name"]
+        result = self.run("volume", "inspect", name, check=False)
+        if result.returncode:
+            raise Refused("cannot inspect the resident's Chaos home volume; no volume was created")
+        volume, = json.loads(result.stdout)
+        mountpoint = volume.get("Mountpoint", "")
+        if (volume.get("Name") != name or volume.get("Driver") != "local" or volume.get("Options")
+                or mountpoint != mounts[0].get("Source") or not Path(mountpoint).is_absolute()
+                or "," in mountpoint):
+            raise Refused("the resident's Chaos home is not a plain local volume with a usable mountpoint")
         env = dict(item.split("=", 1) for item in data["Config"].get("Env") or [] if "=" in item)
-        return data["Image"], env
+        return data["Image"], env, mountpoint
 
-    def volume_cmd(self, image, *command, writable=False):
-        mount = f"{self.volume}:/c" + ("" if writable else ":ro")
-        return self.run("run", "--rm", "--network", "none", "--user", "0", "-v", mount,
+    def volume_cmd(self, image, mountpoint, *command, writable=False):
+        # A named-volume mount can auto-create a missing volume even after
+        # inspection. An explicit bind mount instead refuses a missing path.
+        mount = f"type=bind,source={mountpoint},target=/c" + ("" if writable else ",readonly")
+        return self.run("run", "--rm", "--network", "none", "--user", "0", "--mount", mount,
                         "--entrypoint", command[0], image, *command[1:], check=False)
 
-    def read(self, image, path):
-        result = self.volume_cmd(image, "cat", f"/c/{path}")
-        return result.stdout if result.returncode == 0 else None
+    def read(self, image, mountpoint, path):
+        result = self.volume_cmd(
+            image, mountpoint, "sh", "-c",
+            f'if [ ! -e "$1" ] && [ ! -L "$1" ]; then exit {MISSING_FILE}; fi; exec cat "$1"',
+            "read-config", f"/c/{path}",
+        )
+        if result.returncode == MISSING_FILE:
+            return None
+        if result.returncode:
+            raise Refused(f"could not read {path} from the resident's Chaos home")
+        return result.stdout
 
     def psql(self, db, sql, src=None):
         user = self.run("exec", self.pg, "printenv", "POSTGRES_USER").stdout.strip()
@@ -113,14 +145,14 @@ class Merge:
         return self.psql(dst, sql).stdout.strip() or None
 
     def __call__(self, dry_run=False):
-        image, env = self.inspect()
-        oauth_text = self.read(image, "oauth-runtime/config.toml")
+        image, env, mountpoint = self.inspect()
+        oauth_text = self.read(image, mountpoint, "oauth-runtime/config.toml")
         if oauth_text is None or store_location(oauth_text, env) is None:
-            moved = self.read(image, f"oauth-runtime/{MOVED_NAME}") is not None
+            moved = self.read(image, mountpoint, f"oauth-runtime/{MOVED_NAME}") is not None
             self.out("nothing to merge: " + ("already merged and moved aside" if moved
                                              else "oauth-runtime names no store of its own"))
             return 0
-        main_text = self.read(image, "config.toml")
+        main_text = self.read(image, mountpoint, "config.toml")
         if main_text is None:
             raise Refused("the main home has no config.toml")
         (src_server, src), main = store_location(oauth_text, env), store_location(main_text, env)
@@ -145,7 +177,7 @@ class Merge:
         counts = self.marker(src, dst)
         if counts is None:
             raise Refused("no merge marker for this pair after the merge; config left in place")
-        moved = self.volume_cmd(image, "mv", "/c/oauth-runtime/config.toml",
+        moved = self.volume_cmd(image, mountpoint, "mv", "/c/oauth-runtime/config.toml",
                                 f"/c/oauth-runtime/{MOVED_NAME}", writable=True)
         if moved.returncode:
             raise Refused("merged, but moving oauth-runtime/config.toml aside failed; rerun to retry the move")
