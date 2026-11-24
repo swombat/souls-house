@@ -88,6 +88,24 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
     assert_equal 0, reboots.count
   end
 
+  test "busy with a credential refresh or a runtime roll: no reboot" do
+    refresh = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "home_stats", payload: { "container_name" => "x" })
+    refresh.deliver!(now: Time.current)
+    refresh.record_result!({ "outcome" => "done" }, now: Time.current)
+    @placement.update_columns(refresh_command_id: refresh.id)
+    beat(required)
+    assert_equal 0, reboots.count, "a refresh still holding the placement"
+
+    @placement.update_columns(refresh_command_id: nil)
+    @agent.update_columns(runtime_roll_started_at: Time.current)
+    beat(required)
+    assert_equal 0, reboots.count, "a runtime roll under way"
+
+    @agent.update_columns(runtime_roll_started_at: nil)
+    beat(required)
+    assert_equal 1, reboots.count
+  end
+
   test "not required: nothing" do
     beat(kernel_running: NEW, kernel_installed: NEW, reboot_required: false, reboot_host: 1)
     assert_equal 0, reboots.count
