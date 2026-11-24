@@ -98,7 +98,7 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
         _, prompt, result = Open3.capture3(env, "python3", stop,
           stdin_data: { last_assistant_message: "Synthetic meaningful turn" }.to_json)
         assert_equal 2, result.exitstatus
-        assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+        assert_includes prompt, "This journal is your narrative memory"
       end
     end
   end
@@ -127,7 +127,7 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       # First turn: nothing on disk, full invitation.
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
-      assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+      assert_includes prompt, "This journal is your narrative memory"
       # The resident journals by hand during the next turn. Make the previous
       # turn end three minutes ago so the new heading is unambiguously this turn's.
       trace = File.join(dir, "memory/automation/state/stop-events.jsonl")
@@ -148,13 +148,13 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       assert_includes prompt, "Do not write another entry"
       assert_includes prompt, "house-memory --key ENTRY-SHAPE-KEY form"
       assert_includes prompt, "<mnemodyne-command-reference/>"
-      assert_not_includes prompt, "decide whether the just-completed turn has narrative shape"
+      assert_not_includes prompt, "This journal is your narrative memory"
       # An entry older than the last invitation does not count as this turn's.
       old_stamp = (Time.now - 40 * 60).strftime("%H:%M")
       File.write(journal, "# Daily Journal: #{today}\n\n## #{old_stamp} — Earlier\n\nbody\n")
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
-      assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+      assert_includes prompt, "This journal is your narrative memory"
     end
   end
 
@@ -178,7 +178,7 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       # Turn N+1 wrote nothing: it must get the full invitation, not "already written".
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
-      assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+      assert_includes prompt, "This journal is your narrative memory"
       assert_not_includes prompt, "Journal already written this turn"
     end
   end
