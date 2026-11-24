@@ -62,6 +62,8 @@ for (const admin of [false, true]) {
       await expect(page.getByText('123', { exact: true })).toBeVisible();
       await expect(page.getByRole('img', { name: /last 14 days/ })).toHaveCount(2);
       if (admin) {
+        await expect(page.getByRole('region', { name: 'Memory history' })).toHaveCount(0);
+        await page.getByRole('button', { name: 'Expand memory history' }).click();
         await expect(page.getByRole('heading', { name: 'A moment noticed' })).toBeVisible();
         for (const label of ['Journals', 'Day summaries', 'Week summaries', 'Month summaries', 'Nodes']) {
           await expect(page.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
