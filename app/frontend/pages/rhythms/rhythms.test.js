@@ -223,6 +223,147 @@ test('the form only shows the schedule fields the cadence needs', async () => {
   expect(screen.getByText(/last day of the month/)).toBeInTheDocument();
 });
 
+test('daily times can be added, edited and removed, with blank and duplicate row errors', async () => {
+  render(RhythmForm, { account, rhythm: rhythmFixture({ cadence: 'daily' }), residents });
+  expect(screen.getByLabelText('Time 1')).toHaveValue('09:00');
+  await fireEvent.click(screen.getByRole('button', { name: 'Add time' }));
+  expect(screen.getByText('Choose a time.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Time 2')).toHaveAttribute('aria-invalid', 'true');
+  await fireEvent.input(screen.getByLabelText('Time 2'), { target: { value: '09:00' } });
+  expect(screen.getAllByText(/this time is repeated/)).toHaveLength(2);
+  await fireEvent.input(screen.getByLabelText('Time 2'), { target: { value: '18:00' } });
+  expect(screen.queryByText(/this time is repeated/)).not.toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove time 1' }));
+  expect(screen.getByLabelText('Time 1')).toHaveValue('18:00');
+  expect(screen.queryByRole('button', { name: /Remove time/ })).not.toBeInTheDocument();
+});
+
+test('daily time editing stops at twelve slots', async () => {
+  render(RhythmForm, {
+    account,
+    rhythm: rhythmFixture({
+      cadence: 'daily',
+      times_of_day: Array.from({ length: 12 }, (_, i) => `${String(i).padStart(2, '0')}:00`),
+    }),
+  });
+  expect(screen.getByRole('button', { name: 'Add time' })).toBeDisabled();
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove time 12' }));
+  expect(screen.getByRole('button', { name: 'Add time' })).not.toBeDisabled();
+});
+
+test.each(['blank', 'duplicate'])(
+  'locally %s daily rows suppress previews across debounce and recover',
+  async (invalid) => {
+    vi.useFakeTimers();
+    let resolveStale;
+    globalThis.fetch.mockImplementationOnce(() => new Promise((resolve) => (resolveStale = resolve)));
+    const view = render(RhythmForm, {
+      account,
+      rhythm: rhythmFixture({ cadence: 'daily', errors: { times_of_day: ['Server list error'] } }),
+      residents,
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(250);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      await fireEvent.click(screen.getByRole('button', { name: 'Add time' }));
+      if (invalid === 'duplicate') {
+        await fireEvent.input(screen.getByLabelText('Time 2'), { target: { value: '09:00' } });
+      }
+      expect(screen.queryByText('Server list error')).not.toBeInTheDocument();
+      resolveStale({ ok: false, json: async () => ({ errors: { times_of_day: ['Stale preview error'] } }) });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Stale preview error')).not.toBeInTheDocument();
+      await fireEvent.input(screen.getByLabelText('Time 2'), { target: { value: '18:00' } });
+      await vi.advanceTimersByTimeAsync(249);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Weekly reflection — 5 Oct 2026')).toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  }
+);
+
+test('adding a blank row cancels the pending preview debounce', async () => {
+  vi.useFakeTimers();
+  const view = render(RhythmForm, { account, rhythm: rhythmFixture({ cadence: 'daily' }), residents });
+  try {
+    await vi.advanceTimersByTimeAsync(100);
+    await fireEvent.click(screen.getByRole('button', { name: 'Add time' }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove time 2' }));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+test('daily preview sends every time and renders the full server description', async () => {
+  globalThis.fetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      schedule_description: 'Every day at 08:00, 12:00 and 18:00',
+      next_run_at: '2026-10-05T06:00:00Z',
+    }),
+  });
+  render(RhythmForm, {
+    account,
+    rhythm: rhythmFixture({ cadence: 'daily', times_of_day: ['18:00', '08:00', '12:00'] }),
+  });
+  await waitFor(() => expect(screen.getByText('Every day at 08:00, 12:00 and 18:00.')).toBeInTheDocument());
+  const params = new URL(globalThis.fetch.mock.calls.at(-1)[0], 'http://localhost').searchParams;
+  expect(params.getAll('rhythm[times_of_day][]')).toEqual(['18:00', '08:00', '12:00']);
+  expect(params.has('rhythm[time_of_day]')).toBe(false);
+  await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  const form = get(useForm.mock.results.at(-1).value);
+  expect(form.transform.mock.calls.at(-1)[0](form).rhythm.times_of_day).toEqual(['18:00', '08:00', '12:00']);
+});
+
+test('leaving daily warns about losing times, keeps earliest and submits a singleton without changing other data', async () => {
+  render(RhythmForm, {
+    account,
+    rhythm: rhythmFixture({
+      cadence: 'daily',
+      times_of_day: ['18:00', '08:00'],
+      quiet_gate: true,
+      resident_models: { lume: 'pinned' },
+    }),
+  });
+  expect(screen.getByText(/Changing to another repeat schedule keeps only the earliest/)).toBeInTheDocument();
+  await fireEvent.change(screen.getByLabelText('How often'), { target: { value: 'weekly' } });
+  expect(screen.getByText(/Saving this repeat schedule drops 18:00/)).toBeInTheDocument();
+  expect(screen.getByLabelText('At')).toHaveValue('08:00');
+  await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  const form = get(useForm.mock.results.at(-1).value);
+  const data = form.transform.mock.calls.at(-1)[0](form).rhythm;
+  expect(data).toMatchObject({
+    times_of_day: ['08:00'],
+    opening: 'What did this week do to you?',
+    quiet_gate: true,
+    resident_models: { lume: 'pinned' },
+  });
+  expect(data).not.toHaveProperty('time_of_day');
+});
+
+test('daily form preserves invalid rows and shows server errors beside the affected row', () => {
+  render(RhythmForm, {
+    account,
+    rhythm: rhythmFixture({
+      cadence: 'daily',
+      times_of_day: ['09:00', ''],
+      errors: { 'times_of_day.1': ['Second time is invalid'] },
+    }),
+  });
+  expect(screen.getByLabelText('Time 2')).toHaveValue('');
+  expect(document.getElementById('rhythm_time_errors_1')).toHaveTextContent('Second time is invalid');
+});
+
 test('the form shows server validation errors next to their fields', () => {
   render(RhythmForm, {
     account,

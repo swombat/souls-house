@@ -2897,6 +2897,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210000) do
     t.bigint "quiet_gate_room_ids", default: [], null: false, array: true
     t.bigint "quiet_watermark_message_id"
     t.boolean "essential", default: false, null: false
+    t.jsonb "times_of_day"
     t.index ["account_id"], name: "index_rhythms_on_account_id"
     t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"

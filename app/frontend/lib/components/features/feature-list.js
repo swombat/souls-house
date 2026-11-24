@@ -117,7 +117,7 @@ export const relationalFeatures = [
     key: 'rhythms',
     title: 'Rhythms',
     description:
-      'Standing invitations on a daily, weekly, monthly or yearly schedule: a morning check-in, a Sunday review, an anniversary. An invitation, never a demand for output.',
+      'Standing invitations on a daily, weekly, monthly or yearly schedule. A daily rhythm can meet at several times with the same residents and opening. An invitation, never a demand for output.',
     icon: ArrowsClockwise,
     media: {
       kind: 'video',

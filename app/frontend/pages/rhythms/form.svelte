@@ -6,12 +6,14 @@
   import { Switch } from '$lib/components/shadcn/switch';
   import { ArrowLeft } from 'phosphor-svelte';
   import RhythmResidentPicker from '$lib/components/rhythms/RhythmResidentPicker.svelte';
+  import RhythmTimes from '$lib/components/rhythms/rhythm-times.svelte';
   import {
     CADENCES,
     MONTHS,
     MONTH_DAYS,
     WEEKDAYS,
     fieldErrors,
+    earliestTime,
     formValues,
     formatWhen,
     needsShortMonthNote,
@@ -22,6 +24,7 @@
     roomChoiceFromSelect,
     roomSelectValue,
     submittableValues,
+    timeRowErrors,
     zoneIdentifier,
   } from '$lib/rhythms';
 
@@ -69,6 +72,21 @@
 
   const serverErrors = $derived({ ...(rhythm?.errors ?? {}), ...($form.errors ?? {}) });
   const errorsFor = (field) => fieldErrors(serverErrors, field);
+  let droppedTimes = $state([]);
+  const invalidTimes = $derived(
+    $form.rhythm.times_of_day.some((_, index) => timeRowErrors($form.rhythm.times_of_day, index).length > 0)
+  );
+
+  function changeCadence(event) {
+    const cadence = event.currentTarget.value;
+    if ($form.rhythm.cadence === 'daily' && cadence !== 'daily') {
+      const times = $form.rhythm.times_of_day;
+      const keep = earliestTime(times);
+      droppedTimes = times.filter((time) => time && time !== keep);
+      $form.rhythm.times_of_day = [keep];
+    }
+    $form.rhythm.cadence = cadence;
+  }
 
   // Live preview: the server owns schedule maths, the form only asks.
   let preview = $state(null);
@@ -78,13 +96,22 @@
 
   $effect(() => {
     const query = previewQuery($form.rhythm);
+    const locallyInvalid = invalidTimes;
     clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => loadPreview(query), 250);
-    return () => clearTimeout(previewTimer);
+    const seq = ++previewSeq;
+    previewErrors = null;
+    if (locallyInvalid) {
+      preview = null;
+    } else {
+      previewTimer = setTimeout(() => loadPreview(query, seq), 250);
+    }
+    return () => {
+      clearTimeout(previewTimer);
+      ++previewSeq;
+    };
   });
 
-  async function loadPreview(query) {
-    const seq = ++previewSeq;
+  async function loadPreview(query, seq) {
     try {
       const response = await fetch(`${rhythmPreviewPath(account.id)}?${query}`, {
         headers: { Accept: 'application/json' },
@@ -278,7 +305,7 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="space-y-1">
           <Label for="rhythm_cadence" class="text-xs font-normal text-muted-foreground">How often</Label>
-          <select id="rhythm_cadence" bind:value={$form.rhythm.cadence} class={selectClass}>
+          <select id="rhythm_cadence" value={$form.rhythm.cadence} onchange={changeCadence} class={selectClass}>
             {#each CADENCES as cadence}<option value={cadence.value}>{cadence.label}</option>{/each}
           </select>
         </div>
@@ -310,10 +337,10 @@
           </div>
         {/if}
 
-        <div class="space-y-1">
-          <Label for="rhythm_time_of_day" class="text-xs font-normal text-muted-foreground">At</Label>
-          <Input id="rhythm_time_of_day" type="time" bind:value={$form.rhythm.time_of_day} />
-        </div>
+        <RhythmTimes
+          bind:times={$form.rhythm.times_of_day}
+          daily={$form.rhythm.cadence === 'daily'}
+          errors={{ ...(previewErrors ?? {}), ...serverErrors }} />
 
         <div class="space-y-1">
           <Label for="rhythm_timezone" class="text-xs font-normal text-muted-foreground">Timezone</Label>
@@ -322,6 +349,11 @@
           </select>
         </div>
       </div>
+      {#if droppedTimes.length && $form.rhythm.cadence !== 'daily'}
+        <p class="text-sm text-muted-foreground">
+          Only the earliest time is kept. Saving this repeat schedule drops {droppedTimes.join(', ')}.
+        </p>
+      {/if}
 
       {#if needsShortMonthNote($form.rhythm)}
         <p class="text-xs text-muted-foreground">
@@ -330,8 +362,10 @@
             : 'In shorter months, it happens on the last day of the month.'}
         </p>
       {/if}
-      {#each ['cadence', 'weekday', 'month_day', 'month', 'time_of_day', 'timezone'] as field}
-        {#each errorsFor(field) as error}<p class="text-sm text-destructive">{error}</p>{/each}
+      {#each ['cadence', 'weekday', 'month_day', 'month', 'time_of_day', 'times_of_day', 'timezone'].filter((field) => !invalidTimes || !['time_of_day', 'times_of_day'].includes(field)) as field}
+        {#each [...errorsFor(field), ...fieldErrors(previewErrors, field)] as error}<p class="text-sm text-destructive">
+            {error}
+          </p>{/each}
       {/each}
 
       <div class="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm" aria-live="polite">
@@ -340,7 +374,7 @@
           First one:
           <span class="font-medium"
             >{formatWhen(preview.next_run_at, zoneIdentifier($form.rhythm.timezone, timezones))}</span>
-        {:else if previewErrors}
+        {:else if previewErrors || invalidTimes}
           <span class="text-muted-foreground">Fill in the details above to see when it will first happen.</span>
         {:else}
           <span class="text-muted-foreground">Working out when it happens…</span>

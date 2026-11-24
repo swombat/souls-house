@@ -233,21 +233,25 @@ module Api
       end
 
       def require_rhythm_object
-        return if params[:rhythm].is_a?(ActionController::Parameters)
-
-        render json: { errors: { rhythm: [ "must be an object" ] } }, status: :unprocessable_entity
+        rhythm = params[:rhythm]
+        unless rhythm.is_a?(ActionController::Parameters)
+          return render json: { errors: { rhythm: [ "must be an object" ] } }, status: :unprocessable_entity
+        end
+        if rhythm.key?(:times_of_day) && !(rhythm[:times_of_day].is_a?(Array) && rhythm[:times_of_day].all?(String))
+          render json: { errors: { times_of_day: [ "must be a list of times" ] } }, status: :unprocessable_entity
+        end
       end
 
       def rhythm_params
         Rhythm.public_room_attributes(params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
-          :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, quiet_gate_room_ids: []).to_h.symbolize_keys)
+          :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, times_of_day: [], quiet_gate_room_ids: []).to_h.symbolize_keys)
       end
 
       # The web form's parameters: resident_ids are resolved against the
       # account's eligible residents and accepted guests, failing closed (404).
       def human_rhythm_params(account)
         permitted = params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
-          :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, quiet_gate_room_ids: [], resident_ids: [], resident_models: {})
+          :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, times_of_day: [], quiet_gate_room_ids: [], resident_ids: [], resident_models: {})
         if permitted.key?(:resident_ids)
           permitted[:resident_ids] = Rhythm.selectable_resident_ids(account, permitted.delete(:resident_ids))
         end

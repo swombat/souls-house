@@ -387,7 +387,7 @@ module Accounts::Portability
           next
         end
         Rhythm.transaction do
-          rhythm = Rhythm.new(doc.slice(*%w[title append_date opening cadence time_of_day weekday month_day month timezone room_choice]).merge(
+          rhythm = Rhythm.new(doc.slice(*%w[title append_date opening cadence time_of_day times_of_day weekday month_day month timezone room_choice]).merge(
             account: @account, creator: @user, agents: agents, room_id: room_id(doc["room_key"])))
           rhythm.room_choice = "resident_default" if rhythm.room_choice_room? && rhythm.room_id.nil?
           rhythm.save!

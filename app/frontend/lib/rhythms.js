@@ -49,7 +49,7 @@ export const FORM_FIELDS = [
   'append_date',
   'resident_ids',
   'cadence',
-  'time_of_day',
+  'times_of_day',
   'weekday',
   'month_day',
   'month',
@@ -68,7 +68,7 @@ export function formValues(rhythm = {}, fallbackTimezone = 'UTC') {
       Object.entries(rhythm.resident_models ?? {}).map(([id, model]) => [id, model ?? ''])
     ),
     cadence: rhythm.cadence ?? 'weekly',
-    time_of_day: rhythm.time_of_day ?? '09:00',
+    times_of_day: [...(rhythm.times_of_day ?? [rhythm.time_of_day ?? '09:00'])],
     weekday: rhythm.weekday ?? 1,
     month_day: rhythm.month_day ?? 1,
     month: rhythm.month ?? 1,
@@ -97,6 +97,9 @@ export function roomChoiceFromSelect(value) {
 // server never stores a stale weekday on a daily rhythm.
 export function submittableValues(values) {
   const out = { ...values, resident_ids: [...values.resident_ids] };
+  const times = values.times_of_day ?? [values.time_of_day ?? '09:00'];
+  out.times_of_day = out.cadence === 'daily' ? [...times] : [earliestTime(times)];
+  delete out.time_of_day;
   // Only selected residents carry a model; blank means "default".
   out.resident_models = Object.fromEntries(
     out.resident_ids.map((id) => [id, values.resident_models?.[id] || 'default'])
@@ -108,12 +111,25 @@ export function submittableValues(values) {
   return out;
 }
 
+export function earliestTime(times) {
+  return times.filter(Boolean).sort()[0] ?? '';
+}
+
+export function timeRowErrors(times, index) {
+  if (!times[index]) return ['Choose a time.'];
+  if (times.filter((time) => time === times[index]).length > 1)
+    return ['Choose a different time; this time is repeated.'];
+  return [];
+}
+
 export function previewQuery(values) {
   const params = new URLSearchParams();
   const submittable = submittableValues(values);
   for (const field of FORM_FIELDS.filter((field) => !['opening', 'resident_ids', 'resident_models'].includes(field))) {
     const value = submittable[field];
-    if (value !== null && value !== undefined) {
+    if (Array.isArray(value)) {
+      for (const item of value) params.append(`rhythm[${field}][]`, item);
+    } else if (value !== null && value !== undefined) {
       params.append(`rhythm[${field}]`, String(value));
     }
   }
