@@ -185,4 +185,44 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
     end
   end
 
+  test "an unreadable cache line keeps the home's total: non-UTF-8 and forged records" do
+    [ "#{2 * 1024 * 1024}\t/measure/work/bad-\xFF/target\n".b, "12\t/measure/identity\n" ].each do |cache_output|
+      capture = lambda do |*args, **|
+        next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
+        next { ok: true, stdout: cache_output, stderr: "" } unless args.include?("du")
+
+        { ok: true, stdout: Agents::VolumeSet.new(@agent).names.keys.map { |key| "3\t/measure/#{key}\n" }.join, stderr: "" }
+      end
+      @service.stub(:capture, capture) do
+        result = @service.call
+        assert_equal "measured", result[:status]
+        assert_equal 5 * 3 * 1024, result[:bytes]
+        assert_equal "unreadable", result[:cache_dirs_failure]
+        assert_not result.key?(:cache_dirs)
+      end
+    end
+  end
+
+  test "the cache walk script fails on a missing root, a newline in a name, and finds tags at any depth" do
+    Dir.mktmpdir do |dir|
+      deep = File.join(dir, "work", *Array.new(10) { |i| "d#{i}" }, "target")
+      FileUtils.mkdir_p(deep)
+      File.write(File.join(deep, "CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n")
+      run = ->(*roots) { Open3.capture2("sh", "-c", Agents::StorageUsage::CACHE_SCRIPT, "cache-dirs", *roots) }
+
+      out, status = run.call(File.join(dir, "work"))
+      assert status.success?
+      assert_match %r{\A\d+\t#{Regexp.escape(deep)}\n\z}, out
+
+      _, status = run.call(File.join(dir, "work"), File.join(dir, "missing"))
+      assert_not status.success?, "a missing root must fail the walk, not drop out of it"
+
+      odd = File.join(dir, "work", "odd\nname")
+      FileUtils.mkdir_p(odd)
+      File.write(File.join(odd, "CACHEDIR.TAG"), "")
+      _, status = run.call(File.join(dir, "work"))
+      assert_not status.success?, "a newline in a tag path must fail the walk"
+    end
+  end
+
 end

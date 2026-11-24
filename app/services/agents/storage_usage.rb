@@ -18,22 +18,33 @@ module Agents
     # walk lists every directory carrying a CACHEDIR.TAG (cargo writes one at
     # the root of every target dir, whatever it is named: target/,
     # chaos-target/, the image's shared .cargo-target) in the work and state
-    # volumes, with its size. Metadata only: names and sizes, never contents.
-    # It has its own budget and its own failure, so it can never cost the
-    # home's total.
+    # volumes, at any depth, with its size. Metadata only: names and sizes,
+    # never contents. It has its own budget and its own failure, so it can
+    # never cost the home's total. Any traversal or sizing error, and any
+    # tag path with a newline in it, fails the whole walk: a partial list
+    # must never read as a complete one.
     CACHE_SECONDS = 240
     CACHE_RUN_SECONDS = CACHE_SECONDS + 30
     CACHE_VOLUMES = %w[work state].freeze
     CACHE_MIN_BYTES = 1.gigabyte
+    # The list keeps the largest CACHE_LIMIT; cache_dirs_more counts the rest.
     CACHE_LIMIT = 20
     # The resident-health check (RJpgYx) warns from here up. A warning, not a cap.
     CACHE_WARNING_BYTES = 20.gigabytes
     CACHE_SCRIPT = <<~'SH'.freeze
+      status=0
       for root in "$@"; do
-        find "$root" -xdev -maxdepth 8 -type f -name CACHEDIR.TAG 2>/dev/null
-      done | while IFS= read -r tag; do
-        du -sk "${tag%/CACHEDIR.TAG}"
+        [ -d "$root" ] || exit 3
+        find "$root" -xdev -type f -name CACHEDIR.TAG -exec sh -c '
+          nl="
+      "
+          for tag; do
+            case "$tag" in *"$nl"*) exit 4 ;; esac
+            du -sk "${tag%/CACHEDIR.TAG}" || exit 5
+          done
+        ' cache-du {} + || status=1
       done
+      exit "$status"
     SH
 
     def initialize(agent)
@@ -120,18 +131,23 @@ module Agents
       )
       return { cache_dirs_failure: "walk_failed" } unless result[:ok]
 
-      dirs = result[:stdout].lines.filter_map do |line|
-        match = line.match(%r{\A(\d+)\s+/measure/(work|state)/(.+?)\s*\z})
+      stdout = result[:stdout].to_s.dup.force_encoding(Encoding::UTF_8)
+      return { cache_dirs_failure: "unreadable" } unless stdout.valid_encoding?
+
+      dirs = stdout.lines.filter_map do |line|
+        match = line.match(%r{\A(\d+)\t/measure/(work|state)/([^\n]+)\n?\z})
         return { cache_dirs_failure: "unreadable" } unless match
 
         bytes = Integer(match[1]) * 1024
         { "volume" => match[2], "path" => match[3], "bytes" => bytes } if bytes >= CACHE_MIN_BYTES
       end
-      { cache_dirs: dirs.sort_by { |dir| -dir["bytes"] }.first(CACHE_LIMIT) }
+      { cache_dirs: dirs.sort_by { |dir| -dir["bytes"] }.first(CACHE_LIMIT), cache_dirs_more: [ dirs.size - CACHE_LIMIT, 0 ].max }
     rescue Timeout::Error
       { cache_dirs_failure: "timeout" }
     rescue Agents::Resources::OwnershipError, SystemCallError
       { cache_dirs_failure: "docker_unavailable" }
+    rescue ArgumentError, EncodingError
+      { cache_dirs_failure: "unreadable" }
     ensure
       remove_helper(@cache_helper_name) if @cache_helper_name
     end
