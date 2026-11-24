@@ -133,9 +133,10 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :redirect
     attempt = ServiceAuthorizationAttempt.order(:id).last
     assert_nil attempt.access_profile
-    assert_equal selection.stringify_keys, attempt.authority_selection
+    assert_equal selection.stringify_keys.merge("colab" => "none"), attempt.authority_selection
     assert_not attempt.requested_scopes.any? { |scope| scope.include?("gmail") }
     assert_not attempt.requested_scopes.any? { |scope| scope.include?("meetings.space") }
+    assert_not_includes attempt.requested_scopes, "https://www.googleapis.com/auth/colaboratory"
   end
 
   test "rejects forged Google authority options" do

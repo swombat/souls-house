@@ -32,6 +32,10 @@ COLAB_PA_ORIGIN = "https://colab.pa.googleapis.com"
 XSSI_PREFIX = ")]}'\n"
 
 
+class RedirectRefusedError(urllib.error.HTTPError):
+    """Raised when RefuseRedirects blocks a redirect carrying a credential."""
+
+
 class RefuseRedirects(urllib.request.HTTPRedirectHandler):
     """Never follow a redirect: requests carry house or Google credentials, and
     urllib would re-send Authorization headers to whatever origin Location names."""
@@ -42,7 +46,7 @@ class RefuseRedirects(urllib.request.HTTPRedirectHandler):
             f"refused to follow a redirect ({code}) to {target} with a credential; "
             "check SOULSHOUSE_APP_URL"
         )
-        raise urllib.error.HTTPError(
+        raise RedirectRefusedError(
             req.full_url, code, message, headers, io.BytesIO(message.encode())
         )
 
@@ -111,8 +115,11 @@ def main() -> int:
     except (KeyError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 66
-    except urllib.error.HTTPError as error:
+    except RedirectRefusedError as error:
         print(f"Souls token broker returned HTTP {error.code} ({error.reason})", file=sys.stderr)
+        return 1
+    except urllib.error.HTTPError as error:
+        print(f"Souls token broker returned HTTP {error.code}", file=sys.stderr)
         return 1
     except Exception as error:
         print(f"Could not obtain a Google access token: {error}", file=sys.stderr)
@@ -267,14 +274,22 @@ def run_ccu_info(access_token: str) -> int:
     return 0
 
 
+def probe_endpoint(url: str, access_token: str) -> int | str:
+    try:
+        status, _ = colab_get(url, access_token)
+        return status
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        return f"transport_error:{type(error).__name__}"
+
+
 def run_check(connection_id: str | None, access_token: str) -> int:
     tokeninfo_status, scopes = fetch_tokeninfo(access_token)
 
-    session_status, _ = colab_get(f"{COLAB_ORIGIN}/tun/m/ccu-info", access_token)
-    public_runtimes_status, _ = colab_get(
+    session_status = probe_endpoint(f"{COLAB_ORIGIN}/tun/m/ccu-info", access_token)
+    public_runtimes_status = probe_endpoint(
         f"{COLAB_PUBLIC_API_ORIGIN}/v1beta/runtimes", access_token
     )
-    pa_user_info_status, _ = colab_get(f"{COLAB_PA_ORIGIN}/v1/user-info", access_token)
+    pa_user_info_status = probe_endpoint(f"{COLAB_PA_ORIGIN}/v1/user-info", access_token)
 
     has_scope = COLABORATORY_SCOPE in scopes
     report = {
