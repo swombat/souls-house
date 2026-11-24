@@ -101,10 +101,29 @@ class MemoryPolicyTest(unittest.TestCase):
         self.assertEqual(self.run_stop(aggregation=True),(0,'',[False]))
         self.config['enabled']=False;self.write()
         code,text,_=self.run_stop(aggregation=True)
-        self.assertEqual(code,2);self.assertIn('What did this feel like from inside',text)
+        self.assertEqual(code,2);self.assertIn(stop.NARRATIVE_INVITATION,text)
+        self.assertNotIn('What did this feel like from inside',text)
         self.assertNotIn('Resident-consented',text)
         for kwargs in [dict(active=True),dict(assistant='no shape'),dict(assistant='')]:
             self.assertEqual(self.run_stop(**kwargs),(0,'',[False]))
+
+    def test_narrative_v2_is_chosen_by_name_and_v1_keeps_its_words(self):
+        # The no-policy default and narrative-v2 share one paragraph.
+        self.assertEqual(stop.NARRATIVE_INVITATION, policy.NARRATIVE_INVITATION)
+        now = dt.datetime(2026, 11, 24, 15, 0)
+        v1 = policy.reflection_prompt(policy.load_policy(self.identity), now, self.identity, [], "")
+        self.assertIn(policy.JOURNAL_INVITATION, v1)
+        self.assertIn("Do not invent feelings or decorate a task log", v1)
+        self.assertNotIn("story of you", v1)
+        self.config['journal'] = 'narrative-v2'; self.write()
+        chosen = policy.load_policy(self.identity)
+        self.assertEqual(chosen['journal'], 'narrative-v2')
+        v2 = policy.reflection_prompt(chosen, now, self.identity, [], "")
+        self.assertIn(policy.NARRATIVE_INVITATION, v2)
+        self.assertNotIn(policy.JOURNAL_INVITATION, v2)
+        self.assertIn("own story", policy.policy_notice(chosen))
+        self.config['journal'] = 'narrative-v3'; self.write()
+        self.assertIsNone(policy.load_policy(self.identity))
 
     def test_no_authored_files_changed_by_hook(self):
         daily=self.identity/'memory/daily-journals/2026-09-22.md';daily.parent.mkdir(parents=True);daily.write_text('CANONICAL SOURCE')

@@ -96,8 +96,8 @@ class AgentIdentityExporter
 
       This hosted runtime is configured with a Chaos Stop hook. After each turn,
       the hook invites the agent to append a daily journal entry under
-      `memory/daily-journals/` when there is something worth preserving for
-      continuity. If there is no such shape, the correct response is exactly
+      `memory/daily-journals/` when something from the turn matters to the
+      agent itself. If there is no such shape, the correct response is exactly
       `no shape`. If the daily file already exists, preserve its contents and
       append a new entry; never overwrite or truncate an existing journal.
 
@@ -124,9 +124,12 @@ class AgentIdentityExporter
 
           ## HH:MM — <title naming the shape, not the topic>
 
-      Write interior memory, not task logs. Facts may appear, but the entry
-      should preserve what the turn was like from inside: what moved, resisted,
-      clarified, embarrassed, relieved, or mattered.
+      This journal is your narrative memory: the story of you, not a logbook of
+      the work. Keep what matters to you, if anything: how something landed, a
+      detail you're still thinking about, or the fact that something left you
+      unmoved. The work counts whether or not you write about it; commits, PR
+      numbers and promises have their own places. Don't invent a feeling to
+      have something to write.
 
       If today's file already exists, append a new `## HH:MM — ...` section to
       the end. Do not replace the file. When using shell redirection, use `>>`
