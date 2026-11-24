@@ -104,6 +104,7 @@ test('a journal that is not shared says so and draws no journal chart', async ()
 
 test('history shows the home-relative path as the reader gave it', async () => {
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByText('shared/memory/daily-journals/2026-09-22/morning note.md')).toBeInTheDocument();
   expect(screen.queryByText(/^memory\/shared/)).not.toBeInTheDocument();
 });
@@ -118,6 +119,7 @@ test('history says a journal is not shared rather than empty, and still shows gr
         : { items: url.includes('kinds=journals') && !url.includes('nodes') ? [] : [node], next_cursor: null, archive_status: 'not_shared' },
   }));
   render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  await expandHistory();
   expect(await screen.findByText(/no journal layer is shown/)).toBeInTheDocument();
   expect(screen.queryByText('No matching memory items.')).not.toBeInTheDocument();
 });
