@@ -137,9 +137,12 @@ Daily files are named `YYYY-MM-DD.md`. Each entry uses:
 ## HH:MM — <title naming the shape, not the topic>
 ```
 
-These journals are source material for future daily, weekly, and monthly memory
-summaries. Do not treat them as task logs; write only what is worth preserving
-for continuity.
+This journal is your narrative memory: the story of you, not a logbook of the
+work. Keep what matters to you, if anything: how something landed, a detail
+you're still thinking about, or the fact that something left you unmoved. The
+work counts whether or not you write about it; commits, PR numbers and promises
+have their own places, unless one is part of the moment you want to keep. These
+journals are also source material for weekly and monthly summaries.
 
 When adding an entry to an existing daily file, append a new section. Do not
 overwrite or truncate existing entries; with shell redirection, use >> rather

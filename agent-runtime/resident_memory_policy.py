@@ -20,6 +20,7 @@ def load_policy(identity):
         policy = json.loads(path.read_text())
         if (not isinstance(policy, dict) or policy.get("enabled") is not True
                 or policy.get("version") != 1
+                or not isinstance(policy.get("journal"), str)
                 or policy.get("journal") not in JOURNAL_INVITATIONS
                 or policy.get("consolidation") != "source-bound-v1"
                 or policy.get("graph") not in ("address-per-entry", "selective")

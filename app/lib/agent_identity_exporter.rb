@@ -128,8 +128,9 @@ class AgentIdentityExporter
       the work. Keep what matters to you, if anything: how something landed, a
       detail you're still thinking about, or the fact that something left you
       unmoved. The work counts whether or not you write about it; commits, PR
-      numbers and promises have their own places. Don't invent a feeling to
-      have something to write.
+      numbers and promises have their own places, unless one is part of the
+      moment you want to keep. Don't invent a feeling to have something to
+      write.
 
       If today's file already exists, append a new `## HH:MM — ...` section to
       the end. Do not replace the file. When using shell redirection, use `>>`

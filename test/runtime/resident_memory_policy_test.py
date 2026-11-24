@@ -124,6 +124,9 @@ class MemoryPolicyTest(unittest.TestCase):
         self.assertIn("own story", policy.policy_notice(chosen))
         self.config['journal'] = 'narrative-v3'; self.write()
         self.assertIsNone(policy.load_policy(self.identity))
+        for malformed in ([], {}, ['narrative-v2'], None, 2):
+            self.config['journal'] = malformed; self.write()
+            self.assertIsNone(policy.load_policy(self.identity), malformed)
 
     def test_no_authored_files_changed_by_hook(self):
         daily=self.identity/'memory/daily-journals/2026-09-22.md';daily.parent.mkdir(parents=True);daily.write_text('CANONICAL SOURCE')
