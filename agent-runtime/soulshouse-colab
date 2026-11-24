@@ -261,7 +261,7 @@ def fetch_tokeninfo(access_token: str) -> tuple[int, list[str]]:
 
 
 def run_ccu_info(access_token: str) -> int:
-    status, body = colab_get(f"{COLAB_ORIGIN}/tun/m/ccu-info", access_token)
+    status, body = colab_get(f"{COLAB_ORIGIN}/tun/m/ccu-info?authuser=0", access_token)
     cleaned = strip_xssi(body).strip()
     if status != 200:
         print(f"Colab ccu-info returned HTTP {status}", file=sys.stderr)
@@ -285,7 +285,7 @@ def probe_endpoint(url: str, access_token: str) -> int | str:
 def run_check(connection_id: str | None, access_token: str) -> int:
     tokeninfo_status, scopes = fetch_tokeninfo(access_token)
 
-    session_status = probe_endpoint(f"{COLAB_ORIGIN}/tun/m/ccu-info", access_token)
+    session_status = probe_endpoint(f"{COLAB_ORIGIN}/tun/m/ccu-info?authuser=0", access_token)
     public_runtimes_status = probe_endpoint(
         f"{COLAB_PUBLIC_API_ORIGIN}/v1beta/runtimes", access_token
     )
