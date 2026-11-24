@@ -282,7 +282,8 @@ test('does not say "this Mac" on Linux and shows per-resident commands-off warni
   expect(notes).toHaveLength(1);
   expect(notes[0].textContent).not.toContain('Mac');
   expect(notes[0].textContent).toContain('Mira');
-  expect(notes[0].textContent).toContain('souls-house-companion commands on --all');
+  expect(notes[0].textContent).toContain('souls-house-companion policy apply');
+  expect(notes[0].textContent).toContain('would allow every resident');
   unmountMixed();
 
   // Unknown platform stays neutral instead of assuming Mac.

@@ -29,8 +29,8 @@
       : null
   );
   const linuxInstallCommand = $derived(
-    linuxInstaller
-      ? `f=$(mktemp) && curl -fsSL --proto '=https' --tlsv1.2 -o "$f" '${linuxInstaller.url.replaceAll("'", "'\\''")}' && sh "$f"; rm -f "$f"`
+    linuxInstaller && /^[0-9a-f]{64}$/i.test(linuxInstaller.sha)
+      ? `f=$(mktemp) && (curl -fsSL --proto '=https' --tlsv1.2 -o "$f" '${linuxInstaller.url.replaceAll("'", "'\\''")}' && printf '%s  %s\\n' '${linuxInstaller.sha.toLowerCase()}' "$f" | sha256sum -c --quiet && sh "$f"; rc=$?; rm -f "$f"; exit "$rc")`
       : null
   );
   const linux = $derived(
