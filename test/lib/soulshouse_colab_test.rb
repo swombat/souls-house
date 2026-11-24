@@ -75,7 +75,7 @@ class SoulshouseColabTest < ActiveSupport::TestCase
       mod.NO_REDIRECT_OPENER = FakeOpener()
       rc = mod.run_ccu_info("short-lived-colab-token")
       assert rc == 0, rc
-      assert seen == [("https://colab.research.google.com/tun/m/ccu-info", "Bearer short-lived-colab-token")], seen
+      assert seen == [("https://colab.research.google.com/tun/m/ccu-info?authuser=0", "Bearer short-lived-colab-token")], seen
     PYTHON
 
     stdout, stderr, status = Open3.capture3("python3", "-c", runner, SCRIPT.to_s)
@@ -94,7 +94,7 @@ class SoulshouseColabTest < ActiveSupport::TestCase
 
       responses = {
           "https://oauth2.googleapis.com/tokeninfo": (200, b'{"scope":"openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/colaboratory","email":"secret@example.com"}'),
-          "https://colab.research.google.com/tun/m/ccu-info": (200, b")]}'\\n{\\"secretBalance\\": 99}"),
+          "https://colab.research.google.com/tun/m/ccu-info?authuser=0": (200, b")]}'\\n{\\"secretBalance\\": 99}"),
           "https://colaboratory.googleapis.com/v1beta/runtimes": (200, b'{"runtimes":[]}'),
           "https://colab.pa.googleapis.com/v1/user-info": ("transport_error", None),
       }
