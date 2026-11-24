@@ -145,7 +145,8 @@ BEGIN
         FROM _sqlx_migrations WHERE success
     $q$) AS t(m TEXT);
     IF carried > 0 AND src_migrations IS DISTINCT FROM dst_migrations THEN
-        RAISE EXCEPTION 'source and destination Chaos migrations differ; open the source once with the destination''s binary first';
+        RAISE EXCEPTION 'source and destination Chaos migrations differ'
+            USING HINT = 'Back up the source. With the resident stopped, use its binary and database environment in a maintenance container: CHAOS_HOME=/home/agent/.chaos/oauth-runtime chaos hooks list. Close the maintenance container and repeat the dry run.';
     END IF;
 
     IF carried > 0 THEN

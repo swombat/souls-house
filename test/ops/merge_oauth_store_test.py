@@ -21,11 +21,17 @@ OAUTH = f'storage_url = "postgres://oauth_user:{SECRET}@pg:5432/oauth_db"\n'
 
 
 class FakeHost:
-    def __init__(self, running=False, files=None, merged=False, sql_fails=False):
+    def __init__(self, running=False, files=None, merged=False, sql_fails=False,
+                 volume_name=None, mount_type="volume", volume_missing=False, bind_missing=False):
         self.running = running
         self.files = {"config.toml": MAIN, "oauth-runtime/config.toml": OAUTH} if files is None else files
         self.merged = merged
         self.sql_fails = sql_fails
+        self.name = volume_name or f"chaos-home-{AGENT}"
+        self.mountpoint = f"/var/lib/docker/volumes/{self.name}/_data"
+        self.mount_type = mount_type
+        self.volume_missing = volume_missing
+        self.bind_missing = bind_missing
         self.calls = []
 
     def __call__(self, *args, input=None, check=True):
@@ -33,16 +39,33 @@ class FakeHost:
         ok = lambda out="", err="": subprocess.CompletedProcess(args, 0, out, err)
         if args[0] == "inspect":
             return ok(json.dumps([{"State": {"Running": self.running}, "Image": "sha256:img",
-                                    "Config": {"Env": ["A=b"]}}]))
+                                    "Config": {"Env": ["A=b"]}, "Mounts": [
+                                        {"Destination": "/home/agent/identity", "Type": "volume",
+                                         "Name": "unrelated"},
+                                        {"Destination": "/home/agent/.chaos", "Type": self.mount_type,
+                                         "Name": self.name, "Source": self.mountpoint},
+                                    ]}]))
+        if args[:2] == ("volume", "inspect"):
+            assert args[2] == self.name
+            if self.volume_missing:
+                return subprocess.CompletedProcess(args, 1, "", "No such volume")
+            return ok(json.dumps([{"Name": self.name, "Driver": "local",
+                                   "Mountpoint": self.mountpoint, "Options": None}]))
         if args[0] == "run":
+            assert "-v" not in args
+            mount = args[args.index("--mount") + 1]
+            base = f"type=bind,source={self.mountpoint},target=/c"
             command = list(args[args.index("--entrypoint") + 1:])
-            if command[0] == "cat":
-                path = command[2][len("/c/"):]
+            if self.bind_missing:
+                return subprocess.CompletedProcess(args, 125, "", "bind source path does not exist")
+            if command[0] == "sh":
+                assert mount == base + ",readonly"
+                path = command[-1][len("/c/"):]
                 if path in self.files:
                     return ok(self.files[path])
-                return subprocess.CompletedProcess(args, 1, "", "No such file")
+                return subprocess.CompletedProcess(args, merge.MISSING_FILE, "", "")
             if command[0] == "mv":
-                assert ":ro" not in args[args.index("-v") + 1]
+                assert mount == base
                 src, dst = command[2][len("/c/"):], command[3][len("/c/"):]
                 self.files[dst] = self.files.pop(src)
                 return ok()
@@ -96,6 +119,32 @@ class MergeDriverTest(unittest.TestCase):
         with self.assertRaises(merge.Refused):
             self.go(host)
         self.assertEqual([a[0] for a, _ in host.calls], ["inspect"])
+
+    def test_vm_name_is_discovered_and_used_for_reads_and_move(self):
+        host = FakeHost(volume_name=f"hk-agent-{AGENT}-chaos")
+        code, _ = self.go(host)
+        self.assertEqual(code, 0)
+        self.assertIn(f"oauth-runtime/{merge.MOVED_NAME}", host.files)
+        self.assertIn(f"type=bind,source={host.mountpoint},target=/c,readonly", self.all_args(host))
+        self.assertNotIn(f"chaos-home-{AGENT}", self.all_args(host))
+
+    def test_unexpected_mount_type_refuses(self):
+        host = FakeHost(mount_type="bind")
+        with self.assertRaisesRegex(merge.Refused, "exactly one named volume"):
+            self.go(host)
+        self.assertEqual([a[0] for a, _ in host.calls], ["inspect"])
+
+    def test_missing_volume_refuses_before_starting_a_helper(self):
+        host = FakeHost(volume_missing=True)
+        with self.assertRaisesRegex(merge.Refused, "cannot inspect"):
+            self.go(host)
+        self.assertEqual([a[0] for a, _ in host.calls], ["inspect", "volume"])
+
+    def test_bind_failure_cannot_report_nothing_to_merge(self):
+        host = FakeHost(bind_missing=True)
+        with self.assertRaisesRegex(merge.Refused, "could not read"):
+            self.go(host, dry_run=True)
+        self.assertEqual([a[0] for a, _ in host.calls], ["inspect", "volume", "run"])
 
     def test_failed_merge_leaves_the_config_in_place(self):
         host = FakeHost(sql_fails=True)

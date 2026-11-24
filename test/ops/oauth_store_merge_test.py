@@ -209,6 +209,7 @@ class OauthStoreMergeTest(unittest.TestCase):
         psql(self.src, "DELETE FROM _sqlx_migrations WHERE version = 38")
         result = self.merge(check=False)
         self.assertIn("migrations differ", result.stderr)
+        self.assertIn("CHAOS_HOME=/home/agent/.chaos/oauth-runtime chaos hooks list", result.stderr)
 
     def test_an_empty_source_is_only_marked_even_on_an_older_schema(self):
         add_process(self.dst, "main-1")
