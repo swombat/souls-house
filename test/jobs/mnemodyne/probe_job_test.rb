@@ -37,4 +37,19 @@ class Mnemodyne::ProbeJobTest < ActiveSupport::TestCase
     %w[MNEMODYNE_EMBEDDING_URL MNEMODYNE_EMBEDDING_PROFILE].each { |key| ENV[key] = previous[key] }
   end
 
+
+  test "the probe precheck does not carry a caller's active exception" do
+    error = Rails.error.stub(:report, ->(*, **) { }) do
+      Mnemodyne::Embeddings.stub(:configured?, false) do
+        begin
+          raise RuntimeError, "outer-private-detail"
+        rescue RuntimeError
+          assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::ProbeJob.perform_now }
+        end
+      end
+    end
+    assert_nil error.cause
+    assert_not_includes error.full_message, "outer-private-detail"
+  end
+
 end

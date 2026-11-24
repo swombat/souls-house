@@ -1,7 +1,7 @@
 class Mnemodyne::ProbeJob < ApplicationJob
 
   def perform
-    raise Mnemodyne::Embeddings::Unavailable.new(:not_configured) unless Mnemodyne::Embeddings.configured?
+    raise Mnemodyne::Embeddings::Unavailable.new(:not_configured), cause: nil unless Mnemodyne::Embeddings.configured?
     Mnemodyne::Embeddings.embed("Synthetic Mnemodyne readiness probe")
   rescue Mnemodyne::Embeddings::Unavailable => error
     # The message is the reason ("... unavailable: rate_limited (429)"), so the

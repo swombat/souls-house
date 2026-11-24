@@ -262,7 +262,8 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     with_endpoint do |endpoint|
       endpoint.to_return(body: "not-json")
       assert_unavailable(:invalid_response, error_class: "JSON::ParserError") { Mnemodyne::Embeddings.embed("Synthetic text") }
-      [ "{}", { data: [ { embedding: [ 0, 0 ] } ] }.to_json, { data: [ { embedding: "nope" } ] }.to_json ].each do |body|
+      [ "{}", "[]", "null", "1", "\"x\"", { data: nil }.to_json, { data: [ { embedding: [ 0, 0 ] } ] }.to_json,
+        { data: [ { embedding: "nope" } ] }.to_json ].each do |body|
         endpoint.to_return(body: body)
         assert_unavailable(:invalid_response) { Mnemodyne::Embeddings.embed("Synthetic text") }
       end
@@ -334,6 +335,29 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
       text = [ error.message, error.inspect, error.context.inspect, error.full_message ].join("\n")
       secrets.each { |secret| assert_not_includes text, secret, error.message }
       assert_nil error.cause
+    end
+  end
+
+
+  test "a caller's active exception never becomes the cause of a direct raise" do
+    outer = "outer-private-detail at https://synthetic-embeddings.invalid"
+    cases = {
+      not_configured: -> { with_voyage(key: nil) { |_| Mnemodyne::Embeddings.embed("x") } },
+      bad_endpoint: -> { with_endpoint { |_| ENV["MNEMODYNE_EMBEDDING_URL"] = "http://synthetic.invalid/e"; Mnemodyne::Embeddings.embed("x") } },
+      http_status: -> { with_endpoint { |e| e.to_return(status: 500, body: "{}"); Mnemodyne::Embeddings.embed("x") } },
+      body_too_large: -> { with_endpoint { |e| e.to_return(body: "x" * 200_001); Mnemodyne::Embeddings.embed("x") } },
+      invalid_response: -> { with_endpoint { |e| e.to_return(body: "[]"); Mnemodyne::Embeddings.embed("x") } },
+      rate_limited: -> { with_endpoint { |e| e.to_return(status: 503, body: "{}"); Mnemodyne::Embeddings.embed("x") } }
+    }
+    cases.each do |reason, call|
+      error = begin
+        raise RuntimeError, outer
+      rescue RuntimeError
+        assert_raises(Mnemodyne::Embeddings::Unavailable, reason.to_s) { call.call }
+      end
+      assert_equal reason, error.reason
+      assert_nil error.cause, reason.to_s
+      assert_not_includes error.full_message, "outer-private-detail", reason.to_s
     end
   end
 

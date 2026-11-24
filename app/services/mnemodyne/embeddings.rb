@@ -93,7 +93,7 @@ class Mnemodyne::Embeddings
   end
 
   def self.embed_many(texts, input_type: :document, seconds: BATCH_SECONDS)
-    raise Unavailable.new(:not_configured) unless configured?
+    raise Unavailable.new(:not_configured), cause: nil unless configured?
     raise ArgumentError unless texts.is_a?(Array) && texts.length.between?(1, BATCH_SIZE) && texts.all?(String)
     raise ArgumentError unless INPUT_TYPES.key?(input_type)
     raise ArgumentError if texts.length > 1 && !batched?
@@ -119,7 +119,7 @@ class Mnemodyne::Embeddings
       end
     end
     vectors = parse_vectors(body, texts.length)
-    raise Unavailable.new(:invalid_response) unless vectors.all? { |vector| valid_vector?(vector) } && vectors.map(&:length).uniq.one?
+    raise Unavailable.new(:invalid_response), cause: nil unless vectors.all? { |vector| valid_vector?(vector) } && vectors.map(&:length).uniq.one?
     vectors
   rescue Unavailable
     raise
@@ -139,9 +139,9 @@ class Mnemodyne::Embeddings
 
   def self.accessory_request(text)
     uri = URI(ENV.fetch("MNEMODYNE_EMBEDDING_URL"))
-    raise Unavailable.new(:bad_endpoint) unless uri.is_a?(URI::HTTP) && uri.userinfo.nil?
+    raise Unavailable.new(:bad_endpoint), cause: nil unless uri.is_a?(URI::HTTP) && uri.userinfo.nil?
     private_hosts = %w[souls-house-embeddings localhost 127.0.0.1 ::1]
-    raise Unavailable.new(:bad_endpoint) unless uri.scheme == "https" || private_hosts.include?(uri.host)
+    raise Unavailable.new(:bad_endpoint), cause: nil unless uri.scheme == "https" || private_hosts.include?(uri.host)
     request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
     request["Authorization"] = "Bearer #{ENV['MNEMODYNE_EMBEDDING_TOKEN']}" if ENV["MNEMODYNE_EMBEDDING_TOKEN"].present?
     request.body = { input: text, model: profile }.to_json
@@ -162,11 +162,13 @@ class Mnemodyne::Embeddings
   # indexes must be exactly 0...count (no duplicates, gaps or strays), or the
   # whole answer is refused. A single unindexed answer is the accessory's shape.
   def self.parse_vectors(body, count)
-    data = JSON.parse(body)["data"]
-    raise Unavailable.new(:invalid_response) unless data.is_a?(Array) && data.length == count && data.all?(Hash)
+    parsed = JSON.parse(body)
+    raise Unavailable.new(:invalid_response), cause: nil unless parsed.is_a?(Hash)
+    data = parsed["data"]
+    raise Unavailable.new(:invalid_response), cause: nil unless data.is_a?(Array) && data.length == count && data.all?(Hash)
     return [ data.first["embedding"] ] if count == 1 && !data.first.key?("index")
     indexes = data.map { |row| row["index"] }
-    raise Unavailable.new(:invalid_response) unless indexes.all?(Integer) && indexes.sort == (0...count).to_a
+    raise Unavailable.new(:invalid_response), cause: nil unless indexes.all?(Integer) && indexes.sort == (0...count).to_a
     data.sort_by { |row| row["index"] }.map { |row| row["embedding"] }
   end
   private_class_method :parse_vectors
@@ -185,13 +187,13 @@ class Mnemodyne::Embeddings
           drained = 0
           response.read_body do |chunk|
             drained += chunk.bytesize
-            raise Unavailable.new(:body_too_large, status: busy) if drained > MAXIMUM_BODY_BYTES
+            raise Unavailable.new(:body_too_large, status: busy), cause: nil if drained > MAXIMUM_BODY_BYTES
           end
           next
         end
-        raise Unavailable.new(:http_status, status: response.code.to_i) unless response.is_a?(Net::HTTPSuccess)
+        raise Unavailable.new(:http_status, status: response.code.to_i), cause: nil unless response.is_a?(Net::HTTPSuccess)
         response.read_body do |chunk|
-          raise Unavailable.new(:body_too_large) if body.bytesize + chunk.bytesize > limit
+          raise Unavailable.new(:body_too_large), cause: nil if body.bytesize + chunk.bytesize > limit
           body << chunk
         end
       end
