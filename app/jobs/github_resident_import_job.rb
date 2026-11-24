@@ -22,6 +22,10 @@ class GithubResidentImportJob < ApplicationJob
       request.require_approval!
       request.update!(status: "provisioning", last_error: nil)
     end
+    # Moved to the main server by a site admin before it ever started
+    # (GithubResidentImport#move_to!): brought home once its server is gone,
+    # then set up below exactly as a new main-server import is.
+    return if on_vm?(request.agent) && request.placement == "main_server" && !bring_home!(request)
     # Already placed on its own VM: retried there, whatever the switch says
     # now, and never on the house.
     return continue_on_vm!(request) if on_vm?(request.agent)
@@ -61,6 +65,9 @@ class GithubResidentImportJob < ApplicationJob
       # operator investigation; do not infer completeness from non-emptiness.
       volume.seed_from_directory!(root) unless agent.identity_seeded_at
       agent.update!(identity_seeded_at: Time.current) unless agent.identity_seeded_at
+      # A home brought back from its own server kept its reviewed copy until
+      # now (bring_home!): the house's seed has succeeded, so it can go.
+      agent.import_stages.delete_all if agent.import_stages.exists?
       agent.agent_service_accesses.find_or_create_by!(service_connection: request.service_connection) do |access|
         access.enabled = true
         access.follows_default = false
@@ -110,6 +117,48 @@ class GithubResidentImportJob < ApplicationJob
   end
 
   def on_vm?(agent) = agent&.placement&.kind == "github_import"
+
+  BRING_HOME_WAITING = "Its own server is still being released. Retry activation in a minute.".freeze
+
+  # A never-started import a site admin moved to the main server. Only once
+  # VmCleanupJob has retired its placement (the server deleted, its slot
+  # freed) does the placement become local at the next generation, as
+  # Agents::VmMigration#return_to_house! does; the staged reviewed home is
+  # kept until the house's seed succeeds, in case the approved revision can't
+  # be fetched again (Mira, #1109). The VM-derived container name
+  # and runtime are then cleared and the house's own provisioning prepares
+  # them, so the local ownership check (Agents::Resources#validate!) sees
+  # this house's names on a namespaced house too (Mira, #1109). Returns
+  # false, with the request waiting for another retry, when it can't yet.
+  def bring_home!(request)
+    placement_id = request.agent.placement.id
+    result = ProvisionVmAgentJob.exclusively(placement_id) do
+      AgentPlacement.transaction do
+        agent = Agent.lock.find(request.agent.id)
+        placement = AgentPlacement.lock.find(placement_id)
+        next :wait unless placement.backend == "hetzner_cloud" && placement.kind == "github_import" &&
+          placement.state == "retired" && agent.runtime_ready_at.nil? && agent.identity_seeded_at.nil?
+
+        placement.update!(backend: "local", kind: nil, state: "ready", generation: placement.generation + 1,
+          house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
+          cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
+          location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil)
+        agent.update_columns(container_name: nil, sandbox_host: nil, endpoint_url: nil, runtime: "provisioning",
+          active: false, paused: true, health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil,
+          updated_at: Time.current)
+        Agents::HostedProvisioning.new(agent: agent.reload, user: request.requested_by).prepare!(started_at: Time.current)
+        AuditLog.create!(action: "github_import_brought_home", user: request.approved_by, account: agent.account,
+          auditable: agent, data: { "github_resident_import_id" => request.id, "placement_id" => placement.id,
+            "generation" => placement.generation })
+        :home
+      end
+    end
+    # Read afresh, so nothing below sees the VM placement it had.
+    return request.agent.reload && true if result == :home
+
+    request.update!(status: "needs_runtime_trust", last_error: BRING_HOME_WAITING)
+    false
+  end
 
   # A new import on its own VM. The reviewed checkout is packed now, outside
   # the admission lock; the resident, its placement and its staged home are

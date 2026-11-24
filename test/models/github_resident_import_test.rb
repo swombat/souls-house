@@ -308,4 +308,11 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     assert elsewhere.home_held_elsewhere?
   end
 
+
+  test "where an import goes changes only through a move" do
+    request = import_request
+    assert_not request.update(placement: "own_server")
+    assert_includes request.errors[:base], "Submit a new request to change reviewed configuration"
+  end
+
 end

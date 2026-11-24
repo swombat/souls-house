@@ -4,7 +4,7 @@ class GithubResidentImportsController < ApplicationController
 
   require_feature_enabled :agents
   before_action :require_import_authority!
-  before_action :set_import, only: [ :show, :approve, :refresh, :retry_activation ]
+  before_action :set_import, only: [ :show, :approve, :refresh, :retry_activation, :move ]
 
   def new
     render_import
@@ -81,6 +81,19 @@ class GithubResidentImportsController < ApplicationController
     redirect_to account_github_resident_import_path(current_account, @import), alert: "Activation requires valid approval and operator runtime trust."
   end
 
+  # A site admin moves a never-started import between the main server and
+  # its own server (GithubResidentImport#move_to!).
+  def move
+    return head :forbidden unless Current.user.is_site_admin?
+    destination = @import.move_to!(params.require(:destination).to_s, by: Current.user)
+    label = destination == "own_server" ? "its own server" : "the main server"
+    redirect_to account_github_resident_import_path(current_account, @import), notice: "Import moved to #{label}."
+  rescue GithubResidentImport::MoveRefused => refused
+    redirect_to account_github_resident_import_path(current_account, @import), alert: refused.message
+  rescue ArgumentError, ActionController::ParameterMissing
+    redirect_to account_github_resident_import_path(current_account, @import), alert: "Choose main server or its own server."
+  end
+
   def refresh
     @import.refresh_review!(Current.user)
     audit(:refresh_github_resident_import_review, @import, commit_sha: @import.commit_sha)
@@ -108,6 +121,14 @@ class GithubResidentImportsController < ApplicationController
     raise ArgumentError, "Choose main server or own server" unless GithubResidentImport::PLACEMENTS.include?(value)
 
     value
+  end
+
+  # Only for a site admin, and only while the import can still move.
+  def move_props
+    return unless @import && Current.user.is_site_admin?
+    destination = @import.movable_to or return
+    { url: move_account_github_resident_import_path(current_account, @import), destination:,
+      label: destination == "own_server" ? "Move to its own server" : "Move to the main server" }
   end
 
   def placement_options
@@ -147,6 +168,7 @@ class GithubResidentImportsController < ApplicationController
       approve_url: can_manage_import ? approve_account_github_resident_import_path(current_account, @import) : nil,
       refresh_url: can_manage_import ? refresh_account_github_resident_import_path(current_account, @import) : nil,
       retry_activation_url: can_manage_import ? retry_activation_account_github_resident_import_path(current_account, @import) : nil,
+      move: move_props,
       can_approve: can_manage_import,
       future_branch_trust_notice: GithubResidentImport::FUTURE_BRANCH_TRUST_NOTICE,
       runtime_trust_notice: @import ? @import.runtime_trust_notice : GithubResidentImport::RUNTIME_TRUST_NOTICE
