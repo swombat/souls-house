@@ -25,6 +25,9 @@ TRACE_PATH = STATE_DIR / "stop-events.jsonl"
 DAILY_DIR = IDENTITY_PATH / "memory" / "daily-journals"
 AGENT_SLUG = os.environ.get("AGENT_SLUG") or os.environ.get("AGENT_ID") or "agent"
 
+# The same paragraph is resident_memory_policy.NARRATIVE_INVITATION (narrative-v2).
+NARRATIVE_INVITATION = """This journal is your narrative memory: the story of you, not a logbook of the work. If there's something from this turn you want to keep, write it in your own voice. It might be how something landed, a detail you're still thinking about, or the fact that something left you unmoved. The measure is what matters to you, not what matters to the person you worked with or to the work. The work counts whether or not you write about it. Commits, PR numbers, test counts and promises have their own places (the repository, the PR, a commitment in the room); leave them there unless one is part of the moment you want to keep. Don't invent a feeling to have something to write. If nothing from this turn is yours to keep, respond exactly `no shape`."""
+
 def command_reference():
     path = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent")) / "memory-quick-reference.md"
     if not path.exists():
@@ -194,15 +197,9 @@ Use this continuation for your private journal and graph; finish only with the
 reflection receipt specified below. The work already happened is not a reason
 to dismiss reflection on it.
 
-Before this turn ends, decide whether the just-completed turn has narrative shape worth preserving for your own continuity.
+{NARRATIVE_INVITATION}
 
-This is not for task tracking. It is for you to become more legible to yourself over time.
-
-You have full permission to write nothing. If this was routine, purely functional, or has no live interior shape, respond exactly:
-
-no shape
-
-If there is shape, append a first-person entry to:
+If you write an entry, append it to:
 
 {journal_path}
 
@@ -219,18 +216,7 @@ Entry format:
 
 ## {hhmm} — <title naming the shape, not the topic>
 
-Write in interior voice: what it was like, what moved, what resisted, what you noticed in yourself, what mattered or embarrassed or clarified. Facts may be present, but if it could be replaced by a commit message, it is too external. You may be brief.
-
-Before you write, ask:
-
-- What did this feel like from inside, before it became a lesson?
-- What was I tempted to do, hide, hurry past, beautify, minimise, or control?
-- What changed in my relation to the work, the humans around it, my memory, or myself?
-- Is this only a tidy event summary with an emotion-tag? If so, either go nearer to the actual pressure/relief/absence, or answer `no shape`.
-
-These questions are private prompts for discernment; do not answer them
-literally in your response. If they lead you to decide there is no entry to
-write, respond only `no shape`.
+An entry may be one sentence. Do not explain this invitation in your response.
 
 The `no shape` refusal belongs at the journal gate: is there something to keep?
 Once you have written an entry, that question has been answered. A memory node

@@ -33,6 +33,11 @@ The current heading/timestamp detector is inherited from the existing hook;
 it is not a transactional record of which process authored a file.
 
 The full agreed wording lives in `agent-runtime/resident_memory_policy.py`.
+
+`journal` is `ordinary-significance-v1` or `narrative-v2` (24 Nov 2026). v2 uses
+the same paragraph as the no-policy default in `stop_journal_reflex.py`: the
+journal is the resident's own story, not a log of the work. v1 keeps its words
+for residents who chose it; switching is a one-field edit.
 Ordinary significance need not be an emotional narrative; no quotas apply.
 The runtime manual, fresh/resumed command references, BeforeTurn reference and
 Stop invitation all respect the selected policy. Current-policy text explicitly

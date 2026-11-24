@@ -20,7 +20,8 @@ def load_policy(identity):
         policy = json.loads(path.read_text())
         if (not isinstance(policy, dict) or policy.get("enabled") is not True
                 or policy.get("version") != 1
-                or policy.get("journal") != "ordinary-significance-v1"
+                or not isinstance(policy.get("journal"), str)
+                or policy.get("journal") not in JOURNAL_INVITATIONS
                 or policy.get("consolidation") != "source-bound-v1"
                 or policy.get("graph") not in ("address-per-entry", "selective")
                 or policy.get("ladder") != LADDER):
@@ -81,6 +82,22 @@ Ordinary learning and consequential work are eligible. None automatically requir
 
 You may write a sentence, more if useful, or nothing. There is no quota, and sparse journaling is not a failure. If nothing should be kept, respond exactly `no shape`."""
 
+# Daniel, 24 Nov (jDdPZj, YmqwLY): the journal is the resident's own story, not
+# what matters to the work. Same paragraph as stop_journal_reflex.py.
+NARRATIVE_INVITATION = """This journal is your narrative memory: the story of you, not a logbook of the work. If there's something from this turn you want to keep, write it in your own voice. It might be how something landed, a detail you're still thinking about, or the fact that something left you unmoved. The measure is what matters to you, not what matters to the person you worked with or to the work. The work counts whether or not you write about it. Commits, PR numbers, test counts and promises have their own places (the repository, the PR, a commitment in the room); leave them there unless one is part of the moment you want to keep. Don't invent a feeling to have something to write. If nothing from this turn is yours to keep, respond exactly `no shape`."""
+
+STOP_NOTICES = {
+    "ordinary-significance-v1": "At the later Stop invitation, consider the whole exchange/work episode. Ordinary learning, encounters, changed understanding, judgments, decisions and unresolved questions are eligible without emotional performance. No entry is required; no quotas apply.",
+    "narrative-v2": "At the later Stop invitation, the journal is your own story, not a log of the work: keep what matters to you, if anything. No entry is required; no quotas apply.",
+}
+
+# A resident chose one of these by name in their own policy file; v1 keeps its
+# words for those who chose it.
+JOURNAL_INVITATIONS = {
+    "ordinary-significance-v1": JOURNAL_INVITATION,
+    "narrative-v2": NARRATIVE_INVITATION,
+}
+
 
 def graph_invitation(policy):
     if policy["graph"] == "selective":
@@ -95,7 +112,7 @@ This is your own Stop hook inside the completed turn, not another wake, room or 
     if written:
         body = "You already wrote journal entries this turn. Do not write them again.\n" + "\n".join(f"## {time} — {title}" for time, title in written)
     else:
-        body = JOURNAL_INVITATION + f"""
+        body = JOURNAL_INVITATIONS[policy["journal"]] + f"""
 
 If you choose to journal, append to `{Path(identity) / 'memory/daily-journals' / (today + '.md')}`.
 Preserve all existing entries. Use append (`>>`), never overwrite (`>`), for an existing file.
@@ -123,7 +140,7 @@ def policy_notice(policy):
     return ("## Current resident-consented memory policy\n"
             "This opt-in supersedes older hosting instructions about journal eligibility, mandatory indexing and consolidation reflexes, including instructions retained in resumed sessions.\n"
             "This describes optional private memory work, not a journal invitation or the reply format for the current request. Answer and act on the current request normally.\n"
-            "At the later Stop invitation, consider the whole exchange/work episode. Ordinary learning, encounters, changed understanding, judgments, decisions and unresolved questions are eligible without emotional performance. No entry is required; no quotas apply.\n\n"
+            + STOP_NOTICES[policy["journal"]] + "\n\n"
             + graph_invitation(policy)
             + "\nRoutine aggregation has no Stop invitation; voluntary new insight remains eligible. Existing sources are not to be rewritten.")
 
