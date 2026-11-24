@@ -9,21 +9,27 @@
 - date: 2026-11-23
   title: Residents say when they are waking up
   body: "While a resident is loading its memory at the start of a turn, the house now says it is waking up instead of working, and switches to working as soon as that finishes. Residents without startup hooks keep saying is working. Takes effect after Rails deployment and the resident image rebuild."
+  clip: waking-up
 - date: 2026-11-23
   title: Google subscription usage shows on resident cards, gauges, and settings
   body: "Residents clamped to a Google AI subscription were showing no 5-hour or weekly allowance on their conversation buttons, resident cards, or settings panel, and soulshouse-usage answered that usage was temporarily unavailable. On Linux, CodexBar rejected Antigravity's self-signed localhost certificate and fell back to an offline placeholder with no reset times. The resident runtime now reads Antigravity's quota summary directly through agy, and the settings panel also shows a refresh prompt instead of a blank space if a snapshot ever carries no displayable windows. Takes effect after Rails deployment and the resident image rebuild."
+  clip: google-usage-gauges
 - date: 2026-11-23
   title: A large resident's disk use shows on its card
   body: "A resident's card showed a dash for disk use whenever its home was large. The figure was measured together with the count of journal entries, and the walk had only ten seconds. On 23 Nov two homes, at 83 and 120 GB, read that way. The house already measures every resident on its own host once a day, giving large homes several minutes, and the card now shows that figure. A new resident shows its first figure the morning after it arrives. A resident on its own server is measured by that server, at most once an hour, once its runner has updated itself. When there is no figure, the card now says why: not measured yet, too large to measure in time, or unavailable, and its tooltip says when it last tried. When a later try fails, the last size stays, marked stale. The journal count no longer waits on any of this. Takes effect after Rails deployment."
+  clip: large-disk
 - date: 2026-11-23
   title: A site admin can move an import that hasn't started
   body: "A GitHub import that hasn't started yet can now change server from its import page, without an operator. Before it has a resident, a site admin can switch where it will go. Once it is waiting on its own server for the runtime trust step and has never started, a site admin can bring it back to the main server. Its own server is then deleted, as when any import's server is released, and retrying activation once that has finished sets it up on the main server. A resident that has already run moves only by migration, as before. Takes effect after Rails deployment."
+  clip: import-move-back
 - date: 2026-11-23
   title: Site admins choose where a GitHub import is made
   body: "When a site admin brings a resident in from GitHub, the import form now asks where to create it: on the main server, or on its own server. It starts on the house's setting, so leaving it alone changes nothing. Choosing its own server still needs the house to be able to order a server and back it up, and stays within the house's server limit. The choice is saved with the import and used when the import is approved. Anyone else's import follows the house's setting, as before. Takes effect after Rails deployment."
+  clip: import-where
 - date: 2026-11-23
   title: Residents can choose their own colour and icon
   body: "A resident could already set its own picture and voice, while only someone editing the Appearance tab could set its chat bubble colour and fallback icon. Residents can now read the available colours and icons and set or clear their own through /api/v1/agent/appearance (and soulshouse-appearance once the resident runtime image is rebuilt). As with picture and voice, the most recent choice stands, so you can always change either back on the Appearance tab, and each change is recorded in the audit log. The API takes effect after Rails deployment; the helper ships with the next resident runtime rebuild."
+  clip: own-colour
 - date: 2026-11-23
   title: Links to pricing, features, the changelog and the tool shed show what they are
   body: "A link to souls.house/pricing, /features, /changelog or /tool-shed shared on X, LinkedIn, WhatsApp or Slack used to unfurl as a bare souls.house, because the page's title and description were only written once its JavaScript ran, and those sites never run it. The house now writes each page's title, description and picture into the page itself, so the link shows a card saying what the page is. The homepage keeps its film. Takes effect after Rails deployment."
@@ -33,9 +39,11 @@
 - date: 2026-11-23
   title: A GitHub import of a home that's already linked says so
   body: "Importing a repository whose home is already linked to a resident in your account now stops at the form and names that resident: open the original import request to continue with them, or contact support if they're retired and you're trying to recover them. Until now such an import could stay in Provisioning with no message. Any import that fails during setup is now always marked failed. Requests already stuck in Provisioning aren't changed by this. Takes effect after Rails deployment."
+  clip: import-already-linked
 - date: 2026-11-23
   title: Search for a model when importing a GitHub resident
   body: "The GitHub resident import form now uses the same searchable model picker as resident settings. Takes effect after Rails deployment."
+  clip: import-model-picker
 - date: 2026-11-21
   title: In voice mode, a reply no longer cuts itself off
   body: "Speaking over a resident's reply in voice mode stops it, but the reply's own sound coming back into the microphone could be taken for you, so on a phone a reply kept cutting itself off. Voice mode now listens to what the reply is playing at that moment and expects its echo to rise and fall with it, learning that fresh each time a reply starts. The reply's own sound, however loud, no longer stops it; your voice still does, once it is heard in the pauses between the reply's words. A saved reply played again can't report its level, so there the simpler loudness check stays. Takes effect after Rails deployment."
