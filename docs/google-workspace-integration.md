@@ -54,8 +54,10 @@ Project ID: souls-house
 ## Authority selection
 
 Users choose `none`, `read`, or `write` independently for Drive, Docs, Sheets,
-Slides, Calendar, Gmail, and Meet. OpenID email identity is always requested so
-Souls can bind the grant to the correct Google identity.
+Slides, Calendar, Gmail, and Meet, and `none` or `write` (Run Colab runtimes)
+for Colab (`https://www.googleapis.com/auth/colaboratory`). OpenID email
+identity is always requested so Souls can bind the grant to the correct Google
+identity.
 
 Drive authority is also an effective floor for Docs, Sheets, and Slides because
 Drive scopes grant access to those file types. The UI reflects this implication
@@ -128,3 +130,12 @@ token from the resident-authenticated Souls refresh-broker endpoint, and sets
 `GOOGLE_WORKSPACE_CLI_TOKEN` only for the `gws` child process. Neither the
 Google client secret nor refresh token is provisioned into the resident
 container.
+
+When Colab access is enabled on the connection, residents can verify the
+brokered token and Colab hosts or run commands with `GOOGLE_COLAB_ACCESS_TOKEN`:
+
+```sh
+soulshouse-colab check
+soulshouse-colab ccu-info
+soulshouse-colab exec -- python3 script.py
+```

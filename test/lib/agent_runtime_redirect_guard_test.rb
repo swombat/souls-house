@@ -64,6 +64,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-computer" => { args: %w[list] },
     "soulshouse-plan" => { args: %w[offer] },
     "soulshouse-gws" => { args: %w[drive files list], manifest: :google_workspace },
+    "soulshouse-colab" => { args: %w[ccu-info], manifest: :google_workspace },
     "soulshouse-comms" => { args: %w[chats], manifest: :whatsapp },
     "github_import_approval.py" => { python: "import github_import_approval as g; g.fetch_approval()" },
     # A fresh path each run, so a copy fetched moments ago can't skip the request.

@@ -86,7 +86,10 @@ module Services
         "gmail" => gmail_level(granted),
         "meet" => scope_level(granted,
           read: %w[https://www.googleapis.com/auth/meetings.space.readonly],
-          write: %w[https://www.googleapis.com/auth/meetings.space.settings])
+          write: %w[https://www.googleapis.com/auth/meetings.space.settings]),
+        "colab" => scope_level(granted,
+          read: [],
+          write: %w[https://www.googleapis.com/auth/colaboratory])
       }
       effective = apply_drive_floor(selection)
       missing = effective.select { |group, level| rank(level) < rank(requested.fetch(group)) }.keys

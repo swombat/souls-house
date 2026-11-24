@@ -19,6 +19,7 @@ The runtime provides these helpers on `$PATH`:
 - `soulshouse-send-telegram`
 - `soulshouse-append-journal`
 - `soulshouse-gws`
+- `soulshouse-colab`
 - `soulshouse-usage`
 - `soulshouse-youtube`
 - `soulshouse-x`

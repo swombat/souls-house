@@ -146,6 +146,14 @@ module Services
           read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/meetings.space.readonly" ] },
           write: { name: "Manage meeting spaces", rank: 2, scopes: [ "https://www.googleapis.com/auth/meetings.space.settings" ] }
         }
+      },
+      colab: {
+        name: "Colab",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          write: { name: "Run Colab runtimes", rank: 2, scopes: [ "https://www.googleapis.com/auth/colaboratory" ] }
+        }
       }
     }.freeze
 
@@ -177,6 +185,9 @@ module Services
         https://sheets.googleapis.com
         https://slides.googleapis.com
         https://meet.googleapis.com
+        https://colab.research.google.com
+        https://colab.pa.googleapis.com
+        https://colaboratory.googleapis.com
       ],
       documentation: [
         "https://developers.google.com/workspace",
@@ -192,6 +203,7 @@ module Services
       runtime_notes: [
         "Use soulshouse-gws to call Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through gws.",
         "Run soulshouse-gws --help or soulshouse-gws <service> --help to inspect available commands.",
+        "When Colab access is enabled, use soulshouse-colab to check Colab access or run commands with a short-lived token.",
         "The helper obtains a current short-lived token without exposing the refresh token."
       ],
       adapter_class: "Services::GoogleWorkspaceAdapter"
