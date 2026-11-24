@@ -137,4 +137,52 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
     end
   end
 
+  test "lists cargo build caches over 1 GB in work and state, largest first, in a second read-only helper" do
+    gb = 1024 * 1024
+    runs = []
+    capture = lambda do |*args, **|
+      next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
+
+      runs << args
+      stdout = if args.include?("du")
+        Agents::VolumeSet.new(@agent).names.keys.map { |key| "1\t/measure/#{key}\n" }.join
+      else
+        "#{4 * gb}\t/measure/work/chaos-review/target\n" \
+          "#{25 * gb}\t/measure/work/.cargo-target\n" \
+          "512\t/measure/work/small/target\n" \
+          "#{2 * gb}\t/measure/state/tools/chaos-target\n"
+      end
+      { ok: true, stdout:, stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call
+      assert_equal "measured", result[:status]
+      assert_equal [ [ "work", ".cargo-target", 25 ], [ "work", "chaos-review/target", 4 ], [ "state", "tools/chaos-target", 2 ] ],
+        result[:cache_dirs].map { |dir| [ dir["volume"], dir["path"], dir["bytes"] / 1.gigabyte ] }
+      assert_not result.key?(:cache_dirs_failure)
+    end
+    walk = runs.last
+    assert_equal 2, runs.size
+    assert_equal 2, walk.count("--mount")
+    assert walk.grep(/type=volume/).all? { |mount| mount.end_with?(",readonly") && mount.match?(%r{dst=/measure/(work|state),}) }
+    assert_includes walk, "--read-only"
+    assert_equal %w[/measure/work /measure/state], walk.last(2)
+  end
+
+  test "a failed cache walk keeps the home's total and says the list was not taken" do
+    capture = lambda do |*args, **|
+      next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
+      next { ok: false, stdout: "", stderr: "private" } unless args.include?("du")
+
+      { ok: true, stdout: Agents::VolumeSet.new(@agent).names.keys.map { |key| "3\t/measure/#{key}\n" }.join, stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call
+      assert_equal "measured", result[:status]
+      assert_equal 5 * 3 * 1024, result[:bytes]
+      assert_equal "walk_failed", result[:cache_dirs_failure]
+      assert_not result.key?(:cache_dirs)
+    end
+  end
+
 end

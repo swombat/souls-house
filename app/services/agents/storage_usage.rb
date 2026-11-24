@@ -13,6 +13,28 @@ module Agents
     # so the helper's own timeout fires first and the reason is ours.
     RUN_SECONDS = DU_SECONDS + 30
     COMMAND_SECONDS = 30
+    # Build caches (eLmorj, 24 Nov): forgotten cargo target dirs filled the
+    # host twice (98 GB on 11 Nov, 56.5 GB on 20 Nov). A second, separate
+    # walk lists every directory carrying a CACHEDIR.TAG (cargo writes one at
+    # the root of every target dir, whatever it is named: target/,
+    # chaos-target/, the image's shared .cargo-target) in the work and state
+    # volumes, with its size. Metadata only: names and sizes, never contents.
+    # It has its own budget and its own failure, so it can never cost the
+    # home's total.
+    CACHE_SECONDS = 240
+    CACHE_RUN_SECONDS = CACHE_SECONDS + 30
+    CACHE_VOLUMES = %w[work state].freeze
+    CACHE_MIN_BYTES = 1.gigabyte
+    CACHE_LIMIT = 20
+    # The resident-health check (RJpgYx) warns from here up. A warning, not a cap.
+    CACHE_WARNING_BYTES = 20.gigabytes
+    CACHE_SCRIPT = <<~'SH'.freeze
+      for root in "$@"; do
+        find "$root" -xdev -maxdepth 8 -type f -name CACHEDIR.TAG 2>/dev/null
+      done | while IFS= read -r tag; do
+        du -sk "${tag%/CACHEDIR.TAG}"
+      done
+    SH
 
     def initialize(agent)
       @agent = agent
@@ -63,7 +85,7 @@ module Agents
         missing_volumes: (names.keys - existing.keys).map(&:to_s),
         measured_at: Time.current.iso8601, checked_at: Time.current.iso8601,
         attempt_seconds: elapsed(started)
-      }
+      }.merge(cache_dirs(existing))
     rescue Agents::Resources::OwnershipError, MeasurementError, Timeout::Error, SystemCallError, KeyError => e
       # Preserve the last reading, but never present it as a successful refresh.
       # The reason and duration say why, so a measurement that can never
@@ -77,6 +99,42 @@ module Agents
     end
 
     private
+
+    # { cache_dirs: [{ "volume", "path", "bytes" }, ...] } largest first, or
+    # { cache_dirs_failure: reason } with no list when the walk didn't finish:
+    # an absent list is "not looked", never "nothing there".
+    def cache_dirs(existing)
+      keys = existing.keys.map(&:to_s) & CACHE_VOLUMES
+      return { cache_dirs: [] } if keys.empty?
+
+      mounts = existing.slice(*keys.map(&:to_sym)).flat_map do |key, name|
+        [ "--mount", "type=volume,src=#{name},dst=/measure/#{key},readonly" ]
+      end
+      @cache_helper_name = "admin-cache-#{SecureRandom.hex(10)}"
+      result = capture(
+        "run", "--rm", "--init", "--name", @cache_helper_name, "--network", "none", "--read-only",
+        "--memory", "64m", "--cpus", "1", "--pids-limit", "32", *mounts,
+        "busybox:1.37", "nice", "-n", "19", "timeout", CACHE_SECONDS.to_s,
+        "sh", "-c", CACHE_SCRIPT, "cache-dirs", *keys.map { |key| "/measure/#{key}" },
+        seconds: CACHE_RUN_SECONDS
+      )
+      return { cache_dirs_failure: "walk_failed" } unless result[:ok]
+
+      dirs = result[:stdout].lines.filter_map do |line|
+        match = line.match(%r{\A(\d+)\s+/measure/(work|state)/(.+?)\s*\z})
+        return { cache_dirs_failure: "unreadable" } unless match
+
+        bytes = Integer(match[1]) * 1024
+        { "volume" => match[2], "path" => match[3], "bytes" => bytes } if bytes >= CACHE_MIN_BYTES
+      end
+      { cache_dirs: dirs.sort_by { |dir| -dir["bytes"] }.first(CACHE_LIMIT) }
+    rescue Timeout::Error
+      { cache_dirs_failure: "timeout" }
+    rescue Agents::Resources::OwnershipError, SystemCallError
+      { cache_dirs_failure: "docker_unavailable" }
+    ensure
+      remove_helper(@cache_helper_name) if @cache_helper_name
+    end
 
     def elapsed(started)
       return nil unless started
@@ -94,8 +152,8 @@ module Agents
       end
     end
 
-    def remove_helper
-      capture("rm", "-f", @helper_name)
+    def remove_helper(name = @helper_name)
+      capture("rm", "-f", name)
     rescue Timeout::Error, SystemCallError
       # The helper also has an internal timeout and --rm. A daemon outage
       # must not turn an unavailable measurement into a failed admin job.
