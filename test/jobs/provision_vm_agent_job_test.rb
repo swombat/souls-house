@@ -899,6 +899,37 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     [ request, agent.reload ]
   end
 
+  test "a site admin's own-server choice is admitted to its own server with the switch off, and checked like a birth" do
+    with_house do
+      @setting.update!(new_residents_on_vm: false)
+      request = import_request(placement: "own_server")
+      approve_fixture(request)
+      root = reviewed_checkout
+      assert_difference("Agent.count", 1) do
+        assert_enqueued_with(job: ProvisionVmAgentJob) { run_import(request, root) }
+      end
+      placement = request.agent.placement
+      assert_equal "provisioning", request.status
+      assert_equal "github_import", placement.kind
+      assert_equal "pending", placement.state
+
+      # Its server is bought on the strength of the choice, and the receipt says so.
+      run_job(request.agent)
+      assert_equal "github_import:#{request.id}/placement:own_server/agent:#{request.agent.id}",
+                   operation(request.agent).approval_reference
+      planned = AuditLog.find_by!(action: "vm_birth_procurement_planned", auditable: operation(request.agent))
+      assert_equal request.id, planned.data["github_resident_import_id"]
+
+      # The choice skips only the switch: the server limit still refuses.
+      @setting.update!(vm_resident_limit: 1)
+      second = import_request(connection: request.service_connection, placement: "own_server", portable_home_id: "another-portable-home")
+      approve_fixture(second)
+      assert_no_difference("Agent.count") { run_import(second, reviewed_checkout) }
+      assert_equal "failed", second.status
+      assert_equal Agents::VmBirthPolicy::LIMIT_REFUSAL, second.last_error
+    end
+  end
+
   test "a GitHub import on its own VM: admitted at import, seeded from the reviewed checkout, trust-gated, then ready" do
     with_house do
       request = approved_import
@@ -970,6 +1001,127 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  test "a site admin moves a never-started own-server import to the main server: its server is released, then it is set up at home" do
+    with_house do
+      request, agent = github_import_seeded!
+      placement = agent.placement
+      run_job(agent)
+      answer_trust(placement, "untrusted")
+      run_job(agent)
+      assert_equal "needs_runtime_trust", request.reload.status
+      server_id = placement.reload.provider_server_id
+      assert server_id
+      assert_equal 1, placement.generation
+      assert_equal "main_server", request.movable_to
+
+      assert_raises(Account::NotAuthorized) { request.move_to!("main_server", by: users(:regular_user)) }
+      assert_not placement.reload.cleanup_requested?
+
+      assert_enqueued_with(job: VmCleanupJob, args: [ placement.id ]) do
+        assert_equal "main_server", request.move_to!("main_server", by: users(:site_admin_user))
+      end
+      placement.reload
+      request.reload
+      assert placement.cleanup_requested?, "its server goes through the normal cleanup"
+      assert_equal [ "hetzner_cloud", "github_import" ], [ placement.backend, placement.kind ],
+        "it stays a VM placement until the cleanup has retired it"
+      assert_equal [ "main_server", "needs_runtime_trust" ], [ request.placement, request.status ]
+      assert_equal GithubResidentImport::MOVE_RELEASING, request.last_error
+      assert_empty RunnerEnrollment.where(agent_placement_id: placement.id, revoked_at: nil)
+      audit = AuditLog.find_by!(action: "github_import_returned_to_house", auditable: agent)
+      assert_equal server_id, audit.data["released_provider_server_id"]
+      assert_nil request.movable_to, "already moved"
+
+      # A retry before the server has gone waits; nothing is bought or seeded.
+      request.retry_activation!(@user)
+      run_import(request, reviewed_checkout)
+      assert_equal [ "needs_runtime_trust", GithubResidentImportJob::BRING_HOME_WAITING ], [ request.status, request.last_error ]
+      assert_equal "hetzner_cloud", placement.reload.backend
+
+      VmCleanupJob.perform_now(placement.id)
+      assert_equal "retired", placement.reload.state
+      assert_includes @client.deletes.map(&:first), server_id, "the server is deleted, not kept"
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+
+      # On a namespaced house the VM's container name is not this house's,
+      # so the real ownership check would refuse it. The retry prepares the
+      # local names first; only Docker itself is stubbed.
+      # This house, as a namespaced one.
+      house = Class.new(SimpleDelegator) do
+        def namespace = "shtest"
+        def fingerprint = "fp-test"
+      end.new(LocalInstance.current)
+      absent = Object.new
+      absent.define_singleton_method(:success?) { false }
+      seeded = []
+      LocalInstance.stub(:current, house) do
+        agent.reload
+        assert_not_equal "shtest-agent-#{agent.uuid}", agent.container_name, "the VM's name is not this house's"
+        # The volume seeds as the real one does up to Docker: the ownership
+        # check runs for real; Docker answers that nothing exists yet.
+        volume = ->(resident) do
+          fake = Object.new
+          fake.define_singleton_method(:seed_from_directory!) do |root|
+            Agents::Resources.new(resident).verify_existing!
+            seeded << root
+          end
+          fake
+        end
+        sandbox = Object.new
+        sandbox.define_singleton_method(:imported_runtime_trusted?) { false }
+        staged = agent.import_stages.pluck(:sha256)
+        # GitHub no longer serves the approved revision: the home is brought
+        # back, but its reviewed copy is kept until a seed has succeeded.
+        request.retry_activation!(@user)
+        gone = Object.new
+        gone.define_singleton_method(:with_checkout) { |**| raise Agents::GithubImportSource::Error, "gone" }
+        assert_raises(Agents::GithubImportSource::Error) do
+          Agents::GithubImportSource.stub(:new, gone) { GithubResidentImportJob.perform_now(request.id) }
+        end
+        assert_equal "local", placement.reload.backend
+        assert_equal staged, agent.reload.import_stages.pluck(:sha256), "the reviewed home is not dropped before the seed"
+        assert_equal "failed", request.reload.status
+        approve_fixture(request)
+
+        Agents::DockerLocalGuard.stub(:check!, true) do
+          Agents::BoundedCommand.stub(:capture3, [ "", "Error: No such object", absent ]) do
+            Agents::GithubImportSource.stub(:new, github_source(request, reviewed_checkout)) do
+              Agents::Volume.stub(:new, volume) do
+                Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+              end
+            end
+          end
+        end
+      end
+      assert_equal 1, seeded.size
+      placement.reload
+      agent.reload
+      assert_equal [ "local", nil, "ready", 2 ], [ placement.backend, placement.kind, placement.state, placement.generation ]
+      assert_equal "shtest-agent-#{agent.uuid}", agent.container_name
+      assert_equal Agents::Config.sandbox_host, agent.sandbox_host
+      assert agent.identity_seeded_at
+      assert_empty agent.import_stages
+      assert_equal "needs_runtime_trust", request.reload.status
+      assert_equal 1, @client.creates.size, "no second server"
+      assert AuditLog.exists?(action: "github_import_brought_home", auditable: agent)
+    end
+  end
+
+  test "with no resident yet, a site admin changes only where the import will go" do
+    request = import_request
+    assert_nil request.placement
+    assert request.own_server?, "the switch is on in this test, so it would go to its own server"
+    target = request.movable_to
+    assert_equal "main_server", target
+    assert_raises(Account::NotAuthorized) { request.move_to!(target, by: users(:regular_user)) }
+    request.move_to!(target, by: users(:site_admin_user))
+    assert_equal target, request.reload.placement
+    assert AuditLog.exists?(action: "github_import_placement_changed", auditable: request)
+    request.update!(status: "approved")
+    assert_nil request.movable_to, "an approved import is on its way; it is not moved under the job"
+    assert_raises(GithubResidentImport::MoveRefused) { request.move_to!("main_server", by: users(:site_admin_user)) }
+  end
+
   test "waiting for trust past the deadline releases the server, keeps the home and the retry, and the retry buys one new server" do
     with_house do
       request, agent = github_import_seeded!
@@ -990,6 +1142,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         VmCleanupJob.perform_now(placement.id)
         assert_equal "retired", placement.reload.state
         assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+        assert_nil request.reload.movable_to, "a released server is not proof it never started; this action leaves it alone"
 
         serve_creates_as(4343)
         request.retry_activation!(@user)
@@ -1008,6 +1161,16 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         seed.record_result!({ "outcome" => "done" }, now: Time.current)
         run_job(agent)
         assert_equal 1, trust_checks(placement).where(generation: 2).count, "the new server is checked afresh"
+
+        # Waiting for trust again, as a first start would, but at generation 2:
+        # it may have started before its release, so this is recovery, not a move.
+        answer_trust(placement, "untrusted")
+        run_job(agent)
+        assert_equal [ "needs_runtime_trust", "pending", 2 ], [ request.reload.status, placement.reload.state, placement.generation ]
+        assert_nil request.movable_to
+        error = assert_raises(GithubResidentImport::MoveRefused) { request.move_to!("main_server", by: users(:site_admin_user)) }
+        assert_equal GithubResidentImport::MOVE_SERVER_STATE, error.message
+        assert_not placement.reload.cleanup_requested?
       end
     end
   end

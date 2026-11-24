@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_203000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -625,6 +625,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_203000) do
     t.string "plan_offer_answer"
     t.datetime "plan_offer_answered_at"
     t.text "heartbeat_note"
+    t.jsonb "home_storage", default: {}, null: false
+    t.datetime "home_storage_requested_at"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -1998,10 +2000,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_203000) do
     t.string "sync_strategy", default: "existing", null: false
     t.jsonb "sync_configuration", default: {}, null: false
     t.jsonb "sync_health", default: {}, null: false
+    t.string "placement"
     t.index ["account_id"], name: "index_github_resident_imports_on_account_id"
     t.index ["approved_by_id"], name: "index_github_resident_imports_on_approved_by_id"
     t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
     t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
+    t.check_constraint "placement IS NULL OR (placement::text = ANY (ARRAY['main_server'::character varying, 'own_server'::character varying]::text[]))", name: "github_resident_import_placement"
     t.check_constraint "sync_strategy::text = ANY (ARRAY['existing'::character varying::text, 'standard'::character varying::text])", name: "github_resident_import_sync_strategy"
   end
 

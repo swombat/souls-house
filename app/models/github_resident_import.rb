@@ -4,6 +4,9 @@ class GithubResidentImport < ApplicationRecord
 
   FUTURE_BRANCH_TRUST_NOTICE = "Approval permits ALL code in this repository, including hooks and sync scripts, and future pushes to this branch to run with the resident's container credentials. Fine-grained token format does not prove least privilege. Revoking approval does not kill already running code or recall copied credentials.".freeze
   STATUSES = %w[pending_review approved provisioning needs_runtime_trust ready failed].freeze
+  # Where a site admin chose to make this import's resident. nil: the site
+  # setting decides when the import is admitted, as for everyone else.
+  PLACEMENTS = %w[main_server own_server].freeze
   RUNTIME_TRUST_NOTICE = "The reviewed home is seeded, but Chaos has no supported headless project-trust grant command. A site operator must open Chaos's interactive trust screen for /home/agent/identity in this resident's own runtime home, then retry activation. Trust the OAuth runtime separately if it is used. No repository hooks, sync scripts or first wake are permitted before trust. Do not copy another resident's database or edit trust/hook tables.".freeze
   # The same rule for a resident on its own server (docs/2026-10-10-vm-imports.md,
   # point 4): its runtime home is on that server, so trust is granted there.
@@ -30,6 +33,7 @@ class GithubResidentImport < ApplicationRecord
   validates :name, length: { maximum: 100 }
   validates :status, inclusion: { in: STATUSES }
   validates :sync_strategy, inclusion: { in: %w[existing standard] }
+  validates :placement, inclusion: { in: PLACEMENTS }, allow_nil: true
   validate :valid_sync_configuration
   validates :commit_sha, format: { with: /\A[0-9a-f]{40}\z/ }
   validate :connection_matches_account
@@ -38,6 +42,19 @@ class GithubResidentImport < ApplicationRecord
 
   def self.requestable_by?(account, user)
     account.service_credentials_manageable_by?(user)
+  end
+
+  # Whether this import's resident is made on its own server: the site
+  # admin's choice when there was one, otherwise the site setting now.
+  def own_server?
+    placement.nil? ? Agents::VmBirthPolicy.current.enabled? : placement == "own_server"
+  end
+
+  # Why a new resident can't be placed where this import goes, or nil. A
+  # main-server choice is never refused for the VM switch; an own-server one
+  # skips only the switch, never backups, procurement or the server limit.
+  def placement_refusal
+    Agents::VmBirthPolicy.current.refusal(kind: :import, own_server: own_server?)
   end
 
   # Why this request can't make a resident: a resident in this account
@@ -186,6 +203,61 @@ class GithubResidentImport < ApplicationRecord
     end
   end
 
+  class MoveRefused < StandardError; end
+
+  MOVE_BUSY = "Its server is being worked on right now. Try again in a minute.".freeze
+  MOVE_STARTED = "This resident has already started, so moving it is a migration, not a change of import.".freeze
+  MOVE_NOT_WAITING = "Only an import that is waiting for approval or runtime trust, or has failed, can be moved.".freeze
+  MOVE_HOUSE_HOME = "This import's home is already seeded on the main server. Moving a home to its own server " \
+                    "is a migration from the resident's settings.".freeze
+  MOVE_SERVER_STATE = "Its own server is past the point where the import can be moved back.".freeze
+  MOVE_RELEASING = "Moved to the main server. Its own server is being released; retry activation once it has gone " \
+                   "and the home is set up on the main server.".freeze
+  MOVED_TO_MAIN_SERVER = "github_import_moved_to_main_server".freeze
+
+  # What a site admin can move this import to now: "main_server",
+  # "own_server", or nil. Only a never-started import moves; one that has
+  # run is a migration (Agents::VmMigration), never this.
+  def movable_to
+    if agent.nil?
+      return unless status.in?(%w[pending_review failed])
+      return own_server? ? "main_server" : "own_server"
+    end
+    return unless status.in?(%w[needs_runtime_trust failed])
+
+    "main_server" if placement != "main_server" && on_own_server_never_started?
+  end
+
+  # A site admin moves a never-started import between the main server and
+  # its own server, so it never needs an operator's script (23 Nov, Reed).
+  # With no resident yet only the recorded choice changes, and the usual
+  # checks run when it is admitted. A resident already admitted to its own
+  # server but never started is sent back to the main server: its server's
+  # cleanup is requested through the normal path (VmCleanupJob deletes it
+  # and retires the placement), and the import records "main_server". Retry
+  # activation, once the placement is retired, makes the placement local and
+  # seeds the home on the main server from the reviewed checkout
+  # (GithubResidentImportJob#bring_home!). Nothing is kept: a server nobody
+  # is responsible for is a bill nobody is (Mira, #1109). Returns the
+  # destination.
+  def move_to!(destination, by:)
+    raise Account::NotAuthorized unless by&.is_site_admin?
+    raise ArgumentError, "unknown destination" unless PLACEMENTS.include?(destination)
+
+    return move_without_resident!(destination, by:) if agent.nil?
+    raise MoveRefused, MOVE_STARTED if agent.runtime_ready_at.present?
+
+    placement_row = agent.placement
+    raise MoveRefused, MOVE_HOUSE_HOME unless placement_row&.kind == "github_import"
+    raise ArgumentError, "already on its own server" unless destination == "main_server"
+
+    result = ProvisionVmAgentJob.exclusively(placement_row.id) { return_to_main_server!(by:) }
+    raise MoveRefused, MOVE_BUSY if result == :busy
+
+    VmCleanupJob.perform_later(placement_row.id)
+    destination
+  end
+
   def refresh_review!(user)
     raise Account::NotAuthorized unless approvable_by?(user)
     raise ArgumentError, "Wait for provisioning to finish" if status.in?(%w[approved provisioning])
@@ -213,6 +285,63 @@ class GithubResidentImport < ApplicationRecord
   end
 
   private
+
+  def moving_placement
+    @moving_placement = true
+    yield
+  ensure
+    @moving_placement = false
+  end
+
+  # Its own server, still waiting for its first start on its first
+  # placement generation. A released placement is not proof it never
+  # started: a first backup can fail after the start, and the retry then
+  # admits it again as pending at a later generation (Mira, #1109). Both are
+  # left to recovery.
+  FIRST_GENERATION = 1
+
+  def on_own_server_never_started?(resident = agent, placement_row = resident&.placement)
+    placement_row.present? && placement_row.backend == "hetzner_cloud" && placement_row.kind == "github_import" &&
+      placement_row.state == "pending" && !placement_row.cleanup_requested? &&
+      placement_row.generation == FIRST_GENERATION &&
+      resident.runtime_ready_at.nil? && resident.identity_seeded_at.nil? && !resident.active? && resident.paused?
+  end
+
+  def move_without_resident!(destination, by:)
+    with_lock do
+      raise MoveRefused, MOVE_STARTED if agent.present?
+      raise MoveRefused, MOVE_NOT_WAITING unless status.in?(%w[pending_review failed])
+      from = placement
+      moving_placement { update!(placement: destination) }
+      AuditLog.create!(action: "github_import_placement_changed", user: by, account:, auditable: self,
+        data: { "from" => from, "to" => destination })
+    end
+    destination
+  end
+
+  # Under ProvisionVmAgentJob.exclusively for its placement, so no
+  # provisioning step runs against it meanwhile. The placement stays a VM
+  # one until VmCleanupJob has retired it; only then does a retry bring the
+  # resident home, so the cleanup never loses the server it must delete.
+  def return_to_main_server!(by:)
+    AgentPlacement.transaction do
+      lock!
+      resident = Agent.lock.find(agent.id)
+      placement_row = AgentPlacement.lock.find_by!(agent_id: resident.id)
+      raise MoveRefused, MOVE_STARTED if resident.runtime_ready_at.present?
+      raise MoveRefused, MOVE_NOT_WAITING unless status.in?(%w[needs_runtime_trust failed])
+      raise MoveRefused, MOVE_SERVER_STATE unless on_own_server_never_started?(resident, placement_row)
+
+      RunnerEnrollment.where(agent_placement_id: placement_row.id, revoked_at: nil).find_each(&:revoke!)
+      placement_row.request_cleanup!(MOVED_TO_MAIN_SERVER)
+      from = placement
+      moving_placement { update!(placement: "main_server", status: "needs_runtime_trust", last_error: MOVE_RELEASING) }
+      AuditLog.create!(action: "github_import_returned_to_house", user: by, account:, auditable: resident,
+        data: { "github_resident_import_id" => id, "placement_id" => placement_row.id,
+          "generation" => placement_row.generation, "released_provider_server_id" => placement_row.provider_server_id,
+          "from" => from })
+    end
+  end
 
   def safe_blocking_paths(data)
     return {} unless data["reason_code"] == "dirty_worktree" && data["state"].in?(%w[blocked needs_attention])
@@ -279,6 +408,8 @@ class GithubResidentImport < ApplicationRecord
   def reviewed_configuration_is_immutable
     immutable = %w[account_id service_connection_id requested_by_id name model_id repository repository_id branch portable_home_id sync_strategy]
     immutable += %w[commit_sha credential_fingerprint token_metadata sync_configuration] unless @refreshing_review
+    # Where it goes changes only through move_to!, which checks the state first.
+    immutable += %w[placement] unless @moving_placement
     if (changes.keys & immutable).any?
       errors.add(:base, "Submit a new request to change reviewed configuration")
     end

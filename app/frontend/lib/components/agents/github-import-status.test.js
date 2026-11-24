@@ -27,3 +27,15 @@ test('invalidated approval cannot retry activation', () => {
   render(GithubImportStatus, { request: { ...request, approval_valid: false }, retryActivationUrl: '/retry' });
   expect(screen.getByRole('button')).toBeDisabled();
 });
+
+test('a site admin can move a never-started import, and only when the house offers it', async () => {
+  const move = { url: '/move', destination: 'main_server', label: 'Move to the main server' };
+  render(GithubImportStatus, { request, move });
+  await fireEvent.click(screen.getByRole('button', { name: 'Move to the main server' }));
+  expect(router.post).toHaveBeenCalledWith('/move', { destination: 'main_server' }, expect.any(Object));
+});
+
+test('no move control without the house offering one', () => {
+  render(GithubImportStatus, { request });
+  expect(screen.queryByTestId('github-import-move')).not.toBeInTheDocument();
+});

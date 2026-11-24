@@ -4,7 +4,7 @@ class GithubResidentImportsController < ApplicationController
 
   require_feature_enabled :agents
   before_action :require_import_authority!
-  before_action :set_import, only: [ :show, :approve, :refresh, :retry_activation ]
+  before_action :set_import, only: [ :show, :approve, :refresh, :retry_activation, :move ]
 
   def new
     render_import
@@ -15,12 +15,15 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def create
-    if (refusal = Billing::BirthGate.import_refusal(current_account) || Agents::VmBirthPolicy.current.refusal(kind: :import))
+    placement = chosen_placement
+    if (refusal = Billing::BirthGate.import_refusal(current_account) ||
+                  Agents::VmBirthPolicy.current.refusal(kind: :import, own_server: placement && placement == "own_server"))
       return redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ refusal ] } }
     end
 
     attrs = params.require(:github_resident_import).permit(:name, :model_id, :service_connection_id, :branch, :sync_strategy)
     attrs[:sync_strategy] ||= "existing"
+    attrs[:placement] = placement
     connection = current_account.service_connections.find_by_public_id!(attrs.delete(:service_connection_id))
     raise Account::NotAuthorized unless connection.provider == "github" && connection.provisionable_by?(Current.user)
     raise ArgumentError, "Choose a supported model" unless (Chat::MODELS + HouseInference::Offering.models).any? { |model| model[:model_id] == attrs[:model_id] }
@@ -78,6 +81,19 @@ class GithubResidentImportsController < ApplicationController
     redirect_to account_github_resident_import_path(current_account, @import), alert: "Activation requires valid approval and operator runtime trust."
   end
 
+  # A site admin moves a never-started import between the main server and
+  # its own server (GithubResidentImport#move_to!).
+  def move
+    return head :forbidden unless Current.user.is_site_admin?
+    destination = @import.move_to!(params.require(:destination).to_s, by: Current.user)
+    label = destination == "own_server" ? "its own server" : "the main server"
+    redirect_to account_github_resident_import_path(current_account, @import), notice: "Import moved to #{label}."
+  rescue GithubResidentImport::MoveRefused => refused
+    redirect_to account_github_resident_import_path(current_account, @import), alert: refused.message
+  rescue ArgumentError, ActionController::ParameterMissing
+    redirect_to account_github_resident_import_path(current_account, @import), alert: "Choose main server or its own server."
+  end
+
   def refresh
     @import.refresh_review!(Current.user)
     audit(:refresh_github_resident_import_review, @import, commit_sha: @import.commit_sha)
@@ -92,6 +108,41 @@ class GithubResidentImportsController < ApplicationController
 
   def import_request_failed(message)
     redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ message ] } }
+  end
+
+  # Only a site admin chooses where an import goes; anyone else's request,
+  # and an admin's that leaves "follow the site setting", follows the switch
+  # as it stands when the import is admitted.
+  def chosen_placement
+    return unless Current.user.is_site_admin?
+
+    value = params.dig(:github_resident_import, :placement).presence
+    return if value.nil? || value == "site_setting"
+    raise ArgumentError, "Choose main server or own server" unless GithubResidentImport::PLACEMENTS.include?(value)
+
+    value
+  end
+
+  # Only for a site admin, and only while the import can still move.
+  def move_props
+    return unless @import && Current.user.is_site_admin?
+    destination = @import.movable_to or return
+    { url: move_account_github_resident_import_path(current_account, @import), destination:,
+      label: destination == "own_server" ? "Move to its own server" : "Move to the main server" }
+  end
+
+  def placement_options
+    return unless Current.user.is_site_admin?
+
+    current = Agents::VmBirthPolicy.current.enabled? ? "its own server" : "the main server"
+    {
+      default: "site_setting",
+      choices: [
+        { value: "site_setting", label: "Follow the site setting (now #{current})" },
+        { value: "main_server", label: "Main server" },
+        { value: "own_server", label: "Its own server" }
+      ]
+    }
   end
 
   def require_import_authority!
@@ -112,10 +163,12 @@ class GithubResidentImportsController < ApplicationController
         repository: connection.credential_metadata["repository"], token_metadata: token_props(connection_metadata(connection)) } },
       models: (Chat::MODELS + HouseInference::Offering.models).map { |model| model.slice(:model_id, :label, :group) },
       sync_strategies: [ { value: "existing", label: "Keep existing sync" }, { value: "standard", label: "Use standard two-way Git sync" } ],
+      placement_options: placement_options,
       submit_url: account_github_resident_imports_path(current_account),
       approve_url: can_manage_import ? approve_account_github_resident_import_path(current_account, @import) : nil,
       refresh_url: can_manage_import ? refresh_account_github_resident_import_path(current_account, @import) : nil,
       retry_activation_url: can_manage_import ? retry_activation_account_github_resident_import_path(current_account, @import) : nil,
+      move: move_props,
       can_approve: can_manage_import,
       future_branch_trust_notice: GithubResidentImport::FUTURE_BRANCH_TRUST_NOTICE,
       runtime_trust_notice: @import ? @import.runtime_trust_notice : GithubResidentImport::RUNTIME_TRUST_NOTICE
@@ -131,6 +184,7 @@ class GithubResidentImportsController < ApplicationController
       repository: @import.repository, branch: @import.branch, commit_sha: @import.commit_sha,
       portable_home_id: @import.portable_home_id, home_profile: "portable_v1",
       sync_strategy: @import.sync_strategy, sync_auto_commit_paths: @import.sync_auto_commit_paths,
+      placement: @import.placement,
       sync_append_only_paths: @import.sync_append_only_paths,
       sync_allow_destructive_paths: @import.sync_allow_destructive_paths,
       sync_protected_paths: @import.sync_auto_commit_paths, sync_shrink_minimum_ratio: 0.5,

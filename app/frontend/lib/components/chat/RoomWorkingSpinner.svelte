@@ -9,14 +9,23 @@
 
   let { agents = [] } = $props();
 
+  const listFormat = new Intl.ListFormat('en', { type: 'conjunction' });
+
+  function spinnerLabel(list) {
+    if (!list.length) return '';
+    const waking = list.filter((a) => a.phase === 'waking').map((a) => a.name);
+    const working = list.filter((a) => a.phase !== 'waking').map((a) => a.name);
+    if (!waking.length) return `${listFormat.format(working)} working`;
+    if (!working.length) return `${listFormat.format(waking)} waking up`;
+    const wakingPart = `${listFormat.format(waking)} waking up`;
+    const workingPart = `${listFormat.format(working)} working`;
+    return list[0].phase === 'waking' ? `${wakingPart}, ${workingPart}` : `${workingPart}, ${wakingPart}`;
+  }
+
   const rings = $derived(agents.slice(0, MAX_RINGS));
   const size = $derived(INNER + 2 * STEP * Math.max(rings.length - 1, 0));
   const colour = $derived(agents[0]?.colour);
-  const label = $derived(
-    agents.length
-      ? `${new Intl.ListFormat('en', { type: 'conjunction' }).format(agents.map((a) => a.name))} working`
-      : ''
-  );
+  const label = $derived(spinnerLabel(agents));
 
   function ringClass(agent) {
     return agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-300` : 'text-primary';

@@ -225,6 +225,7 @@ Rails.application.routes.draw do
       post :approve, on: :member
       post :refresh, on: :member
       post :retry_activation, on: :member
+      post :move, on: :member
     end
 
     resources :chats, except: :destroy do
@@ -577,6 +578,8 @@ Rails.application.routes.draw do
       get "agent/heartbeat_note", to: "heartbeat_notes#show", as: :agent_heartbeat_note
       put "agent/heartbeat_note", to: "heartbeat_notes#update"
       delete "agent/heartbeat_note", to: "heartbeat_notes#destroy"
+      get "agent/appearance", to: "agent_appearances#show"
+      patch "agent/appearance", to: "agent_appearances#update"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"
       get "agent/voice", to: "agent_voices#show"

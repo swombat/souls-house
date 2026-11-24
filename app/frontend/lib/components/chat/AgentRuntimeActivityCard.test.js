@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import AgentRuntimeActivityCard from './AgentRuntimeActivityCard.svelte';
 
@@ -295,7 +295,7 @@ test('helper activity stays compact and narration opt-out hides all helper UI', 
   expect(container.textContent).not.toContain('+4 more');
 });
 
-test('a stated quiet reason sits collapsed under a finished card, labelled as the resident\'s own account', async () => {
+test("a stated quiet reason sits collapsed under a finished card, labelled as the resident's own account", async () => {
   const finished = {
     ...base,
     active: false,
@@ -361,7 +361,13 @@ test('the plan line keeps the last state after the run ends and hides when narra
     status: 'completed',
     status_label: 'finished',
     narration_shared: true,
-    snapshot: { plan_status: 'completed', plan: [{ text: 'a', status: 'completed' }, { text: 'b', status: 'completed' }] },
+    snapshot: {
+      plan_status: 'completed',
+      plan: [
+        { text: 'a', status: 'completed' },
+        { text: 'b', status: 'completed' },
+      ],
+    },
   };
   const { unmount } = render(AgentRuntimeActivityCard, { interaction: finished });
   expect(screen.getByTestId('runtime-plan-line')).toHaveTextContent('2 of 2');
@@ -369,4 +375,24 @@ test('the plan line keeps the last state after the run ends and hides when narra
 
   render(AgentRuntimeActivityCard, { interaction: { ...finished, narration_shared: false } });
   expect(screen.queryByTestId('runtime-plan-line')).not.toBeInTheDocument();
+});
+
+test('shows waking status_label without adding wake lifecycle rows to the event list', async () => {
+  const waking = {
+    ...base,
+    status_label: 'is waking up',
+    snapshot: { phase: 'waking' },
+    events: [
+      { id: '1', type: 'wake.started', data: {} },
+      { id: '2', type: 'wake.finished', data: {} },
+    ],
+  };
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: waking });
+  expect(screen.getByText('is waking up')).toBeInTheDocument();
+  await fireEvent.click(container.querySelector('summary'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Show commands' }));
+  expect(within(screen.getByRole('list', { name: 'Work so far' })).queryAllByRole('listitem')).toHaveLength(0);
+
+  await rerender({ interaction: { ...base, status_label: 'is working', snapshot: {} } });
+  expect(screen.getByText('is working')).toBeInTheDocument();
 });

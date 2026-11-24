@@ -3,6 +3,7 @@ class ToolShedController < ApplicationController
   allow_unauthenticated_access
 
   def index
+    @link_preview = LinkPreview.for(:tool_shed)
     render inertia: "tool-shed/index", props: { tools: ToolShedEntry.all.map { |entry| entry.except(:body_html) } }
   end
 

@@ -115,9 +115,11 @@ class Api::V1::HostRunner::ImagesControllerTest < ActionDispatch::IntegrationTes
     assert_empty @served
   end
 
+  # Each bad ID is one a delivered start_resident asked for, so only the ID
+  # shape (the route constraint, then RunnerEnrollment::IMAGE_ID) refuses it.
   test "only image IDs route at all" do
-    start_command(IMAGE)
     [ "helixkit-agent-runtime:latest", "sha256:abc", "sha256:#{'A' * 64}" ].each do |bad|
+      start_command(bad)
       fetch(bad)
       assert_response :not_found, bad
     end

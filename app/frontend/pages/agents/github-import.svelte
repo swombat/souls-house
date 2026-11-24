@@ -22,8 +22,10 @@
     can_approve: canApprove = false,
     refresh_url: refreshUrl = null,
     retry_activation_url: retryActivationUrl = null,
+    move = null,
     runtime_trust_notice: runtimeTrustNotice = '',
     future_branch_trust_notice: futureBranchTrustNotice = '',
+    placement_options: placementOptions = null,
     sync_strategies: syncStrategies = [
       { value: 'existing', label: 'Keep existing sync' },
       { value: 'standard', label: 'Use standard two-way Git sync' },
@@ -37,6 +39,7 @@
       service_connection_id: connections[0]?.id || '',
       branch: '',
       sync_strategy: 'existing',
+      ...(placementOptions ? { placement: placementOptions.default } : {}),
     },
   });
   let selectedConnection = $derived(
@@ -68,7 +71,7 @@
     const interval = setInterval(() => {
       if (request && ['pending_review', 'approved', 'provisioning'].includes(request.status)) {
         router.reload({
-          only: ['github_import', 'approve_url', 'can_approve', 'refresh_url', 'retry_activation_url'],
+          only: ['github_import', 'approve_url', 'can_approve', 'refresh_url', 'retry_activation_url', 'move'],
           preserveScroll: true,
         });
       }
@@ -107,7 +110,7 @@
   </div>
 
   {#if request}
-    <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} />
+    <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} {move} />
     {#if request.sync_strategy === 'standard'}
       <GithubSyncHealth health={request.sync_health} />
     {/if}
@@ -195,6 +198,25 @@
         strategies={syncStrategies}
         disabled={$form.processing}
         error={errorsFor('sync_strategy')} />
+      {#if placementOptions}
+        <fieldset class="space-y-2" data-testid="github-import-placement">
+          <legend class="text-sm font-medium">Where to create it (site admin)</legend>
+          {#each placementOptions.choices as choice}
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="github-import-placement"
+                value={choice.value}
+                bind:group={$form.github_resident_import.placement}
+                disabled={$form.processing} />
+              {choice.label}
+            </label>
+          {/each}
+          {#if errorsFor('placement')}
+            <p role="alert" class="text-sm text-destructive">{errorsFor('placement')}</p>
+          {/if}
+        </fieldset>
+      {/if}
       <p class="text-sm text-muted-foreground">
         Submitting requests review; it does not approve or run repository code.
       </p>

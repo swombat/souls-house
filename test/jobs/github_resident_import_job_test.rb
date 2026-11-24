@@ -73,6 +73,31 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     assert_nil request.agent
   end
 
+  test "a site admin's main-server choice is made on the house even with the switch on" do
+    request = import_request
+    request.update_column(:placement, "main_server")
+    approve_fixture(request)
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
+    calls = []
+    volume = Object.new
+    volume.define_singleton_method(:seed_from_directory!) { |root| calls << [ :seed, root ] }
+    sandbox = Object.new
+    sandbox.define_singleton_method(:spawn!) { calls << :spawn }
+    sandbox.define_singleton_method(:active_turn?) { false }
+    sandbox.define_singleton_method(:imported_runtime_trusted?) { true }
+    Agents::GithubImportStage.stub(:pack, ->(*) { flunk "a main-server import is never staged for a VM" }) do
+      Agents::GithubImportSource.stub(:new, source_stub(request)) do
+        Agents::Volume.stub(:new, volume) do
+          Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+        end
+      end
+    end
+    request.reload
+    assert_equal "ready", request.status
+    assert_equal [ [ :seed, "/synthetic-home" ], :spawn ], calls
+    assert_nil request.agent.placement
+  end
+
   test "a request queued before its account started paying makes no unpaid resident" do
     request = import_request
     approve_fixture(request)
