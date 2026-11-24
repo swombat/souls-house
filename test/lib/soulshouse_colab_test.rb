@@ -55,46 +55,87 @@ class SoulshouseColabTest < ActiveSupport::TestCase
     assert_equal "Bearer hx_test", request[:headers]["authorization"]
   end
 
-  test "ccu-info strips Google XSSI prefix and prints JSON" do
-    with_stub_http({
-      "/api/v1/service_connections/svc_123/access_token" => [ 200, '{"access_token":"short-lived-colab-token"}' ],
-      "/tun/m/ccu-info" => [ 200, ")]}'\n{\"currentBalance\": 42.5}" ]
-    }) do |base, requests|
-      manifest = write_manifest([
-        {
-          "connection_id" => "svc_123",
-          "provider" => "google_workspace",
-          "credentials" => { "access_token_endpoint" => "#{base}/api/v1/service_connections/svc_123/access_token" }
-        }
-      ])
+  test "ccu-info hits pinned Google Colab origin, strips XSSI prefix, and prints JSON" do
+    runner = <<~PYTHON
+      import importlib.machinery, importlib.util, io, json, sys
+      loader = importlib.machinery.SourceFileLoader("soulshouse_colab", sys.argv[1])
+      spec = importlib.util.spec_from_loader(loader.name, loader)
+      mod = importlib.util.module_from_spec(spec)
+      loader.exec_module(mod)
 
-      stdout, stderr, status = Open3.capture3(
-        {
-          "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
-          "SOULSHOUSE_SERVICES_FILE" => manifest.path,
-          "SOULSHOUSE_COLAB_ORIGIN" => base
-        },
-        "python3",
-        SCRIPT.to_s,
-        "ccu-info"
-      )
+      seen = []
+      class FakeResp(io.BytesIO):
+          status = 200
+          def __enter__(self): return self
+          def __exit__(self, *a): pass
+      class FakeOpener:
+          def open(self, req, timeout=30):
+              seen.append((req.full_url, req.get_header("Authorization")))
+              return FakeResp(b")]}'\\n{\\"currentBalance\\": 42.5}")
+      mod.NO_REDIRECT_OPENER = FakeOpener()
+      rc = mod.run_ccu_info("short-lived-colab-token")
+      assert rc == 0, rc
+      assert seen == [("https://colab.research.google.com/tun/m/ccu-info", "Bearer short-lived-colab-token")], seen
+    PYTHON
 
-      assert status.success?, stderr
-      assert_equal({ "currentBalance" => 42.5 }, JSON.parse(stdout))
-      assert_not_includes stdout, "short-lived-colab-token"
-      colab_req = requests.find { |r| r[:path] == "/tun/m/ccu-info" }
-      assert_equal "Bearer short-lived-colab-token", colab_req[:headers]["authorization"]
-    ensure
-      manifest&.unlink
-    end
+    stdout, stderr, status = Open3.capture3("python3", "-c", runner, SCRIPT.to_s)
+    assert status.success?, stderr
+    assert_equal({ "currentBalance" => 42.5 }, JSON.parse(stdout))
+    assert_not_includes stdout, "short-lived-colab-token"
   end
 
-  test "check reports tokeninfo scopes and both Colab host statuses without leaking tokens or bodies" do
+  test "check hits pinned Google endpoints and reports scopes and statuses without leaking tokens or bodies" do
+    runner = <<~PYTHON
+      import importlib.machinery, importlib.util, io, json, sys, urllib.error
+      loader = importlib.machinery.SourceFileLoader("soulshouse_colab", sys.argv[1])
+      spec = importlib.util.spec_from_loader(loader.name, loader)
+      mod = importlib.util.module_from_spec(spec)
+      loader.exec_module(mod)
+
+      responses = {
+          "https://oauth2.googleapis.com/tokeninfo": (200, b'{"scope":"openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/colaboratory","email":"secret@example.com"}'),
+          "https://colab.research.google.com/tun/m/ccu-info": (200, b")]}'\\n{\\"secretBalance\\": 99}"),
+          "https://colaboratory.googleapis.com/v1beta/runtimes": (200, b'{"runtimes":[]}'),
+          "https://colab.pa.googleapis.com/v1/user-info": (404, b'{"error":"not_found"}'),
+      }
+      seen = []
+      class FakeResp(io.BytesIO):
+          def __init__(self, status, body):
+              super().__init__(body)
+              self.status = status
+          def __enter__(self): return self
+          def __exit__(self, *a): pass
+      class FakeOpener:
+          def open(self, req, timeout=30):
+              seen.append(req.full_url)
+              code, body = responses[req.full_url]
+              if code >= 400:
+                  raise urllib.error.HTTPError(req.full_url, code, "Err", {}, io.BytesIO(body))
+              return FakeResp(code, body)
+      mod.NO_REDIRECT_OPENER = FakeOpener()
+      rc = mod.run_check("svc_123", "short-lived-colab-token")
+      assert rc == 0, rc
+      assert set(seen) == set(responses.keys()), seen
+    PYTHON
+
+    stdout, stderr, status = Open3.capture3("python3", "-c", runner, SCRIPT.to_s)
+    assert status.success?, stderr
+    report = JSON.parse(stdout)
+    assert_equal "svc_123", report["connection_id"]
+    assert_equal 200, report["tokeninfo_status"]
+    assert_equal true, report["has_colaboratory_scope"]
+    assert_equal 200, report.dig("endpoints", "colab_session_ccu_info")
+    assert_equal 200, report.dig("endpoints", "colab_public_runtimes")
+    assert_equal 404, report.dig("endpoints", "colab_pa_user_info_unverified")
+    assert_includes report["scopes"], "https://www.googleapis.com/auth/colaboratory"
+    assert_not_includes stdout, "short-lived-colab-token"
+    assert_not_includes stdout, "secret@example.com"
+    assert_not_includes stdout, "secretBalance"
+  end
+
+  test "broker HTTP errors print status only and do not leak response bodies" do
     with_stub_http({
-      "/api/v1/service_connections/svc_123/access_token" => [ 200, '{"access_token":"short-lived-colab-token"}' ],
-      "/tokeninfo" => [ 200, '{"scope":"openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/colaboratory","email":"secret@example.com"}' ],
-      "/tun/m/ccu-info" => [ 200, ")]}'\n{\"secretBalance\": 99}" ],
-      "/v1/user-info" => [ 200, '{"subscriptionTier":"PRO_PLUS"}' ]
+      "/api/v1/service_connections/svc_123/access_token" => [ 409, '{"error":"provider_reauth_required","secret":"do-not-print"}' ]
     }) do |base, _requests|
       manifest = write_manifest([
         {
@@ -107,28 +148,16 @@ class SoulshouseColabTest < ActiveSupport::TestCase
       stdout, stderr, status = Open3.capture3(
         {
           "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
-          "SOULSHOUSE_SERVICES_FILE" => manifest.path,
-          "SOULSHOUSE_GOOGLE_TOKENINFO_URL" => "#{base}/tokeninfo",
-          "SOULSHOUSE_COLAB_ORIGIN" => base,
-          "SOULSHOUSE_COLAB_PA_ORIGIN" => base
+          "SOULSHOUSE_SERVICES_FILE" => manifest.path
         },
         "python3",
         SCRIPT.to_s,
         "check"
       )
 
-      assert status.success?, stderr
-      report = JSON.parse(stdout)
-      assert_equal "svc_123", report["connection_id"]
-      assert_equal 200, report["tokeninfo_status"]
-      assert_equal true, report["has_colaboratory_scope"]
-      assert_equal 200, report["colab_session_status"]
-      assert_equal 200, report["colab_runtime_status"]
-      assert_includes report["scopes"], "https://www.googleapis.com/auth/colaboratory"
-      assert_not_includes stdout, "short-lived-colab-token"
-      assert_not_includes stdout, "secret@example.com"
-      assert_not_includes stdout, "secretBalance"
-      assert_not_includes stdout, "PRO_PLUS"
+      assert_not status.success?
+      assert_includes stderr, "HTTP 409"
+      assert_not_includes stdout + stderr, "do-not-print"
     ensure
       manifest&.unlink
     end

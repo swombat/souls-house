@@ -187,6 +187,7 @@ module Services
         https://meet.googleapis.com
         https://colab.research.google.com
         https://colab.pa.googleapis.com
+        https://colaboratory.googleapis.com
       ],
       documentation: [
         "https://developers.google.com/workspace",
