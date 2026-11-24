@@ -1,7 +1,7 @@
 export function serviceDescription(service) {
   if (service.key === 'dropbox') return 'Files and folders, with provider-enforced scope choices.';
   if (service.key === 'google_workspace')
-    return 'Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through the Google Workspace gws client.';
+    return 'Gmail, Calendar, Drive, Docs, Sheets, Slides, Meet, and Colab through Google Workspace.';
   if (service.key === 'xero')
     return 'Contacts, invoices, bank transactions and reports in the Xero organisations you choose.';
   if (service.key === 'freeagent')

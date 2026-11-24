@@ -265,6 +265,7 @@ COPY soulshouse-youtube /usr/local/bin/soulshouse-youtube
 COPY soulshouse-x /usr/local/bin/soulshouse-x
 COPY soulshouse-linkedin /usr/local/bin/soulshouse-linkedin
 COPY soulshouse-gws /usr/local/bin/soulshouse-gws
+COPY --chmod=0755 soulshouse-colab /usr/local/bin/soulshouse-colab
 COPY soulshouse-comms /usr/local/bin/soulshouse-comms
 COPY soulshouse-tailnet /usr/local/bin/soulshouse-tailnet
 COPY soulshouse-ghost /usr/local/bin/soulshouse-ghost

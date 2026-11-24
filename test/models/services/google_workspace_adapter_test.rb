@@ -66,6 +66,33 @@ class Services::GoogleWorkspaceAdapterTest < ActiveSupport::TestCase
     assert_includes scopes, "https://www.googleapis.com/auth/calendar.readonly"
     assert_not scopes.any? { |scope| scope.include?("gmail") || scope == "https://mail.google.com/" }
     assert_not scopes.any? { |scope| scope.include?("meetings.space") }
+    assert_not_includes scopes, "https://www.googleapis.com/auth/colaboratory"
+  end
+
+  test "compiles Colab authority and tracks whether Google granted colaboratory" do
+    definition = Services::Definition.fetch("google_workspace")
+    selection = {
+      drive: "none", docs: "none", sheets: "none", slides: "none",
+      calendar: "none", gmail: "none", meet: "none", colab: "write"
+    }
+
+    scopes = definition.scopes_for_authority(selection)
+    assert_equal [
+      "openid",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/colaboratory"
+    ], scopes
+
+    granted = @adapter.effective_authority(scopes, requested_selection: selection)
+    assert_equal "write", granted.dig("selection", "colab")
+    assert_empty granted["warnings"]
+
+    denied = @adapter.effective_authority(
+      [ "openid", "https://www.googleapis.com/auth/userinfo.email" ],
+      requested_selection: selection
+    )
+    assert_equal "none", denied.dig("selection", "colab")
+    assert_includes denied["warnings"], "Google did not grant all requested access: Colab."
   end
 
   test "Drive authority floors effective Docs Sheets and Slides authority" do
