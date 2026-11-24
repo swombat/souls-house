@@ -68,7 +68,7 @@
     formData.append('setting[companion_mac_download_url]', form.companion_mac_download_url ?? '');
     formData.append('setting[companion_mac_early_download_url]', form.companion_mac_early_download_url ?? '');
     formData.append('setting[companion_mac_early_download_sha256]', form.companion_mac_early_download_sha256 ?? '');
-    for (const arch of ['amd64', 'arm64']) {
+    for (const arch of ['installer', 'amd64', 'arm64']) {
       for (const field of ['url', 'sha256']) {
         const key = `companion_linux_${arch}_download_${field}`;
         formData.append(`setting[${key}]`, form[key] ?? '');

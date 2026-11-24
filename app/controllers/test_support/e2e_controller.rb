@@ -16,6 +16,8 @@ module TestSupport
     def companion_download_fixture
       Setting.instance.update!(companion_mac_early_download_url: params[:early_url].presence,
         companion_mac_early_download_sha256: params[:early_sha256].presence,
+        companion_linux_installer_download_url: params[:linux_installer_url].presence,
+        companion_linux_installer_download_sha256: params[:linux_installer_sha256].presence,
         companion_linux_amd64_download_url: params[:linux_amd64_url].presence,
         companion_linux_amd64_download_sha256: params[:linux_amd64_sha256].presence,
         companion_linux_arm64_download_url: params[:linux_arm64_url].presence,

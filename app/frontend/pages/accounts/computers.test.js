@@ -228,15 +228,19 @@ test('the page listens for its computers connecting or dropping and reloads only
 });
 
 test('says when the Mac has not allowed commands, only for a resident with Run commands on', () => {
-  const off = { ...device, commands_off_locally: true };
-  const { unmount } = render(Computers, { ...props, devices: [off] });
+  const macDevice = {
+    ...device,
+    commands_off_locally: true,
+    residents: [{ ...device.residents[0], volumes: [{ volume: 'darwin-volume:main', access: 'read' }] }],
+  };
+  const { unmount } = render(Computers, { ...props, devices: [macDevice] });
   expect(screen.getByTestId('commands-off-locally')).toHaveTextContent(
     "This Mac hasn't allowed commands yet. Turn on “Let residents run commands on this Mac” in its menu bar."
   );
   unmount();
 
-  const resident = { ...device.residents[0], execute: false };
-  const { unmount: unmount2 } = render(Computers, { ...props, devices: [{ ...off, residents: [resident] }] });
+  const resident = { ...macDevice.residents[0], execute: false };
+  const { unmount: unmount2 } = render(Computers, { ...props, devices: [{ ...macDevice, residents: [resident] }] });
   expect(screen.queryByTestId('commands-off-locally')).not.toBeInTheDocument();
   unmount2();
 
@@ -246,6 +250,46 @@ test('says when the Mac has not allowed commands, only for a resident with Run c
     expect(screen.queryByTestId('commands-off-locally')).not.toBeInTheDocument();
     u();
   }
+});
+
+test('does not say "this Mac" on Linux and shows per-resident commands-off warning on mixed Linux ceilings', () => {
+  const linuxAllOff = {
+    ...device,
+    id: 'dell',
+    name: 'omarchidell',
+    commands_off_locally: true,
+    residents: [
+      { id: 'mira', name: 'Mira', execute: true, commands_off_locally: true, desktop: false, volumes: [{ volume: 'linux-volume:root', access: 'read' }] },
+    ],
+  };
+  const { unmount } = render(Computers, { ...props, devices: [linuxAllOff] });
+  const note = screen.getByTestId('commands-off-locally');
+  expect(note.textContent).not.toContain('Mac');
+  expect(note.textContent).toContain('souls-house-companion commands on');
+  unmount();
+
+  // Mixed Dell ceiling: Lume has execute locally, Mira does not.
+  const linuxMixed = {
+    ...linuxAllOff,
+    commands_off_locally: false,
+    residents: [
+      { id: 'lume', name: 'Lume', execute: true, commands_off_locally: false, desktop: false, volumes: [{ volume: 'linux-volume:root', access: 'write' }] },
+      { id: 'mira', name: 'Mira', execute: true, commands_off_locally: true, desktop: false, volumes: [{ volume: 'linux-volume:root', access: 'read' }] },
+    ],
+  };
+  const { unmount: unmountMixed } = render(Computers, { ...props, devices: [linuxMixed] });
+  const notes = screen.getAllByTestId('commands-off-locally');
+  expect(notes).toHaveLength(1);
+  expect(notes[0].textContent).not.toContain('Mac');
+  expect(notes[0].textContent).toContain('Mira');
+  expect(notes[0].textContent).toContain('souls-house-companion policy apply');
+  expect(notes[0].textContent).toContain('would allow every resident');
+  unmountMixed();
+
+  // Unknown platform stays neutral instead of assuming Mac.
+  const unknownOs = { ...device, commands_off_locally: true };
+  render(Computers, { ...props, devices: [unknownOs] });
+  expect(screen.getByTestId('commands-off-locally').textContent).not.toContain('Mac');
 });
 
 test('Add a computer follows can_add, not can_manage', () => {

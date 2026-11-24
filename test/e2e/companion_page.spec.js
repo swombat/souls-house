@@ -77,11 +77,15 @@ test('an early unsigned build is offered under coming soon, with its notice and 
 
 test('Linux downloads show beside the Mac one on every OS, each with its checksum', async ({ page, request }) => {
   const base = 'https://github.com/swombat/souls-house-companion/releases/download/early-unsigned-test';
+  const installer = `${base}/install-linux.sh`;
   const amd = `${base}/souls-house-companion-dev-test-linux-amd64.tar.gz`;
   const arm = `${base}/souls-house-companion-dev-test-linux-arm64.tar.gz`;
+  const installerSha = 'ef'.repeat(32);
   const amdSha = 'ab'.repeat(32);
   const armSha = 'cd'.repeat(32);
   const fixture = {
+    linux_installer_url: installer,
+    linux_installer_sha256: installerSha,
     linux_amd64_url: amd,
     linux_amd64_sha256: amdSha,
     linux_arm64_url: arm,
@@ -97,6 +101,10 @@ test('Linux downloads show beside the Mac one on every OS, each with its checksu
       await expect(page.getByTestId('companion-early')).toHaveCount(0);
       const linux = page.getByTestId('companion-linux');
       await expect(linux).toHaveCount(1);
+      await expect(page.getByTestId('companion-linux-command')).toContainText(installer);
+      await expect(page.getByTestId('companion-linux-inspect')).toHaveAttribute('href', installer);
+      await expect(page.getByTestId('companion-linux-installer-sha256')).toHaveText(installerSha);
+      await page.getByTestId('companion-linux-manual').locator('summary').click();
       await expect(page.getByTestId('companion-download-linux-amd64')).toHaveAttribute('href', amd);
       await expect(page.getByTestId('companion-download-linux-arm64')).toHaveAttribute('href', arm);
       await expect(page.getByTestId('companion-linux-amd64-sha256')).toHaveText(amdSha);

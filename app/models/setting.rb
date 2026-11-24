@@ -46,7 +46,7 @@ class Setting < ApplicationRecord
   validates :site_name, presence: true, length: { maximum: 100 }
   # The Mac main download stays blank until a Developer ID-signed, notarised build
   # exists; https only. Each other download offered with a checksum beside it: address + sha256, both or neither.
-  COMPANION_CHECKSUMMED_DOWNLOADS = %i[companion_mac_early companion_linux_amd64 companion_linux_arm64].freeze
+  COMPANION_CHECKSUMMED_DOWNLOADS = %i[companion_mac_early companion_linux_installer companion_linux_amd64 companion_linux_arm64].freeze
   COMPANION_DOWNLOAD_URLS = [ :companion_mac_download_url, *COMPANION_CHECKSUMMED_DOWNLOADS.map { |d| :"#{d}_download_url" } ].freeze
   COMPANION_DOWNLOAD_SHAS = COMPANION_CHECKSUMMED_DOWNLOADS.map { |d| :"#{d}_download_sha256" }.freeze
   normalizes(*COMPANION_DOWNLOAD_URLS, with: ->(url) { url.strip.presence })

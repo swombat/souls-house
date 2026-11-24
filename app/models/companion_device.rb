@@ -205,11 +205,18 @@ class CompanionDevice < ApplicationRecord
   end
 
   # True only when the computer's current connection reported, explicitly,
-  # that its run-commands opt-in is off. Not knowing (no report from this
-  # connection, offline, Linux, an older companion) is false here, so the
-  # page says nothing rather than something stale.
-  def commands_off_locally?
-    connection_epoch.present? && ceiling_epoch == connection_epoch && execute_lifecycle_accepted == false
+  # that run-commands is off locally — either computer-wide
+  # (`execute_lifecycle_accepted == false`) or, when `resident_id` is given,
+  # for that resident in a per-resident reported ceiling (`execute == false`).
+  # Not knowing (no report from this connection, offline, an older companion)
+  # is false here, so the page says nothing rather than something stale.
+  def commands_off_locally?(resident_id = nil)
+    return false unless connection_epoch.present? && ceiling_epoch == connection_epoch
+    return true if execute_lifecycle_accepted == false
+    return false if resident_id.blank?
+
+    resident = reported_ceiling&.fetch("residents", nil)&.find { |r| r["id"] == resident_id }
+    resident&.fetch("execute", nil) == false
   end
 
   # The access the last report allows, or nil when there is no report or it
@@ -320,8 +327,13 @@ class CompanionDevice < ApplicationRecord
     seen = []
     total = 0
     residents = value["residents"].filter_map do |resident|
-      return unless resident.is_a?(Hash) && resident.keys.sort == %w[id volumes] && resident["id"].is_a?(String) &&
-        !seen.include?(resident["id"]) && resident["volumes"].is_a?(Array) && resident["volumes"].size <= 128
+      return unless resident.is_a?(Hash)
+
+      keys_sorted = resident.keys.sort
+      return unless (keys_sorted == %w[id volumes] || keys_sorted == %w[execute id volumes]) &&
+        resident["id"].is_a?(String) && !seen.include?(resident["id"]) &&
+        resident["volumes"].is_a?(Array) && resident["volumes"].size <= 128
+      return if resident.key?("execute") && ![ true, false ].include?(resident["execute"])
 
       seen << resident["id"]
       keys = []
@@ -339,7 +351,9 @@ class CompanionDevice < ApplicationRecord
       total += volumes.size
       return if total > 128
 
-      { "id" => resident["id"], "volumes" => volumes }
+      entry = { "id" => resident["id"], "volumes" => volumes }
+      entry["execute"] = resident["execute"] if resident.key?("execute")
+      entry
     end
     { "residents" => residents }
   end

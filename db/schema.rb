@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_232000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3162,6 +3162,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210000) do
     t.string "companion_linux_amd64_download_sha256", limit: 64
     t.string "companion_linux_arm64_download_url", limit: 500
     t.string "companion_linux_arm64_download_sha256", limit: 64
+    t.string "companion_linux_installer_download_url", limit: 500
+    t.string "companion_linux_installer_download_sha256", limit: 64
     t.integer "spare_server_limit", default: 0, null: false
     t.integer "spare_cx23_target", default: 0, null: false
     t.integer "spare_cx33_target", default: 0, null: false

@@ -84,6 +84,8 @@ class Admin::SettingsController < ApplicationController
       :companion_mac_download_url,
       :companion_mac_early_download_url,
       :companion_mac_early_download_sha256,
+      :companion_linux_installer_download_url,
+      :companion_linux_installer_download_sha256,
       :companion_linux_amd64_download_url,
       :companion_linux_amd64_download_sha256,
       :companion_linux_arm64_download_url,

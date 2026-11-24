@@ -28,8 +28,8 @@
   // Linux builds are offered once Site Admin holds one (CompanionDownload shows them).
   const settings = $derived($page.props.site_settings ?? {});
   const linuxOffered = $derived(
-    ['amd64', 'arm64'].some(
-      (arch) => settings[`companion_linux_${arch}_download_url`] && settings[`companion_linux_${arch}_download_sha256`]
+    ['installer', 'amd64', 'arm64'].some(
+      (kind) => settings[`companion_linux_${kind}_download_url`] && settings[`companion_linux_${kind}_download_sha256`]
     )
   );
 
@@ -138,7 +138,8 @@
       <li>
         <span class="font-medium">Get a code on the computer</span>: in the companion's menu, choose “Pair this Mac…”,
         tick the disks it may ever reach (the computer's own ceiling) and whether only to read them, and it shows a
-        short code. On Linux, <code>souls-house-companion pair</code> does the same in a terminal.
+        short code. On Linux, the installer runs <code>souls-house-companion setup</code> for you (or run it in a
+        terminal).
       </li>
       <li>
         <span class="font-medium">Type the code on {$siteName}</span>: any member of the account opens Settings → Computers →

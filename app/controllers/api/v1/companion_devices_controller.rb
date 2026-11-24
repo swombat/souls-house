@@ -24,7 +24,7 @@ module Api
             connected: device.connection_epoch.present?,
             paused: device.paused?,
             volumes: mine.fetch("volumes", []).map { |v| v.slice("volume", "access") },
-            execute: mine["execute"] == true && !device.commands_off_locally?,
+            execute: mine["execute"] == true && !device.commands_off_locally?(agent.obfuscated_id),
             desktop: mine["desktop"] == true
           }
         end
