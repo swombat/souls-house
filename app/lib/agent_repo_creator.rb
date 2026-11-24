@@ -6,7 +6,11 @@ class AgentRepoCreator
   DEFAULT_RUNTIME_DOMAIN = "helixagents.swombat.io"
   DEFAULT_VM_HOST = "helix-agents"
   REPO_ATTEMPTS = 5
+  # Seconds. chrono_machines 0.13 takes Integer nanoseconds; with_repo_retry
+  # converts, so tests can still set this to 0 to skip the wait.
   REPO_RETRY_DELAY = 1.0
+  REPO_RETRY_MAX_DELAY = 10
+  NS_PER_SECOND = 1_000_000_000
 
   class_attribute :repo_retry_delay, default: REPO_RETRY_DELAY
 
@@ -168,11 +172,15 @@ class AgentRepoCreator
   end
 
   def with_repo_retry
+    base = (repo_retry_delay * NS_PER_SECOND).round
+    # The 0.12 executor's defaults, made explicit: doubling from the base,
+    # capped at ten seconds, no jitter.
+    backoff = ChronoMachines::Exponential.new(
+      base: base, multiplier: 2.0, max: [ base, REPO_RETRY_MAX_DELAY * NS_PER_SECOND ].max, jitter: 0.0
+    )
     ChronoMachines.retry(
-      max_attempts: REPO_ATTEMPTS,
-      base_delay: repo_retry_delay,
-      jitter_factor: 0,
-      retryable_exceptions: [ GitHubError ],
+      backoff, REPO_ATTEMPTS,
+      retryable: [ GitHubError ],
       delay_from: ->(exception:, attempt:) { exception.message.match?(/404|Not Found/i) ? nil : :halt }
     ) { yield }
   rescue ChronoMachines::MaxRetriesExceededError => e

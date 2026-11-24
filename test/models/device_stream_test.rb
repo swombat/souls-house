@@ -138,7 +138,7 @@ class DeviceStreamTest < ActiveSupport::TestCase
   test "rate limit admits retries without admitting new batches" do
     @stream.append!(@credential, @payload)
     throttle = "device_stream:#{@stream.id}:batches"
-    ThrottleMachines.storage.increment_counter(throttle, 60, DeviceStream::BATCHES_PER_MINUTE - 1)
+    ThrottleMachines.storage.increment_counter(throttle, DeviceStream::BATCH_WINDOW, DeviceStream::BATCHES_PER_MINUTE - 1)
 
     assert_equal :ok, @stream.append!(@credential, @payload)
     error = assert_raises(DeviceStream::Rejected) { @stream.append!(@credential, @payload.merge("sequence" => 1)) }
