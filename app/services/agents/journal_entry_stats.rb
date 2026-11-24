@@ -6,67 +6,42 @@ module Agents
 
     class MeasurementError < StandardError; end
 
-    # Count conventional second-level entry headings, ignoring fenced examples.
-    # Only the aggregate leaves the resident's filesystem. No symlink traversal.
-    # Disk use is measured apart, on a slower clock (Agents::HomeStorage): a
-    # walk of a 100 GB home outlasted this script's budget, and the count
-    # should never wait on it.
-    SCRIPT = <<~'PYTHON'
-      import json, os, pathlib, re, stat, sys
-      root = pathlib.Path("/home/agent/identity/memory/daily-journals")
-      # One Markdown file under memory/ when the resident chose one (argv), else
-      # the dated daily journals. The rule is Agent.valid_journal_source?.
-      source = sys.argv[1] if len(sys.argv) > 1 else None
-      def count_entries(journal):
-          count = 0
-          fence = None
-          with journal:
-              for line in journal:
-                  marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
-                  if marker:
-                      run = marker[1]
-                      if fence is None:
-                          fence = run
-                      elif run[0] == fence[0] and len(run) >= len(fence):
-                          fence = None
-                      continue
-                  if fence is None and re.match(r"^##[ \t]+\S", line):
-                      count += 1
-          return count
-      count = 0
-      if source is None:
-          if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
-              raise RuntimeError("invalid journal directory")
+    # The card's number: entries in the journal the home declares, by the one
+    # rule in journal_rule.py (Agents::MemoryArchive reads the same rule), or
+    # "not shared". Only the aggregate leaves the resident's filesystem. Disk
+    # use is measured apart, on a slower clock (Agents::HomeStorage): a walk of
+    # a 100 GB home outlasted this script's budget, and the count should never
+    # wait on it. The runner carries a byte-for-byte copy (HOME_STATS_SCRIPT).
+    RULE = Rails.root.join("app/services/agents/journal_rule.py").read.freeze
+    COUNT = <<~'PYTHON'
+
+      # The count. argv[1], when present, is the file an admin chose
+      # (Agent#journal_source), read only when the home declares nothing.
+      import sys
+      COUNT_FILE_MAX = 64 * 1024 * 1024
+      def count_journal():
+          home = os.open(HOME, DIRECTORY_FLAGS)
           try:
-              paths = list(root.iterdir())
-          except FileNotFoundError:
-              paths = []
-          for path in paths:
-              if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
-                  continue
-              count += count_entries(path.open(encoding="utf-8"))
-      else:
-          segments = source.split("/")
-          if (len(source) > 200 or not source.endswith(".md") or len(segments) < 2 or segments[0] != "memory"
-                  or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", segment) or not segment.strip(".") for segment in segments)):
-              raise RuntimeError("invalid journal source")
-          # Opened step by step without following links, so a link swapped in
-          # after any check is refused at open, not followed.
-          directory = os.open(str(root.parent.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-          try:
-              for segment in segments[:-1]:
-                  inner = os.open(segment, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
-                  os.close(directory)
-                  directory = inner
-              handle = os.open(segments[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+              try:
+                  path, declared = journal_place(home, sys.argv[1] if len(sys.argv) > 1 else None)
+              except NotShared:
+                  return {"status": "not_shared"}
+              count = 0
+              try:
+                  for document in documents(home, path, COUNT_FILE_MAX):
+                      if document["data"] is None:
+                          raise ValueError("a journal file could not be read")
+                      count += len(entries(document))
+              except FileNotFoundError:
+                  if declared:
+                      raise
+                  count = 0
+              return {"count": count}
           finally:
-              os.close(directory)
-          if not stat.S_ISREG(os.fstat(handle).st_mode):
-              os.close(handle)
-              raise RuntimeError("journal source is not a file")
-          count = count_entries(os.fdopen(handle, encoding="utf-8"))
-      print(json.dumps({"count": count}))
+              os.close(home)
+      print(json.dumps(count_journal()))
     PYTHON
+    SCRIPT = (RULE + COUNT).freeze
 
     def initialize(agent)
       @agent = agent
@@ -82,13 +57,9 @@ module Agents
       result = capture
       raise MeasurementError unless result[:ok]
 
-      measurement = JSON.parse(result[:stdout])
-      count = measurement.fetch("count")
-      raise MeasurementError unless count.is_a?(Integer) && count >= 0
-
-      { status: "measured", count: count, measured_at: Time.current.iso8601 }
+      interpret(JSON.parse(result[:stdout]))
     rescue MeasurementError, Agents::Resources::OwnershipError, Timeout::Error,
-           SystemCallError, JSON::ParserError, KeyError
+           SystemCallError, JSON::ParserError
       @agent.journal_entry_stats.merge("status" => "unavailable")
     end
 
@@ -96,15 +67,21 @@ module Agents
 
     # A resident on its own server (#246): the same script, run by its runner.
     def remote
-      measurement = Agents::RemoteRuntime.home_stats!(@agent)
+      interpret(Agents::RemoteRuntime.home_stats!(@agent))
+    rescue MeasurementError, Agents::RemoteRuntime::Unavailable
+      @agent.journal_entry_stats.merge("status" => "unavailable")
+    end
+
+    # A measured number, or "not shared" when the home says its journal is
+    # not for the house to count. Anything else is a failed measurement.
+    def interpret(measurement)
       raise MeasurementError unless measurement.is_a?(Hash)
+      return { status: "not_shared", measured_at: Time.current.iso8601 } if measurement["status"] == "not_shared"
 
       count = measurement["count"]
       raise MeasurementError unless count.is_a?(Integer) && count >= 0
 
       { status: "measured", count: count, measured_at: Time.current.iso8601 }
-    rescue MeasurementError, Agents::RemoteRuntime::Unavailable
-      @agent.journal_entry_stats.merge("status" => "unavailable")
     end
 
     def capture

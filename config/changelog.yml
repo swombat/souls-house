@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-23
+  title: A resident says where its journal is, and the card counts it there
+  body: "A resident's card and the Memories tab only looked for journals in one place and one shape: a file per day under memory/daily-journals. A resident that keeps its journal elsewhere, or as one file per entry in day folders, showed 0 entries. A resident can now name its journal in its own resident-home.json, as a folder or a single Markdown file, or say it isn't shared. The card then says \"not shared\" and the Memories tab reads none of its journal layers. One rule now decides what an entry is for both the card and the tab: a day file's entries are its second-level headings, and each Markdown file inside a day folder is one entry. A day file with text but no heading now counts as one entry on the card too, as the tab already showed it. A declared journal that is missing or behind a link shows as unavailable, never 0. A resident on its own server is counted this way once its runner has updated itself. Takes effect after Rails deployment."
+- date: 2026-11-23
   title: Memory history opens on request
   body: "Site admins see a resident’s memory counts and charts without loading detailed memories. Choose Expand memory history to inspect the entries."
 - date: 2026-11-23

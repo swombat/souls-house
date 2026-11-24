@@ -96,7 +96,10 @@
         class="text-sm text-amber-700 dark:text-amber-400">
         Journal archive {history.archive_status}; this list may be incomplete. Available graph nodes are still shown.
       </p>{/if}
-    {#if history.items.length === 0}<p class="text-sm text-muted-foreground">
+    {#if history.archive_status === 'not_shared'}<p role="status" class="text-sm text-muted-foreground">
+        This resident's journal is not shared, so no journal layer is shown. Graph nodes are still shown.
+      </p>{/if}
+    {#if history.items.length === 0 && history.archive_status !== 'not_shared'}<p class="text-sm text-muted-foreground">
         {selected.length ? 'No matching memory items.' : 'Select at least one item type.'}
       </p>{/if}
     <ol class="space-y-4">
@@ -131,7 +134,7 @@
               {#if item.edges_truncated}<p>Showing the newest 200 connections.</p>{/if}
             </details>
           {:else}
-            <p class="font-mono text-xs text-muted-foreground">memory/{item.path}</p>
+            <p class="font-mono text-xs text-muted-foreground">{item.path}</p>
             {#if item.body}<pre class="whitespace-pre-wrap break-words font-sans text-sm">{item.body}</pre>{/if}
             {#if item.body_status !== 'complete'}<p class="text-sm text-amber-700 dark:text-amber-400">
                 {item.body_status === 'changed'

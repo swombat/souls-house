@@ -41,7 +41,7 @@ for (const admin of [false, true]) {
                     title: older ? 'Older journal entry' : 'A moment noticed',
                     occurred_at: '2026-09-22T10:00:00.000000Z',
                     timestamp_basis: 'journal heading',
-                    path: 'daily-journals/2026-09-22.md',
+                    path: 'memory/daily-journals/2026-09-22.md',
                     body: '## 10:00 — A moment noticed\nA separate entry, preserved without flattening the whole file.',
                     body_status: 'complete',
                   },
