@@ -94,6 +94,45 @@ class Backup::LocalAgentRuntimeImageTest < ActiveSupport::TestCase
     assert_equal 1, builds.length
   end
 
+  test "accepts Chaos SemVer build metadata when comparing against older timestamp versions" do
+    builds = []
+    service = build_service(
+      production_version: "chaos 47.15.0.1795125776",
+      local_versions: [ "chaos 47.17.0+91be45ed" ],
+      local_refs: [ desired_ref ],
+      builds: builds
+    )
+
+    assert_equal false, service.ensure_current!
+    assert_empty builds
+  end
+
+  test "treats two builds of the same release with different SemVer metadata as equal" do
+    builds = []
+    service = build_service(
+      production_version: "chaos 47.17.0+d1bee185",
+      local_versions: [ "chaos 47.17.0+91be45ed" ],
+      local_refs: [ desired_ref ],
+      builds: builds
+    )
+
+    assert_equal false, service.ensure_current!
+    assert_empty builds
+  end
+
+  test "rebuilds an older SemVer release when production is newer" do
+    builds = []
+    service = build_service(
+      production_version: "chaos 47.17.0+91be45ed",
+      local_versions: [ "chaos 47.16.0+deadbeef", "chaos 47.17.0+91be45ed" ],
+      local_refs: [ desired_ref, desired_ref ],
+      builds: builds
+    )
+
+    assert_equal true, service.ensure_current!
+    assert_equal 1, builds.length
+  end
+
   private
 
   def desired_ref
