@@ -580,8 +580,23 @@ class ReleaseTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             worker.published_revision([], lambda _: True)
         self.assertLess(worker.version_tuple("chaos 47.9.0"), worker.version_tuple("chaos 47.10.0"))
-        with self.assertRaises(RuntimeError):
-            worker.version_tuple("chaos arbitrary shell")
+        self.assertLess(
+            worker.version_tuple("chaos 47.15.0.1795125776"),
+            worker.version_tuple("chaos 47.17.0+91be45ed"),
+        )
+        self.assertLess(
+            worker.version_tuple("chaos 47.16.0+deadbeef"),
+            worker.version_tuple("chaos 47.17.0+91be45ed"),
+        )
+        # Same-release builds with SemVer build metadata compare equal on the
+        # numeric tuple (downgrade guard only fires across release numbers).
+        self.assertEqual(
+            worker.version_tuple("chaos 47.17.0+91be45ed"),
+            worker.version_tuple("chaos 47.17.0+d1bee185-dirty"),
+        )
+        for bad in ("chaos arbitrary shell", "chaos 47.17.0+", "chaos 47.17.0+bad shell"):
+            with self.assertRaises(RuntimeError):
+                worker.version_tuple(bad)
 
 
 class WorkerTest(unittest.TestCase):

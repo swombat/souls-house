@@ -3,7 +3,10 @@ module Backup
 
     class BuildError < StandardError; end
 
-    VERSION_PATTERN = /\Achaos-cli\s+(\d+(?:\.\d+)+)\z/
+    # ChaOS >= 47.17.0 emits SemVer build metadata (`chaos 47.17.0+<sha>`);
+    # comparing only the numeric prefix treats two builds of the same release
+    # as equal (commit provenance is still checked via `house.souls.chaos-ref`).
+    VERSION_PATTERN = /\Achaos(?:-cli)?\s+(\d+(?:\.\d+)+)(?:\+[0-9A-Za-z.-]+)?\z/
 
     def self.ensure_current!
       new.ensure_current!

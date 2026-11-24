@@ -224,7 +224,13 @@ def roll_in_parallel(items, roll_one, record, *, concurrency, canary=True):
 
 
 def version_tuple(version):
-    match = re.fullmatch(r"chaos (\d+(?:\.\d+)+)", version)
+    # ChaOS >= 47.17.0 emits SemVer build metadata (`chaos 47.17.0+<sha>`),
+    # replacing the numeric build timestamp (`chaos 47.15.0.<ts>`). Comparing
+    # only the numeric prefix means two builds of the same release compare
+    # equal, so the version-downgrade guard now only fires across release
+    # numbers (same-release ordering needs a commit-ancestry check as a
+    # follow-up).
+    match = re.fullmatch(r"chaos (\d+(?:\.\d+)+)(?:\+[0-9A-Za-z.-]+)?", version)
     if not match:
         raise RuntimeError("Unrecognised runtime version")
     return tuple(map(int, match[1].split(".")))
