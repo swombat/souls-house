@@ -47,7 +47,8 @@ def token():
             return os.environ[name]
     filled = subprocess.run(
         ["git", "credential", "fill"],
-        input="protocol=https\nhost=github.com\n\n",
+        # usehttppath helpers only answer when the repository path is given.
+        input=f"protocol=https\nhost=github.com\npath={REPO}.git\n\n",
         capture_output=True,
         text=True,
         check=False,
