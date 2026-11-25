@@ -7,15 +7,70 @@ const rooms = [
   { id: 'devRm', name: 'Dev', conversation_count: 30 },
 ];
 
-test('rooms settings list Main first and offer the resident default', async ({ mount, page }) => {
-  const component = await mount(RoomsHarness, { props: { account, rooms, resident_room_id: 'devRm' } });
+const modelResidents = [
+  {
+    id: 'lume',
+    name: 'Lume',
+    colour: 'orange',
+    default_label: 'Claude Opus 5.5',
+    choices: [
+      { model_id: 'anthropic/opus', label: 'Claude Opus 5.5' },
+      { model_id: 'anthropic/fable', label: 'Claude Fable 5.1' },
+    ],
+  },
+  {
+    id: 'mira',
+    name: 'Mira',
+    colour: 'violet',
+    default_label: 'GPT-5.4',
+    choices: [
+      { model_id: 'openai/gpt-5.4', label: 'GPT-5.4' },
+      { model_id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    ],
+  },
+  {
+    id: 'reed',
+    name: 'Reed',
+    colour: 'teal',
+    default_label: 'Gemini 4 Neon',
+    choices: [
+      { model_id: 'google/gemini-4-neon', label: 'Gemini 4 Neon' },
+      { model_id: 'google/gemini-4-argon', label: 'Gemini 4 Argon' },
+    ],
+  },
+];
+
+const roomModelDefaults = [
+  { room_id: 'devRm', agent_id: 'lume', model_id: 'anthropic/fable', label: 'Claude Fable 5.1', problem: null },
+];
+
+test('rooms settings list Main first, mark the resident default on the row, and inline resident models', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(RoomsHarness, {
+    props: {
+      account,
+      rooms,
+      resident_room_id: 'devRm',
+      model_residents: modelResidents,
+      room_model_defaults: roomModelDefaults,
+    },
+  });
   const rows = component.getByTestId('room-row');
   await expect(rows).toHaveCount(2);
   await expect(component.getByText('12 conversations · default')).toBeVisible();
   await expect(component.getByRole('button', { name: 'Move Life up' })).toBeDisabled();
   await expect(component.getByRole('button', { name: 'Move Dev down' })).toBeDisabled();
-  await expect(component.getByLabel('Default room for resident-started conversations')).toHaveText('Dev');
+  await expect(rows.nth(1).getByTestId('resident-default-badge')).toHaveText('Default for residents');
+  await expect(component.getByRole('button', { name: 'Set Main as default room for residents' })).toBeVisible();
   await expect(component.getByTestId('room-description')).toHaveText('home, family and anything personal');
+  await expect(component.getByLabel("Lume's model in Dev")).toContainText('Claude Fable 5.1');
+  await expect(component.getByLabel("Reed's model in Dev")).toContainText('Default');
+  await expect(component.getByTestId('add-room-row')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
+    true
+  );
   await page.screenshot({ path: 'tmp/rooms-settings.png', fullPage: true });
 });
 
@@ -143,6 +198,17 @@ test.describe('touch', () => {
         account,
         rooms: longRooms,
         main_room: { id: null, name: 'General', description: 'Builds and anything without a better home' },
+        resident_room_id: 'planRm',
+        model_residents: modelResidents,
+        room_model_defaults: [
+          {
+            room_id: 'planRm',
+            agent_id: 'lume',
+            model_id: 'anthropic/fable',
+            label: 'Claude Fable 5.1',
+            problem: null,
+          },
+        ],
       },
     });
     const row = component.getByTestId('room-row').nth(1);
@@ -163,6 +229,9 @@ test.describe('touch', () => {
     await expect(main).toContainText('Builds and anything without a better home');
     await expect(main.getByRole('button', { name: 'Edit General' })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Remove General' })).toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+    ).toBe(true);
     await page.screenshot({ path: 'tmp/rooms-settings-phone.png', fullPage: true });
   });
 });

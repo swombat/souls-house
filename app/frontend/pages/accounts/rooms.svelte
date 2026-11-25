@@ -5,9 +5,8 @@
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
-  import * as Select from '$lib/components/shadcn/select/index.js';
   import { Plus } from 'phosphor-svelte';
-  import { destinations, roomName, MAIN } from '$lib/rooms';
+  import { MAIN } from '$lib/rooms';
   import { createDynamicSync } from '$lib/use-sync';
 
   let {
@@ -74,22 +73,6 @@
     );
   }
 
-  const DEFAULT = 'default';
-
-  function roomDefault(roomKey, resident) {
-    return room_model_defaults.find((entry) => entry.room_id === roomKey && entry.agent_id === resident.id);
-  }
-
-  function modelValue(roomKey, resident) {
-    return roomDefault(roomKey, resident)?.model_id || DEFAULT;
-  }
-
-  function modelLabel(roomKey, resident) {
-    const entry = roomDefault(roomKey, resident);
-    if (!entry) return `${resident.default_label} (default)`;
-    return entry.label;
-  }
-
   function setRoomModel(roomKey, resident, modelId) {
     router.patch(
       `/accounts/${account.id}/room_model_default`,
@@ -119,17 +102,21 @@
   <section class="space-y-3" aria-labelledby="rooms-heading">
     <h2 id="rooms-heading" class="text-xl font-semibold">Rooms</h2>
     <p class="text-sm text-muted-foreground">
-      Conversations live in {mainName}, the default room, until you move them. Once you add a room, the Chats menu and
-      the conversation list let you switch between rooms or view all chats at once. Removing a room moves its
-      conversations back to {mainName}; none are deleted. Archiving a room keeps its conversations where they are and
-      takes it out of the Chats menu and the room pickers. Say what each room is for, and residents will read it when
-      they choose where a conversation goes.
+      Conversations live in {mainName}, the default room, until you move them. Say what each room is for so residents
+      choose the right one; mark one as the default for resident-started conversations{#if model_residents.length > 0},
+        and choose starting models per room for residents with more than one{/if}. Removing a room moves its
+      conversations back to {mainName}; archiving keeps them readable without showing the room in pickers.
     </p>
     <ul class="divide-y divide-border rounded-lg border border-border">
       <RoomRow
         accountId={account.id}
         room={{ ...main_room, conversation_count: main_count }}
         main
+        residentDefault={residentRoom === MAIN}
+        onSetResidentDefault={() => setResidentRoom(MAIN)}
+        modelResidents={model_residents}
+        roomModelDefaults={room_model_defaults}
+        onSetRoomModel={(resident, modelId) => setRoomModel(MAIN, resident, modelId)}
         canManage={can_manage} />
       {#each activeRooms as room, index (room.id)}
         <RoomRow
@@ -138,8 +125,34 @@
           first={index === 0}
           last={index === activeRooms.length - 1}
           {mainName}
+          residentDefault={residentRoom === room.id}
+          onSetResidentDefault={() => setResidentRoom(room.id)}
+          modelResidents={model_residents}
+          roomModelDefaults={room_model_defaults}
+          onSetRoomModel={(resident, modelId) => setRoomModel(room.id, resident, modelId)}
           canManage={can_manage} />
       {/each}
+      {#if can_manage}
+        <li class="bg-muted/30 px-4 py-3" data-testid="add-room-row">
+          <form class="flex flex-col gap-2 sm:flex-row sm:items-center" onsubmit={addRoom}>
+            <Input
+              bind:value={name}
+              maxlength={40}
+              placeholder="New room, e.g. Build"
+              aria-label="New room name"
+              class="h-9 bg-background sm:w-48" />
+            <Input
+              bind:value={description}
+              maxlength={280}
+              placeholder="Use this room when… (optional)"
+              aria-label="New room: use this room when"
+              class="h-9 flex-1 bg-background" />
+            <Button type="submit" size="sm" class="h-9 sm:shrink-0" disabled={!name.trim()}>
+              <Plus size={16} class="mr-1" />Add room
+            </Button>
+          </form>
+        </li>
+      {/if}
     </ul>
     {#if errors.base}
       <p role="alert" class="text-sm text-destructive">{errors.base}</p>
@@ -156,22 +169,8 @@
     {#if errors.main_room_description}
       <p role="alert" class="text-sm text-destructive">Description {errors.main_room_description}</p>
     {/if}
-    {#if can_manage}
-      <form class="flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-center" onsubmit={addRoom}>
-        <Input
-          bind:value={name}
-          maxlength={40}
-          placeholder="New room, e.g. Build"
-          aria-label="New room name"
-          class="sm:w-48" />
-        <Input
-          bind:value={description}
-          maxlength={280}
-          placeholder="Use this room when… (optional)"
-          aria-label="New room: use this room when"
-          class="flex-1" />
-        <Button type="submit" disabled={!name.trim()}><Plus size={16} class="mr-1" />Add room</Button>
-      </form>
+    {#if errors.room_model}
+      <p role="alert" class="text-sm text-destructive">{errors.room_model}</p>
     {/if}
   </section>
 
@@ -189,82 +188,6 @@
             room={{ ...room, conversation_count: room_counts[room.id] || 0 }}
             {mainName}
             canManage={can_manage} />
-        {/each}
-      </ul>
-    </section>
-  {/if}
-
-  <section class="mt-10 space-y-3" aria-labelledby="resident-room-heading">
-    <h2 id="resident-room-heading" class="text-xl font-semibold">Default room for residents</h2>
-    <p class="text-sm text-muted-foreground">
-      Where a conversation lands when a resident starts it without choosing a room. Residents can still choose any room,
-      including {mainName}, and anyone can move a conversation afterwards. This doesn't change where you arrive: the
-      Chats menu remembers the room you last opened.
-    </p>
-    {#if activeRooms.length === 0}
-      <p class="text-sm text-muted-foreground" data-testid="resident-room-empty">
-        Resident-started conversations go to {mainName}. Add a room above to send them somewhere else.
-      </p>
-    {:else}
-      <Select.Root type="single" value={residentRoom} onValueChange={setResidentRoom} disabled={!can_manage}>
-        <Select.Trigger class="w-56" aria-label="Default room for resident-started conversations">
-          {roomName(residentRoom, rooms, mainName)}
-        </Select.Trigger>
-        <Select.Content sideOffset={4}>
-          {#each destinations(rooms, mainName) as option (option.id)}
-            <Select.Item value={option.id} label={option.name}>{option.name}</Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
-    {/if}
-  </section>
-
-  {#if model_residents.length > 0}
-    <section class="mt-10 space-y-3" aria-labelledby="room-models-heading" data-testid="room-models">
-      <h2 id="room-models-heading" class="text-xl font-semibold">Models by room</h2>
-      <p class="text-sm text-muted-foreground">
-        The model each resident starts on in a new conversation in this room. Anyone in the conversation can still
-        change it from the resident's button. Changing it here doesn't touch existing conversations, and a conversation
-        moved into a room keeps the model it had. Only residents with more than one model for conversations are listed.
-      </p>
-      {#if errors.room_model}
-        <p role="alert" class="text-sm text-destructive">{errors.room_model}</p>
-      {/if}
-      <ul class="divide-y divide-border rounded-lg border border-border">
-        {#each destinations(rooms, mainName) as option (option.id)}
-          <li class="space-y-2 px-4 py-3" data-testid="room-models-room">
-            <h3 class="font-medium">{option.name}</h3>
-            <div class="space-y-3 sm:space-y-2">
-              {#each model_residents as resident (resident.id)}
-                {@const entry = roomDefault(option.id, resident)}
-                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                  <span class="text-sm text-muted-foreground sm:w-32 sm:shrink-0 break-words">{resident.name}</span>
-                  <div class="min-w-0 flex-1 sm:max-w-xs">
-                    <Select.Root
-                      type="single"
-                      value={modelValue(option.id, resident)}
-                      onValueChange={(value) => setRoomModel(option.id, resident, value)}
-                      disabled={!can_manage}>
-                      <Select.Trigger class="w-full" aria-label={`${resident.name}'s model in ${option.name}`}>
-                        <span class="min-w-0 truncate">{modelLabel(option.id, resident)}</span>
-                      </Select.Trigger>
-                      <Select.Content sideOffset={4}>
-                        <Select.Item value={DEFAULT} label={`${resident.default_label} (default)`}>
-                          {resident.default_label} (default)
-                        </Select.Item>
-                        {#each resident.choices.slice(1) as choice (choice.model_id)}
-                          <Select.Item value={choice.model_id} label={choice.label}>{choice.label}</Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
-                    {#if entry?.problem}
-                      <p class="mt-1 text-xs text-destructive">{entry.problem}; new conversations use the default.</p>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </li>
         {/each}
       </ul>
     </section>
