@@ -54,7 +54,9 @@ class User < ApplicationRecord
     format: { with: URI::MailTo::EMAIL_REGEXP }
   validate :default_account_must_be_confirmed, if: -> { default_account_id_changed? || @default_account_key_unreadable }
 
-  after_create :ensure_membership_exists
+  attr_accessor :skip_initial_personal_account
+
+  after_create :ensure_membership_exists, unless: :skip_initial_personal_account
   after_create :create_profile
   after_update :refresh_connection_owner_name, if: :saved_change_to_email_address?
   after_update :refresh_directory_labels, if: :saved_change_to_email_address?
@@ -94,12 +96,12 @@ class User < ApplicationRecord
       was_new_user = !user.persisted?
 
       if user.persisted?
-        # Existing user - find or create their membership
-        membership = user.find_or_create_membership!
-
-        # If the user is not confirmed, resend confirmation
-        if !user.confirmed?
-          membership.resend_confirmation!
+        unless user.confirmed?
+          if (invitation = user.memberships.pending_invitations.order(:id).last)
+            invitation.resend_invitation!
+          else
+            user.find_or_create_membership!.resend_confirmation!
+          end
         end
       else
         # New user - validate email first, then create
@@ -171,6 +173,7 @@ class User < ApplicationRecord
 
     # Create user without validation (no password required for invitations)
     user = new(email_address: email_address)
+    user.skip_initial_personal_account = true
     user.save!(validate: false)
     user
   end

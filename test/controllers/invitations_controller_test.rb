@@ -10,15 +10,14 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "create sends invitation" do
-    # Two Membership records: one for personal account, one for team invitation
-    assert_difference "Membership.count", 2 do
-      # Two emails: one for the new user's personal account confirmation,
-      # and one for the team invitation
-      assert_enqueued_emails 2 do
-        post account_invitations_path(@account), params: {
-          email: "newmember@example.com",
-          role: "member"
-        }
+    assert_difference [ "User.count", "Membership.count" ], 1 do
+      assert_no_difference "Account.count" do
+        assert_enqueued_emails 1 do
+          post account_invitations_path(@account), params: {
+            email: "newmember@example.com",
+            role: "member"
+          }
+        end
       end
     end
 
@@ -57,7 +56,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
     member = users(:member)
     sign_in member
 
-    assert_difference "Membership.count", 2 do
+    assert_difference "Membership.count", 1 do
       post account_invitations_path(@account), params: {
         email: "member-invited@example.com",
         role: "member"
