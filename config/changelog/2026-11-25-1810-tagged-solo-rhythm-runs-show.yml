@@ -1,0 +1,3 @@
+date: 2026-11-25
+title: A tagged solo rhythm run shows in the list
+body: A rhythm run with only its resident in it stays off the conversation list, as before, but once someone gives it a visible tag such as Input Required it now shows there. A tag that hides from the list still keeps it off.
