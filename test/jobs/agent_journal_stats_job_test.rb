@@ -27,24 +27,6 @@ class AgentJournalStatsJobTest < ActiveJob::TestCase
     end
   end
 
-  test "a count measured while the chosen journal changed is not put on the new journal's card" do
-    @agent.update_columns(journal_stats_requested_at: Time.current)
-    assert_no_enqueued_jobs(only: AgentJournalStatsJob) { AgentJournalStatsJob.request_refresh(@agent) }
-    assert_enqueued_jobs(1, only: AgentJournalStatsJob) { AgentJournalStatsJob.request_refresh(@agent, force: true) }
-
-    service = Struct.new(:call).new({ status: "measured", count: 0 })
-    measuring = lambda do |*|
-      Agent.find(@agent.id).update!(journal_source: "memory/growth-journal.md")
-      service
-    end
-    Agents::JournalEntryStats.stub(:new, measuring) do
-      AgentJournalStatsJob.perform_now(@agent.id)
-    end
-    @agent.reload
-    assert_equal "memory/growth-journal.md", @agent.journal_source
-    assert_equal({}, @agent.journal_entry_stats)
-  end
-
   test "deleted and deprecated residents are ignored" do
     @agent.update_columns(runtime: "deprecated")
     assert_no_enqueued_jobs only: AgentJournalStatsJob do

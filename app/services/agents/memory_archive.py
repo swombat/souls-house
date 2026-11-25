@@ -81,13 +81,13 @@ def timestamp(kind, document, title):
     return dt.datetime.combine(date, moment).isoformat(timespec="microseconds") + "Z"
 
 
-def scan(mode, fallback):
+def scan(mode):
     result = {"status": "measured", "count": 0, "daily_counts": {}, "items": []}
     budget = {"files": 0, "total": 0, "items": 0}
     home = os.open(HOME, DIRECTORY_FLAGS)
     try:
         try:
-            place, declared = journal_place(home, fallback)
+            place, declared = journal_place(home)
         except NotShared:
             # Not shared closes the count and every journal layer.
             result.update(status="not_shared", count=None)
@@ -177,13 +177,13 @@ def eligible(place, path):
     return bool(re.fullmatch(DAY, rest[0])) and entry_file_name(rest[1])
 
 
-def bodies(selections, fallback):
+def bodies(selections):
     if not isinstance(selections, list) or len(selections) > 50:
         raise ValueError("invalid selection")
     home = os.open(HOME, DIRECTORY_FLAGS)
     try:
         try:
-            place = journal_place(home, fallback)[0]
+            place = journal_place(home)[0]
         except NotShared:
             # Not shared closes every journal layer: nothing is read.
             return {item["id"]: {"body_status": "unavailable"} for item in selections}
@@ -216,13 +216,13 @@ def bodies(selections, fallback):
         os.close(home)
 
 
-def declaration(fallback):
+def declaration():
     # The current declaration alone, cheap and never cached: the house checks
     # it before serving a cached overview or catalog, so "not shared" takes
     # effect at once.
     home = os.open(HOME, DIRECTORY_FLAGS)
     try:
-        place, declared = journal_place(home, fallback)
+        place, declared = journal_place(home)
         return {"status": "declared", "place": place, "declared": bool(declared)}
     except NotShared:
         return {"status": "not_shared"}
@@ -232,13 +232,12 @@ def declaration(fallback):
 
 request = json.load(sys.stdin)
 mode = request["mode"]
-fallback = request.get("journal_source")
 if mode == "declaration":
-    response = declaration(fallback)
+    response = declaration()
 elif mode in ("overview", "catalog"):
-    response = scan(mode, fallback)
+    response = scan(mode)
 elif mode == "bodies":
-    response = bodies(request["items"], fallback)
+    response = bodies(request["items"])
 else:
     raise ValueError("invalid mode")
 print(json.dumps(response))

@@ -15,15 +15,13 @@ module Agents
     RULE = Rails.root.join("app/services/agents/journal_rule.py").read.freeze
     COUNT = <<~'PYTHON'
 
-      # The count. argv[1], when present, is the file an admin chose
-      # (Agent#journal_source), read only when the home declares nothing.
-      import sys
+      # The count.
       COUNT_FILE_MAX = 64 * 1024 * 1024
       def count_journal():
           home = os.open(HOME, DIRECTORY_FLAGS)
           try:
               try:
-                  path, declared = journal_place(home, sys.argv[1] if len(sys.argv) > 1 else None)
+                  path, declared = journal_place(home)
               except NotShared:
                   return {"status": "not_shared"}
               count = 0
@@ -85,8 +83,7 @@ module Agents
     end
 
     def capture
-      # The chosen journal goes in as one argv value, never into the code.
-      ResidentPython.run(@agent.container_name, SCRIPT, *@agent.journal_source, seconds: 30)
+      ResidentPython.run(@agent.container_name, SCRIPT, seconds: 30)
     end
 
   end
