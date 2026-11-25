@@ -5,6 +5,8 @@ class RhythmOccurrence < ApplicationRecord
   belongs_to :creator_agent, class_name: "Agent", optional: true
   belongs_to :chat
   belongs_to :message
+  # The once-per-run tidy question's wake, when one was sent (RhythmTidy).
+  belongs_to :tidy_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :message_dispatch, through: :message
 
   validates :title, :rhythm_title, :opening, :creator_label, :scheduled_for, presence: true

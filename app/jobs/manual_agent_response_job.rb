@@ -17,7 +17,7 @@ class ManualAgentResponseJob < ApplicationJob
     # runtime. (The wake's claim checks this again, with its sources.)
     deferred = interaction && (interaction.follow_through_of_id || interaction.stalled_thread_sweep_id ||
       interaction.provider_retry_of_id || interaction.released_pending_wake ||
-      Commitment.exists?(wake_interaction_id: interaction.id))
+      Commitment.exists?(wake_interaction_id: interaction.id) || RhythmTidy.for_interaction(interaction))
     if deferred && agent.paused?
       cancel_unclaimed(interaction)
       return

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2861,6 +2861,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
     t.datetime "updated_at", null: false
     t.bigint "creator_agent_id"
     t.boolean "human_requested", default: false, null: false
+    t.datetime "tidy_asked_at"
+    t.bigint "tidy_interaction_id"
     t.index ["chat_id"], name: "index_rhythm_occurrences_on_chat_id"
     t.index ["creator_agent_id"], name: "index_rhythm_occurrences_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythm_occurrences_on_creator_id"
@@ -2868,6 +2870,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
     t.index ["rhythm_id", "request_key"], name: "index_rhythm_occurrences_manual_identity", unique: true, where: "(manual = true)"
     t.index ["rhythm_id", "scheduled_for"], name: "index_rhythm_occurrences_scheduled_identity", unique: true, where: "(manual = false)"
     t.index ["rhythm_id"], name: "index_rhythm_occurrences_on_rhythm_id"
+    t.index ["tidy_interaction_id"], name: "index_rhythm_occurrences_on_tidy_interaction_id", unique: true
     t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythm_occurrences_one_creator"
     t.check_constraint "manual = true AND request_key IS NOT NULL OR manual = false AND request_key IS NULL", name: "rhythm_occurrences_request_identity"
   end
@@ -3911,6 +3914,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
   add_foreign_key "rhythm_holds", "agents", on_delete: :nullify
   add_foreign_key "rhythm_holds", "rhythms", on_delete: :cascade
   add_foreign_key "rhythm_holds", "users", on_delete: :nullify
+  add_foreign_key "rhythm_occurrences", "agent_runtime_interactions", column: "tidy_interaction_id", on_delete: :nullify
   add_foreign_key "rhythm_occurrences", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythm_occurrences", "chats", on_delete: :cascade
   add_foreign_key "rhythm_occurrences", "messages", on_delete: :cascade

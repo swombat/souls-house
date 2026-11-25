@@ -51,6 +51,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   after_update_commit :enqueue_follow_through_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
   after_update_commit :enqueue_pending_wake_release, if: -> { saved_change_to_finished_at? && finished_at.present? && trigger_kind == "conversation" }
   after_update_commit :enqueue_oom_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
+  after_update_commit :enqueue_rhythm_tidy_check, if: -> { saved_change_to_finished_at? && finished_at.present? && trigger_kind == "conversation" && chat_id }
   after_update_commit :enqueue_telegram_completion_notice, if: -> {
     trigger_kind == "telegram" && saved_change_to_finished_at? && finished_at.present? && runtime_status == "ok"
   }
@@ -785,6 +786,16 @@ class AgentRuntimeInteraction < ApplicationRecord
     FollowThroughCheckJob.set(wait: FollowThroughCheckJob::DELAY).perform_later(id)
   rescue StandardError => error
     Rails.logger.warn("Follow-through check enqueue failed for interaction #{id}: #{error.class}")
+  end
+
+  # A run ending in a rhythm's chat may close its opening round (RhythmTidy).
+  def enqueue_rhythm_tidy_check
+    occurrence = RhythmTidy.for_chat(chat)
+    return unless occurrence && occurrence.tidy_asked_at.nil?
+
+    RhythmTidyCheckJob.set(wait: RhythmTidyCheckJob::DELAY).perform_later(occurrence.id)
+  rescue StandardError => error
+    Rails.logger.warn("Rhythm tidy check enqueue failed for interaction #{id}: #{error.class}")
   end
 
   def enqueue_oom_check
