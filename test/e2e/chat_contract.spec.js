@@ -468,9 +468,17 @@ test.describe('browser contracts', () => {
     await page.goto(`/accounts/${setup.account_id}`);
     await expect(page.getByRole('heading', { name: 'Account Settings' })).toBeVisible();
 
+    await page
+      .getByRole('navigation', { name: 'Account settings', exact: true })
+      .getByRole('link', { name: 'Users', exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/accounts\/[^/]+\/users$/);
+    await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
+
     await page.getByRole('button', { name: 'Invite Member' }).click();
     await page.getByLabel('Email Address').fill(invitedEmail);
     await page.getByRole('button', { name: 'Send Invitation' }).click();
+    await expect(page).toHaveURL(/\/accounts\/[^/]+\/users$/);
     await expect(page.getByRole('cell', { name: invitedEmail })).toBeVisible();
 
     const invitationResponse = await request.post('/test/e2e/invitation_url', { data: { email: invitedEmail } });
