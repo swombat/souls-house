@@ -2,7 +2,9 @@ import { test, expect } from '@playwright/experimental-ct-svelte';
 import AccountSettingsHarness from '../../AccountSettingsHarness.svelte';
 
 test.describe('Account settings', () => {
-  test('shows per-account AI provider keys without exposing saved values', async ({ mount }) => {
+  test('shows OpenRouter recommended, fallback provider rows, and resident links without exposing saved values', async ({
+    mount,
+  }) => {
     const component = await mount(AccountSettingsHarness, {
       props: {
         account: {
@@ -16,14 +18,25 @@ test.describe('Account settings', () => {
           openai: false,
           gemini: false,
           xai: false,
+          zai: false,
           moonshot: true,
+          minimax: false,
         },
         can_manage_ai_credentials: true,
+        residents: [
+          { id: 'lume', name: 'Lume' },
+          { id: 'mira', name: 'Mira' },
+        ],
       },
     });
 
-    await expect(component.getByRole('heading', { name: 'Model API keys', exact: true })).toBeVisible();
+    await expect(component.getByRole('heading', { name: 'Model keys', exact: true })).toBeVisible();
     await expect(component.getByText('Test Team · Account settings', { exact: true })).toBeVisible();
+    await expect(component.getByText('Recommended', { exact: true })).toBeVisible();
+    await expect(
+      component.getByText('Covers image generation and any model without a direct provider key.')
+    ).toBeVisible();
+
     await expect(component.getByRole('link', { name: 'Model keys', exact: true })).toHaveAttribute(
       'href',
       '/accounts/2/agent_api_keys'
@@ -38,13 +51,26 @@ test.describe('Account settings', () => {
       'placeholder',
       'Enter a replacement key'
     );
-    await expect(component.getByLabel('Kimi Code subscription', { exact: true })).toBeVisible();
+    for (const label of ['Anthropic', 'Gemini', 'OpenAI', 'xAI', 'Z.ai', 'Kimi Code', 'MiniMax']) {
+      await expect(component.getByLabel(label, { exact: true })).toBeVisible();
+    }
     await expect(component.getByText(/Standard Moonshot platform \(PAYG\) keys do not work/)).toBeVisible();
     await expect(component.getByText('Set', { exact: true })).toHaveCount(2);
     await expect(component.getByText('Not set', { exact: true })).toHaveCount(6);
     await expect(component.getByText('Shared AI keys are available as a fallback')).toBeVisible();
-    await expect(component.getByText('New Conversation Default')).toBeHidden();
+    await expect(component.getByText('Provider subscription accounts')).toHaveCount(0);
+    await expect(component.getByText(/Antigravity/)).toHaveCount(0);
+    await expect(component.getByText(/Claude Code clamping/)).toHaveCount(0);
+    await expect(component.getByRole('link', { name: 'Lume', exact: true })).toHaveAttribute(
+      'href',
+      '/accounts/2/residents/lume/edit?tab=settings'
+    );
+    await expect(component.getByRole('link', { name: 'Mira', exact: true })).toHaveAttribute(
+      'href',
+      '/accounts/2/residents/mira/edit?tab=settings'
+    );
     await expect(component.getByRole('button', { name: 'Save model API keys', exact: true })).toBeVisible();
+
     await component.getByText('How residents receive these keys', { exact: true }).click();
     await expect(
       component.getByText(/These are separate from the .+ API keys, which let outside tools connect to/)
@@ -76,6 +102,7 @@ test.describe('Account settings', () => {
           moonshot: false,
         },
         can_manage_ai_credentials: false,
+        residents: [],
       },
     });
 
@@ -89,6 +116,13 @@ test.describe('Account settings', () => {
     await expect(component.getByRole('button', { name: 'Remove' })).toHaveCount(0);
     await expect(component.getByRole('button', { name: 'Save model API keys', exact: true })).toHaveCount(0);
     await expect(component.getByText('Shared AI keys are available as a fallback')).toHaveCount(0);
+    await expect(
+      component.getByText("Provider subscriptions are connected on a resident's own settings.")
+    ).toBeVisible();
+    await expect(component.getByRole('link', { name: 'Residents', exact: true })).toHaveAttribute(
+      'href',
+      '/accounts/2/residents'
+    );
     await expect(
       component.getByText('Only account owners and administrators can change model API keys.')
     ).toBeVisible();

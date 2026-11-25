@@ -1,9 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('persisted provider updates preserve credential and active ceremony drafts', async ({
-  page,
-  request,
-}, testInfo) => {
+test('persisted provider updates preserve settings and active ceremony drafts', async ({ page, request }, testInfo) => {
   test.setTimeout(120_000);
   const runId = `provider-live-${Date.now()}`;
   const setupResponse = await request.post('/test/e2e/setup', { data: { run_id: runId } });
@@ -57,7 +54,7 @@ test('persisted provider updates preserve credential and active ceremony drafts'
   const reloads = [];
   page.on('request', (req) => {
     const props = (req.headers()['x-inertia-partial-data'] || '').split(',');
-    if (props.includes('subscription_agents') || props.includes('provider_subscription')) reloads.push(props);
+    if (props.includes('provider_subscription')) reloads.push(props);
   });
   try {
     await mutate('prepare');
@@ -66,7 +63,7 @@ test('persisted provider updates preserve credential and active ceremony drafts'
     await page.getByLabel(/password/i).fill(setup.password);
     await page.getByRole('button', { name: /log in/i }).click();
     await expect(page).not.toHaveURL(/\/login/);
-    await page.goto(`/accounts/${setup.account_param}/agent_api_keys`);
+    await page.goto(`${agent.edit_url}?tab=settings`);
     await expect.poll(() => confirmed).toBe(true);
     await expect.poll(() => reloads.length).toBeGreaterThan(0);
     await page.waitForLoadState('networkidle');
@@ -74,23 +71,16 @@ test('persisted provider updates preserve credential and active ceremony drafts'
     await page.waitForTimeout(700);
     await page.waitForLoadState('networkidle');
     const initialRuntimeReads = runtimeReads;
-    const key = page.getByLabel('Anthropic API key', { exact: true });
-    await key.fill('unfinished-synthetic-key');
+    await page.getByRole('button', { name: 'Advanced settings', exact: true }).click();
+    const timeoutInput = page.getByLabel('Turn timeout (minutes)', { exact: true });
+    await timeoutInput.fill('45');
     await mutate('connect');
     await expect(page.getByText('Connected as remote@example.invalid · Synthetic', { exact: true })).toBeVisible();
-    await expect(key).toHaveValue('unfinished-synthetic-key');
-    // Existing Account hints also refresh the navbar's current-account projection.
-    expect([...reloads.at(-1)].sort()).toEqual(
-      [
-        'subscription_agents',
-        'can_manage_ai_credentials',
-        'accounts',
-        'expired_subscriptions',
-        'account',
-        'is_account_admin',
-        'room_chat_counts',
-      ].sort()
+    await expect(timeoutInput).toHaveValue('45');
+    expect(reloads.at(-1)).toEqual(
+      expect.arrayContaining(['provider_subscription', 'can_manage_provider_subscription'])
     );
+    expect(reloads.at(-1)).not.toContain('telegram_deep_link');
     await page.waitForLoadState('networkidle');
     expect(runtimeReads).toBe(initialRuntimeReads);
     const beforeQuiet = reloads.length;
@@ -106,7 +96,7 @@ test('persisted provider updates preserve credential and active ceremony drafts'
     await expect(page.getByText('Connected as late@example.invalid · Synthetic', { exact: true })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(key).toHaveValue('unfinished-synthetic-key');
+    await expect(timeoutInput).toHaveValue('45');
     expect(runtimeReads).toBe(initialRuntimeReads);
     await mutate('clear');
     await page.getByRole('button', { name: 'Connect Claude subscription', exact: true }).click();
@@ -114,9 +104,9 @@ test('persisted provider updates preserve credential and active ceremony drafts'
     await code.fill('unfinished-browser-code');
     await mutate('connect');
     await expect(code).toHaveValue('unfinished-browser-code');
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByLabel('Connect Claude Code clamping').getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByText('Connected as remote@example.invalid · Synthetic', { exact: true })).toBeVisible();
-    await expect(key).toHaveValue('unfinished-synthetic-key');
+    await expect(timeoutInput).toHaveValue('45');
     await page.screenshot({ path: testInfo.outputPath('provider-live-drafts.png'), fullPage: true });
   } finally {
     expect((await request.post('/test/e2e/cleanup', { data: { run_id: runId } })).ok()).toBe(true);
