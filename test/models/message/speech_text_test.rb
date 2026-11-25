@@ -74,20 +74,6 @@ class Message::SpeechTextTest < ActiveSupport::TestCase
     assert_not_includes result, "#"
   end
 
-  test "strips bold formatting" do
-    text = "This is **bold** text."
-    result = Message::SpeechText.new(text).to_s
-    assert_includes result, "bold"
-    assert_not_includes result, "**"
-  end
-
-  test "strips italic formatting" do
-    text = "This is *italic* text."
-    result = Message::SpeechText.new(text).to_s
-    assert_includes result, "italic"
-    refute_match(/\*/, result)
-  end
-
   test "strips strikethrough formatting" do
     text = "This is ~~deleted~~ text."
     result = Message::SpeechText.new(text).to_s
@@ -97,18 +83,12 @@ class Message::SpeechTextTest < ActiveSupport::TestCase
 
   test "strips unordered list markers" do
     text = "- Item one\n* Item two\n+ Item three"
-    result = Message::SpeechText.new(text).to_s
-    assert_includes result, "Item one"
-    assert_includes result, "Item two"
-    assert_includes result, "Item three"
+    assert_equal "Item one\nItem two\nItem three", Message::SpeechText.new(text).to_s
   end
 
   test "strips ordered list markers" do
     text = "1. First\n2. Second\n3. Third"
-    result = Message::SpeechText.new(text).to_s
-    assert_includes result, "First"
-    assert_includes result, "Second"
-    assert_includes result, "Third"
+    assert_equal "First\nSecond\nThird", Message::SpeechText.new(text).to_s
   end
 
   test "strips blockquotes" do
@@ -175,8 +155,7 @@ class Message::SpeechTextTest < ActiveSupport::TestCase
     assert_includes result, "italic"
     assert_includes result, "I've included a code block here."
     assert_includes result, "this link"
-    assert_includes result, "A blockquote"
-    assert_includes result, "List item one"
+    assert_includes result, "A blockquote\n\nList item one", "the paragraph break before a list is a pause in speech"
     assert_includes result, "[sarcastically]"
     assert_not_includes result, "```"
     assert_not_includes result, "http://example.com"

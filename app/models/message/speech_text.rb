@@ -49,8 +49,8 @@ class Message::SpeechText
     @text.gsub!(/\*\*([^*]+)\*\*/) { $1 }   # bold
     @text.gsub!(/\*([^*]+)\*/) { $1 }       # italic
     @text.gsub!(/~~([^~]+)~~/) { $1 }       # strikethrough
-    @text.gsub!(/^[\s]*[-*+]\s+/, "")        # unordered list markers
-    @text.gsub!(/^[\s]*\d+\.\s+/, "")        # ordered list markers
+    @text.gsub!(/^[ \t]*[-*+][ \t]+/, "")      # unordered list markers
+    @text.gsub!(/^[ \t]*\d+\.[ \t]+/, "")      # ordered list markers
     @text.gsub!(/^>\s+/, "")                 # blockquotes
     @text.gsub!(/^---+$/, "")                # horizontal rules
   end
