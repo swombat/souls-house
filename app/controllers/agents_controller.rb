@@ -131,6 +131,7 @@ class AgentsController < ApplicationController
       shared_connections: -> { shared_connections_for_agent },
       can_decide_guest_access: -> { current_account.owned_by?(Current.user) },
       can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
+      resident_api_keys: -> { resident_api_keys_props },
       # #690: the owner's paid-fallback card; the card hides itself while the
       # house hasn't switched the feature on.
       paid_fallback_url: -> { current_account.owned_by?(Current.user) ? account_agent_fallback_policy_path(current_account, @agent) : nil },
@@ -336,6 +337,17 @@ class AgentsController < ApplicationController
 
   def set_agent
     @agent = current_account.agents.find(params[:id])
+  end
+
+  def resident_api_keys_props
+    return unless current_account.owned_by?(Current.user) && @agent.hosted?
+
+    {
+      create_url: account_agent_other_body_keys_path(current_account, @agent),
+      keys: ApiKey.resident_named.where(account: current_account, agent: @agent).by_creation.map do |key|
+        ApiKeyPresentation.new(key).as_json.merge(revoke_url: account_agent_other_body_key_path(current_account, @agent, key))
+      end
+    }
   end
 
   def update_notice(model_changed)
