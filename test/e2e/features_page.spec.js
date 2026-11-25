@@ -16,7 +16,8 @@ test('the homepage links to a two-column features page with an expandable index'
 
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
-  await expect(life.getByTestId('feature-showcase')).toHaveCount(13);
+  await expect(life.getByTestId('feature-showcase')).toHaveCount(14);
+  await expect(life.getByRole('heading', { name: 'House practices' })).toBeVisible();
   const allowanceBrake = life
     .getByTestId('feature-showcase')
     .filter({ hasText: 'An allowance brake for scheduled work' });

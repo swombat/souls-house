@@ -57,6 +57,10 @@ class SyncChannel < ApplicationCable::Channel
       model: Account,
       collections: []
     },
+    "PracticeActivity" => {
+      model: Account,
+      collections: []
+    },
     "AccountCostActivity" => {
       model: Account,
       collections: []

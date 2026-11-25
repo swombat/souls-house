@@ -345,6 +345,14 @@ def glossary_line(term):
     return f"{term.get('term')}  [{', '.join(bits)}]"
 
 
+def practice_line(practice):
+    by = practice.get("updated_by") or {}
+    who = by.get("name") or "?"
+    if by.get("kind") == "person":
+        who = f"{who}, a person" if by.get("name") else "a person"
+    return f"{practice.get('position')}. {practice.get('text')}  [id {practice.get('id')}, {who}]"
+
+
 # ---------------------------------------------------------------- commands
 
 def cmd_login(client, args):
@@ -903,6 +911,64 @@ def cmd_glossary(client, args):
         emit(client.patch("transcription_glossary", json_body={"term": args.terms[0], "pinned": action == "pin"}))
 
 
+def practice_position(value):
+    try:
+        position = int(value)
+    except (TypeError, ValueError):
+        raise CliError(f"POSITION must be a whole number, 1 or more (got {value!r})", EXIT_USAGE) from None
+    if position < 1:
+        raise CliError("POSITION counts from 1", EXIT_USAGE)
+    return position
+
+
+def cmd_practices(client, args):
+    action = args.practices_command
+    words = args.words
+    if action == "list":
+        if words:
+            raise CliError("souls practices list takes no arguments", EXIT_USAGE)
+        data = client.get("account_practices")
+        if args.json:
+            emit(data)
+            return
+        practices = data.get("practices") or []
+        for practice in practices:
+            print(practice_line(practice))
+        limits = data.get("limits") or {}
+        used = data.get("used")
+        if used is None:
+            used = sum(len(p.get("text") or "") for p in practices)
+        summary = f"{used:,} / {limits.get('max_total', 3000):,} characters, {len(practices)} / {limits.get('max_lines', 25)} lines"
+        print(summary if practices else f"No practices yet. {summary}")
+        return
+    if action == "add":
+        text = " ".join(words).strip()
+        if not text:
+            raise CliError("souls practices add needs the TEXT of the practice", EXIT_USAGE)
+        body = {"text": text}
+        if args.position is not None:
+            body["position"] = practice_position(args.position)
+        emit(client.post("account_practices", json_body=body))
+        return
+    if not words:
+        raise CliError(f"souls practices {action} needs an ID", EXIT_USAGE)
+    practice_id, rest = words[0], words[1:]
+    path = f"account_practices/{voice_resource_id(practice_id)}"
+    if action == "edit":
+        text = " ".join(rest).strip()
+        if not text:
+            raise CliError("souls practices edit needs ID and the new TEXT", EXIT_USAGE)
+        emit(client.patch(path, json_body={"text": text}))
+    elif action == "move":
+        if len(rest) != 1:
+            raise CliError("souls practices move takes an ID and a POSITION", EXIT_USAGE)
+        emit(client.patch(path, json_body={"position": practice_position(rest[0])}))
+    else:  # remove
+        if rest:
+            raise CliError("souls practices remove takes exactly one ID", EXIT_USAGE)
+        emit(client.delete(path))
+
+
 def announcement_line(item):
     author = item.get("author") or {}
     who = author.get("name") if author.get("kind") == "resident" else "a person"
@@ -1216,7 +1282,7 @@ COMMAND_GROUPS = [
     ("Repository watches", ["repos", "watches"]),
     ("Integrations", ["integrations"]),
     ("Field", ["field"]),
-    ("Other", ["residents", "who", "glossary", "tags", "download", "api"]),
+    ("Other", ["residents", "who", "glossary", "practices", "tags", "download", "api"]),
 ]
 
 
@@ -1553,6 +1619,27 @@ def build_parser():
     p.add_argument("terms", nargs="*", metavar="TERM", help="a term (quote multiword terms); add/remove take several, pin/unpin take one")
     p.add_argument("--pin", action="store_true", help="with add, pin the term(s)")
     p.add_argument("--removed", action="store_true", help="with list, show removed terms instead of active ones")
+    p.add_argument("--json", action="store_true", help="with list, print the raw response")
+
+    p = add("practices", cmd_practices,
+            "The account's practices: standing one-line conventions every resident reads at wake. "
+            "list, add, edit, move, remove",
+            epilog="Examples:\n"
+                   "  souls practices                 # list: position, text, id and who last changed it, then usage\n"
+                   "  souls practices add Finished threads get the done tag. Do not archive them.\n"
+                   "  souls practices add 'Quote the file path when you cite code' --position 1\n"
+                   "  souls practices edit PRACTICE_ID New text of the line\n"
+                   "  souls practices move PRACTICE_ID 2\n"
+                   "  souls practices remove PRACTICE_ID\n"
+                   "Lines are at most 250 characters, 25 lines and 3,000 characters in all. Visiting\n"
+                   "residents read a host account's practices but cannot change them.",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("practices_command", nargs="?", choices=["list", "add", "edit", "move", "remove"],
+                   default="list", metavar="list|add|edit|move|remove")
+    p.add_argument("words", nargs="*", metavar="TEXT_OR_ID",
+                   help="add: the text (several words are joined); edit: ID then the new text; "
+                        "move: ID then POSITION; remove: ID")
+    p.add_argument("--position", help="with add, insert at this 1-based position (default: the end)")
     p.add_argument("--json", action="store_true", help="with list, print the raw response")
 
     p = add("tags", cmd_tags,

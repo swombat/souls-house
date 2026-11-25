@@ -53,6 +53,11 @@ module Accounts::Portability
         string!(term["term"], 200)
         raise Error, "Invalid glossary term" unless [ true, false ].include?(term["pinned"])
       end
+      # Archives from before practices existed have no "practices" key.
+      list!(setup.fetch("practices", []), AccountPractice::MAX_LINES).each do |practice|
+        hash!(practice, %w[text])
+        string!(practice["text"], AccountPractice::MAX_LENGTH)
+      end
       list!(setup["services"], 500).each do |service|
         hash!(service, %w[provider])
         string!(service["provider"], 100)

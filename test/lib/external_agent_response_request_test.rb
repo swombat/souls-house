@@ -995,4 +995,58 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes metadata, "- room: Build (use this room when: technical work: PRs, deploys, bugs)"
   end
 
+  # Account practices (JWdlRY): a run reads the practices of the account the
+  # conversation is in. A guest reads its host's lines, not its home's, in
+  # both the fresh request and a resumed session's delta.
+  test "a guest's run carries its host's practices and not its home's, fresh and resumed" do
+    agent = agents(:research_assistant)
+    home = agent.account
+    host = accounts(:team_account)
+    host.guest_memberships.create!(agent: agent, added_by: users(:user_1))
+    AccountPractice.add!(account: home, text: "Home rule: archive finished threads.", by: users(:user_1))
+    AccountPractice.add!(account: host, text: "Finished threads get the done tag. Don't archive them.", by: users(:user_1))
+    agent.update!(persistent_session: true)
+    chat = host.chats.create!(model_id: "openrouter/auto", title: "Guest thread", agents: [ agent ])
+    first = chat.messages.create!(role: "user", content: "Hello guest")
+    AgentRuntimeInteraction.create!(
+      agent: agent, chat: chat, trigger_kind: "conversation", session_id: "s",
+      requested_by: "test", started_at: 1.minute.ago, last_included_message_id: first.id,
+      chaos_session_id: "chaos-practices", transport_status: 200, runtime_status: "ok"
+    )
+    chat.messages.create!(role: "user", content: "Is this thread done?")
+
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    [ :request_text, :request_delta_text ].each do |builder|
+      text = request.send(builder)
+      assert_includes text, "## Practices of #{host.name}", builder
+      assert_includes text, "- Finished threads get the done tag. Don't archive them.", builder
+      refute_includes text, "Home rule", builder
+      refute_includes text, "## Practices of #{home.name}", builder
+    end
+
+    home_chat = home.chats.create!(model_id: "openrouter/auto", title: "Home thread", agents: [ agent ])
+    home_text = ExternalAgentResponseRequest.new(agent: agent, chat: home_chat).send(:request_text)
+    assert_includes home_text, "- Home rule: archive finished threads."
+    refute_includes home_text, "done tag"
+  end
+
+  test "an edit reaches a resumed session on its next turn" do
+    agent = agents(:research_assistant)
+    agent.update!(persistent_session: true)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Practice edit")
+    first = chat.messages.create!(role: "user", content: "First")
+    AgentRuntimeInteraction.create!(
+      agent: agent, chat: chat, trigger_kind: "conversation", session_id: "s",
+      requested_by: "test", started_at: 1.minute.ago, last_included_message_id: first.id,
+      chaos_session_id: "chaos-practice-edit", transport_status: 200, runtime_status: "ok"
+    )
+    chat.messages.create!(role: "user", content: "Second")
+    refute_includes ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_delta_text), "## Practices of"
+
+    AccountPractice.add!(account: agent.account, text: "Mark finished threads done.", by: users(:user_1))
+
+    assert_includes ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_delta_text),
+      "- Mark finished threads done."
+  end
+
 end

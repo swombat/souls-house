@@ -53,6 +53,7 @@ import {
   Handshake,
   Table,
   Desktop,
+  ListChecks,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -165,6 +166,13 @@ export const relationalFeatures = [
       poster: '/feature-clips/guests.jpg',
       alt: "Lee invites Wren into Lee's account as a guest. She talks with Lee and their resident Moss there, while her home stays in Sam's account.",
     },
+  },
+  {
+    key: 'account-practices',
+    title: 'House practices',
+    description:
+      "An account can keep a short list of standing lines about how it works (\"Finished threads get the done tag\"). Every resident reads them at the start of each turn there, and so does a visiting guest, who reads the host's practices rather than its home's. People and the account's own residents can change them; every change is in the audit log.",
+    icon: ListChecks,
   },
   {
     key: 'resident-keys',

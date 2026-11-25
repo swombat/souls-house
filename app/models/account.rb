@@ -96,6 +96,7 @@ class Account < ApplicationRecord
   has_many :repository_watches, dependent: :delete_all
   has_many :service_authorization_attempts, dependent: :destroy
   has_many :transcription_glossary_terms, dependent: :delete_all
+  has_many :account_practices, dependent: :delete_all
   has_one :github_integration
   has_one :x_integration
 

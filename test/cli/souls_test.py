@@ -828,6 +828,134 @@ class GlossaryTest(CliTestCase):
         self.assertIn("exactly one TERM", err)
 
 
+class PracticesTest(CliTestCase):
+    LISTING = {
+        "account_id": "a1",
+        "limits": {"max_length": 250, "max_lines": 25, "max_total": 3000},
+        "used": 1234,
+        "practices": [
+            {"id": "p1", "text": "Finished threads get the done tag. Don't archive them.", "position": 1,
+             "updated_at": "2026-11-20T10:00:00Z", "updated_by": {"kind": "person", "name": "Daniel"}},
+            {"id": "p2", "text": "Quote file paths when citing code.", "position": 2,
+             "updated_at": "2026-11-21T10:00:00Z", "updated_by": {"kind": "resident", "name": "Mira"}},
+        ],
+    }
+
+    def test_list_prints_each_practice_then_a_usage_line(self):
+        self.house.route("GET", "/api/v1/account_practices", body=self.LISTING)
+        code, out, _ = self.run_cli("practices")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), [
+            "1. Finished threads get the done tag. Don't archive them.  [id p1, Daniel, a person]",
+            "2. Quote file paths when citing code.  [id p2, Mira]",
+            "1,234 / 3,000 characters, 2 / 25 lines",
+        ])
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(self.last()["path"], "/api/v1/account_practices")
+
+    def test_list_is_the_same_as_bare_practices(self):
+        self.house.route("GET", "/api/v1/account_practices", body=self.LISTING)
+        code1, out1, _ = self.run_cli("practices")
+        code2, out2, _ = self.run_cli("practices", "list")
+        self.assertEqual((code1, out1), (code2, out2))
+
+    def test_list_of_nothing_still_prints_the_usage(self):
+        self.house.route("GET", "/api/v1/account_practices", body={
+            "limits": {"max_length": 250, "max_lines": 25, "max_total": 3000}, "used": 0, "practices": []})
+        code, out, _ = self.run_cli("practices")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "No practices yet. 0 / 3,000 characters, 0 / 25 lines")
+
+    def test_list_json_prints_the_raw_response_account_scoped(self):
+        self.house.route("GET", "/api/v1/account_practices", body=self.LISTING)
+        code, out, _ = self.run_cli("--account", "A1", "practices", "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), self.LISTING)
+        self.assertIn("account_id=A1", self.last()["query"])
+
+    def test_add_joins_several_words_into_one_text(self):
+        self.house.route("POST", "/api/v1/account_practices", status=201, body={"practice": {"id": "p9"}})
+        code, out, _ = self.run_cli("practices", "add", "Finished", "threads", "get", "done.")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["path"], "/api/v1/account_practices")
+        self.assertEqual(json.loads(req["body"]), {"text": "Finished threads get done."})
+        self.assertEqual(json.loads(out)["practice"]["id"], "p9")
+
+    def test_add_with_position_sends_it_as_an_integer(self):
+        self.house.route("POST", "/api/v1/account_practices", status=201, body={"practice": {"id": "p9"}})
+        code, _, _ = self.run_cli("practices", "add", "One line", "--position", "2")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"text": "One line", "position": 2})
+
+    def test_add_with_no_text_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("practices", "add")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("TEXT", err)
+
+    def test_add_with_a_bad_position_is_a_usage_error_without_a_request(self):
+        for bad in ("0", "-1", "first"):
+            code, _, err = self.run_cli("practices", "add", "A line", "--position", bad)
+            self.assertEqual(code, souls.EXIT_USAGE, bad)
+            self.assertIn("POSITION", err)
+        self.assertEqual(self.house.requests, [])
+
+    def test_edit_patches_the_text_of_one_practice(self):
+        self.house.route("PATCH", "/api/v1/account_practices/p1", body={"practice": {"id": "p1", "text": "New text"}})
+        code, out, _ = self.run_cli("practices", "edit", "p1", "New", "text")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "PATCH")
+        self.assertEqual(req["path"], "/api/v1/account_practices/p1")
+        self.assertEqual(json.loads(req["body"]), {"text": "New text"})
+        self.assertEqual(json.loads(out)["practice"]["text"], "New text")
+
+    def test_edit_without_text_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("practices", "edit", "p1")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("new TEXT", err)
+
+    def test_move_patches_the_position(self):
+        self.house.route("PATCH", "/api/v1/account_practices/p1", body={"practice": {"id": "p1", "position": 3}})
+        code, out, _ = self.run_cli("practices", "move", "p1", "3")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "PATCH")
+        self.assertEqual(json.loads(req["body"]), {"position": 3})
+        self.assertEqual(json.loads(out)["practice"]["position"], 3)
+
+    def test_move_needs_an_id_and_one_position(self):
+        for argv in (("move",), ("move", "p1"), ("move", "p1", "2", "3")):
+            code, _, _ = self.run_cli("practices", *argv)
+            self.assertEqual(code, souls.EXIT_USAGE, argv)
+        self.assertEqual(self.house.requests, [])
+
+    def test_remove_deletes_one_practice(self):
+        self.house.route("DELETE", "/api/v1/account_practices/p2", body={"removed": {"id": "p2"}})
+        code, out, _ = self.run_cli("practices", "remove", "p2")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "DELETE")
+        self.assertEqual(req["path"], "/api/v1/account_practices/p2")
+        self.assertEqual(json.loads(out)["removed"]["id"], "p2")
+
+    def test_remove_with_extra_words_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("practices", "remove", "p2", "p3")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("exactly one ID", err)
+
+    def test_a_422_from_the_house_exits_with_the_invalid_code(self):
+        self.house.route("POST", "/api/v1/account_practices", status=422,
+                         body={"error": "Text is too long", "errors": {"text": ["is too long"]}})
+        code, _, err = self.run_cli("practices", "add", "x" * 300)
+        self.assertEqual(code, souls.EXIT_INVALID)
+        self.assertIn("Text is too long", err)
+
+
 class IntegrationsTest(CliTestCase):
     """souls integrations list|providers|connect|grant|disconnect."""
 
