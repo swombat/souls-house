@@ -73,6 +73,39 @@ class RhythmTidyCheckJobTest < ActiveSupport::TestCase
     assert_equal @second, @occurrence.reload.tidy_interaction.agent
   end
 
+  test "a reservation that expired unclaimed was nobody's turn" do
+    finish(run_of(@first), at: 2.minutes.ago)
+    expired = run_of(@second)
+    # What reconcile_activity! does to a reservation past its deadline.
+    travel_to(expired.execution_deadline_at + 1.second) { expired.reconcile_activity! }
+    assert_equal "cancelled", expired.reload.execution_state
+    assert_nil expired.dispatch_claimed_at
+    expired.update_columns(finished_at: 1.minute.ago)
+
+    perform
+    assert_equal @first, @occurrence.reload.tidy_interaction.agent
+  end
+
+  test "a resident past its allowance brake is not woken to tidy" do
+    finish_all
+    braked = ->(*, **) { Agents::AllowanceBrake::Result.new(status: "braked") }
+    Agents::AllowanceBrake.stub(:check, braked) { assert_settled_without_wake }
+  end
+
+  test "the brake also stops a tidy wake that crossed it after being reserved, essential rhythm or not" do
+    @rhythm.update!(essential: true) if @rhythm.respond_to?(:essential=)
+    finish_all
+    perform
+    wake = @occurrence.reload.tidy_interaction
+    braked = ->(*, **) { Agents::AllowanceBrake::Result.new(status: "braked") }
+
+    Agents::AllowanceBrake.stub(:check, braked) do
+      assert_equal "skipped_allowance", Agents::AllowanceBrake.interaction_reason(wake)
+      assert_not wake.claim_dispatch!
+    end
+    assert_equal "cancelled", wake.reload.execution_state
+  end
+
   test "nothing is asked or settled while a run is still going" do
     finish(run_of(@first))
 
@@ -155,6 +188,7 @@ class RhythmTidyCheckJobTest < ActiveSupport::TestCase
   end
 
   def finish(run, at: Time.current)
+    run.update_columns(dispatch_claimed_at: at - 1.minute)
     run.finish_execution!("completed")
     run.update_columns(finished_at: at)
   end

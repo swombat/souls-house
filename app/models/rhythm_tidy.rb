@@ -17,6 +17,8 @@
 # be the last finisher: a later peer turn does not inherit the question.
 class RhythmTidy
 
+  NOT_A_TURN = %w[cancelled busy].freeze
+
   attr_reader :occurrence
 
   def self.for_chat(chat)
@@ -59,11 +61,13 @@ class RhythmTidy
     nil
   end
 
-  # The resident whose opening-round run finished last, if it can still be
-  # asked here.
+  # The resident whose opening-round turn finished last, if it can still be
+  # asked here. Only turns that were claimed and ran count: a reservation
+  # that expired unclaimed also gets a finished_at, but was nobody's turn.
   def last_finisher
     run = dispatch.runtime_interactions.where.not(finished_at: nil)
-      .where(trigger_kind: "conversation")
+      .where(trigger_kind: "conversation").where.not(dispatch_claimed_at: nil)
+      .where.not(execution_state: NOT_A_TURN)
       .reorder(finished_at: :desc, id: :desc).first
     agent = run&.agent
     return unless agent && chat.agents.exists?(agent.id) && agent.eligible_for_conversation?
@@ -92,7 +96,7 @@ class RhythmTidy
     <<~TEXT.strip
       RHYTHM TIDY-UP (platform, not a person). This conversation, #{chat.to_param}, is a run of the rhythm #{occurrence.rhythm_title.to_json}. Its opening round has ended, nobody in it has been flagged, no person has spoken in it, and nothing is still running. Yours was the last turn to finish, so you are the one asked: does it need a person to look at it?
 
-      If it doesn't, tidy it away so it doesn't sit on the conversation list. #{ways_for(agent)} Use whichever fits how this account keeps its list. If something in it should be seen (something made that nobody has read yet, or a question for someone), leave it. Either way, say nothing in the room, or at most one line. You won't be asked about this run again, and this wake grants no new permissions.
+      You may mark it done or archive it, so it doesn't sit on the conversation list, or leave it unchanged. #{ways_for(agent)} Use whichever fits how this account keeps its list. Leave it if something in it should be seen (something made that nobody has read yet, or a question for someone), or if you're unsure. Whatever you choose, say nothing in the room, or at most one line. You won't be asked about this run again, and this wake grants no new permissions.
     TEXT
   end
 

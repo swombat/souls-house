@@ -7,7 +7,8 @@
 # occurrence locks, in the same transaction as the wake's reservation, so
 # duplicate jobs ask at most once and a wake is never recorded without its
 # marker. A run that can't be asked about (a person spoke, it was tagged or
-# flagged, nobody to ask) is settled too, without a wake.
+# flagged, nobody to ask, the resident's allowance brake on) is settled too,
+# without a wake.
 class RhythmTidyCheckJob < ApplicationJob
 
   DELAY = 30.seconds
@@ -33,6 +34,7 @@ class RhythmTidyCheckJob < ApplicationJob
 
       agent = tidy.last_finisher&.lock!
       next settle!(occurrence) unless agent && !agent.paused? && tidy.ways_for(agent)
+      next settle!(occurrence) if Agents::AllowanceBrake.rhythm_tidy_reason(agent, chat)
 
       wake = AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true,
         wake_source_kinds: [ "scheduled" ], requested_at: Time.current)
