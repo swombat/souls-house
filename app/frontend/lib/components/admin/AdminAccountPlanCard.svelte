@@ -28,7 +28,7 @@
   // plan_source says "grant" for any gift; given_by says whose gift wins.
   const sourceText = $derived.by(() => {
     if (plan?.source === 'subscription') return 'from the plan line on its bill';
-    if (plan?.source === 'default') return 'the default: nothing is given and no plan line is on its bill';
+    if (plan?.source === 'default') return 'the default';
     if (plan?.given_by === 'code') {
       const code = (plan.plan_codes || []).find((entry) => entry.plan === plan.id);
       return code ? `given by the code ${code.code}` : 'given by a plan code';

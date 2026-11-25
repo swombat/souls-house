@@ -29,6 +29,13 @@ module Agents
 
     def ok? = problem.nil?
 
+    # The selection's problem is that the conversation pinned a model the
+    # resident's list no longer carries (#1118). Read from the list itself,
+    # not from the problem's wording.
+    def off_list?
+      selected_by_conversation && !agent.switchable_model_ids.include?(model_id.to_s)
+    end
+
     def label = Agent.label_for_model(model_id)
 
     def default_model_id = agent.model_id

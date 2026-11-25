@@ -39,8 +39,8 @@ module Authentication
       redirect_to login_path
     end
 
-    def after_authentication_url
-      session.delete(:return_to_after_authenticating) || first_resident_url || root_url
+    def after_authentication_url(landing_url: nil)
+      session.delete(:return_to_after_authenticating) || landing_url || first_resident_url || root_url
     end
 
     # Someone whose only account is their own and who has no resident yet has
