@@ -46,7 +46,7 @@ module Message::Attachable
         file_data[:text_preview_url] = url_helpers.attachment_preview_path(
           signed_id: file.blob.signed_id, filename: file.filename.to_param
         )
-        if AttachmentHtmlPreviewsController.html_blob?(file.blob)
+        if AttachmentHtmlPreviewsController.previewable_blob?(file.blob)
           file_data[:html_preview_url] = url_helpers.attachment_html_preview_path(
             signed_id: file.blob.signed_id, filename: file.filename.to_param
           )

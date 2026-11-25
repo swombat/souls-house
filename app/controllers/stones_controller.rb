@@ -2,21 +2,7 @@
 # session, account, navigation props, or conversation transcript.
 class StonesController < ActionController::Base
 
-  CONTENT_POLICY = [
-    "sandbox",
-    "default-src 'none'",
-    "script-src 'none'",
-    "style-src 'unsafe-inline'",
-    "img-src data:",
-    "font-src 'none'",
-    "connect-src 'none'",
-    "object-src 'none'",
-    "frame-src 'none'",
-    "worker-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-    "frame-ancestors 'self'"
-  ].join("; ").freeze
+  CONTENT_POLICY = SandboxedHtml::CONTENT_POLICY
 
   before_action :secure_response
   before_action :find_revision

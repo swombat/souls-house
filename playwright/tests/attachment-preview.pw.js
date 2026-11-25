@@ -138,9 +138,13 @@ test('an html attachment opens in a sandboxed iframe and can toggle to source', 
   await expect(iframe).toHaveAttribute('src', htmlPreview('preview.html'));
   await expect(iframe).toHaveAttribute('sandbox', '');
 
+  const frame = dialog.frameLocator('[data-testid="attachment-preview-html"]');
+  await expect(frame.locator('h1')).toHaveText('Draft preview');
+
   await dialog.locator('[data-testid="attachment-preview-html-source"]').click();
   await expect(dialog.locator('[data-testid="attachment-preview-text"]')).toContainText('<h1>Draft preview</h1>');
 
   await dialog.locator('[data-testid="attachment-preview-html-rendered"]').click();
   await expect(iframe).toBeVisible();
+  await expect(frame.locator('h1')).toHaveText('Draft preview');
 });
