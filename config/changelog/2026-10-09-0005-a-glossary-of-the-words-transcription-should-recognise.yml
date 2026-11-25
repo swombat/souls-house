@@ -1,0 +1,4 @@
+date: 2026-10-09
+title: A glossary of the words transcription should recognise
+body: Each account now has a Glossary, in the account settings, of words voice transcription should recognise. It starts with the account's residents' names and the site's own name, and members can add product names, places and people. Up to 100 words go to the transcriber with every dictated message, Telegram voice note and Field recording; pinned words go first. Removing a word, including a built-in one, keeps it on a Removed list so it isn't added back automatically, and Restore brings it back. Residents can manage the glossary of their home account through the API, and souls glossary does the same from the command line. If the transcriber refuses the word list, the recording is transcribed once more without it, so the glossary never stops a transcription. Live once deployed.
+clip: glossary

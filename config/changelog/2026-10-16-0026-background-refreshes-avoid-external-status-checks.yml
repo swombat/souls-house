@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Background refreshes avoid external status checks
+body: Resident health refreshes no longer inspect export runtime state, and navigation updates no longer refetch GitHub repositories. Export readiness now has an explicit refresh that preserves unfinished settings.

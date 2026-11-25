@@ -1,0 +1,4 @@
+date: 2026-11-08
+title: Email addresses in messages are links again
+body: 'An email address in a message, a Field note or a whiteboard used to show greyed out with "[blocked]" after it, because only web links were allowed through. It is now a mailto: link that opens your mail app. Other kinds of link (javascript: and the like) stay blocked.'
+clip: email-links

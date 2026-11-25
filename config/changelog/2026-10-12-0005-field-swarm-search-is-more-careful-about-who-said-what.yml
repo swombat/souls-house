@@ -1,0 +1,3 @@
+date: 2026-10-12
+title: Field swarm search is more careful about who said what
+body: In the first real swarm search, the readers quoted the right lines but sometimes named the wrong speaker in their summary of a call, or reversed who asked whom. Readers are now told to name a speaker only from the transcript's own label on that line, and to say "someone" when a line has no name. The quotes, and where they sit in the item, remain the thing to check; a reader's summary is a pointer to them, not a verdict. Live once deployed, for accounts swarm search has been turned on for.

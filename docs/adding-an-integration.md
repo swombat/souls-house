@@ -20,7 +20,7 @@ Every integration has the same three parts. Copy the closest existing one. For a
    - Set timeouts, and `max_retries = 0` on anything billed (Net::HTTP silently retries GETs).
 3. **Tests**: `test/models/services/<name>_adapter_test.rb` with stubbed HTTP for a good key, a refused key, an unreachable provider and an unreadable answer. No test may call the real provider or need a real key.
 
-Then the [CONTRIBUTING.md](../CONTRIBUTING.md) parts: a `config/changelog.yml` entry and a line in `app/frontend/lib/components/features/feature-list.js`.
+Then the [CONTRIBUTING.md](../CONTRIBUTING.md) parts: a `config/changelog/` entry and a line in `app/frontend/lib/components/features/feature-list.js`.
 
 ## A second tweet-stream provider
 

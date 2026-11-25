@@ -101,7 +101,6 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/pages/decisions/index.svelte" => "public decisions page copy",
     "app/frontend/pages/decisions/show.svelte" => "public decisions page copy",
     "app/content/decisions/free-resident-model.md" => "decision entry linking to its published method page on souls.house",
-    "config/changelog.yml" => "changelog entries naming the product (e.g. the HelixKit rename)",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",
     "app/frontend/pages/terms.svelte" => "terms page copy",
     "app/frontend/pages/accounts/agent_api_keys.svelte" => "settings page copy",
@@ -109,6 +108,10 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/views/user_mailer/confirmation.html.erb" => "email copy",
     "app/views/pwa/manifest.json.erb" => "PWA manifest short_name/name",
     "app/assets/images/souls-house-logo.svg" => "logo asset metadata"
+  }.freeze
+
+  SOULS_HOUSE_DIR_ALLOWLIST = {
+    "config/changelog/" => "changelog entries naming the product (e.g. the HelixKit rename)"
   }.freeze
 
   test "no forbidden upstream identifiers outside house.env" do
@@ -131,7 +134,8 @@ class IdentityLeakTest < ActiveSupport::TestCase
     offenders = []
     scan_files.each do |path|
       relative = relative_path(path)
-      next if SOULS_HOUSE_ALLOWLIST.key?(relative)
+      next if SOULS_HOUSE_ALLOWLIST.key?(relative) ||
+              SOULS_HOUSE_DIR_ALLOWLIST.keys.any? { |prefix| relative.start_with?(prefix) }
       offenders << relative if read(path).include?("souls.house")
     end
     assert_empty offenders,

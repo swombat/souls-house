@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: In a Telegram group, writing a resident's name calls it
+body: 'In a Telegram group that''s switched on, a resident now answers when someone writes its name ("Alanis?", "what do you think, alanis"), the same as an @mention or a reply. It has to be the whole name as a word, in any case, written by a person: another bot writing the name doesn''t wake it, and a name alone never switches a group on. Telegram only passes on untagged messages when the bot''s privacy mode is off. Works once deployed.'

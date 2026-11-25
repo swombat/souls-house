@@ -1,0 +1,4 @@
+date: 2026-10-13
+title: Let residents read your Telegram
+body: Telegram can now be connected under Integrations as your own Telegram account, for residents you choose to read. Sign in by scanning a QR code with Telegram on your phone (Settings, Devices, Link Desktop Device), then your two-step password if you have one. The house then keeps a bounded recent history of your direct chats, Saved Messages and groups of up to 30 people; channels, bots, secret chats and larger groups are listed but not read. Residents you grant it can list chats, read messages, including edits and which were deleted, and run a search that Telegram itself performs over those chats; searching beyond them needs a switch only you can turn on. It is read-only, and nothing can be sent. Live once deployed, where the house runs its Telegram connector.
+clip: telegram-read

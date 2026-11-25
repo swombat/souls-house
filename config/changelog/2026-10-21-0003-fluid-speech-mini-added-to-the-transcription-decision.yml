@@ -1,0 +1,3 @@
+date: 2026-10-21
+title: Fluid Speech Mini added to the transcription decision
+body: 'The voice-transcription decision now includes a four-recording Fluid Speech Mini CPU pilot: substantially lower memory than the tested Bark runtime, but similar waiting times. The page separates publisher claims from our measurements and keeps ElevenLabs in place.'

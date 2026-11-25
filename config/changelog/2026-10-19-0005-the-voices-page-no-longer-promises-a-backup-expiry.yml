@@ -1,0 +1,3 @@
+date: 2026-10-19
+title: The Voices page no longer promises a backup expiry
+body: 'The Voices page and the Remember-this-voice panel now say what forgetting a voice actually does: it removes the voice print from this Field''s active recognition database, and backups may still hold it for an indeterminate time. Voice recognition no longer needs a backup retention period to be switched on. Live once deployed.'

@@ -1,0 +1,3 @@
+date: 2026-10-12
+title: Notes at the top of a pasted transcript stay notes
+body: When you upload a recording with its transcript already written, notes above a line of three dashes (---, *** or ===) at the top now come through as one unnamed note at the start, not as extra speakers. Before, a note that began with something like "Content warning (…):" or "Speaker attribution:" could appear as a speaker waiting for a name. A dashed line under real speech changes nothing. Recordings uploaded earlier keep the speakers they were read with. Live once deployed.

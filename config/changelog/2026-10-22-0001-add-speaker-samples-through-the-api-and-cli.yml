@@ -1,0 +1,3 @@
+date: 2026-10-22
+title: Add speaker samples through the API and CLI
+body: Upload retained voice samples without a transcript, with source and session provenance, and manage them through the API and souls CLI. Candidates stay out of recognition until a person confirms the exact audio in Voices; at least two confirmed samples are needed, with twenty included samples and twenty waiting candidates per speaker. Existing evidence is kept, never silently evicted. Works once deployed.

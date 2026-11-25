@@ -1,0 +1,4 @@
+date: 2026-10-16
+title: Companion mutation and execution APIs
+body: Explicitly granted Linux companions gain bounded file-write and full-user execution APIs, temporary one-shot inputs and self-revocation. Linux quarantine and user-cgroup supervision require a compatible companion binary and verified local setup. Directory moves remain refused; no personal computer is connected by this update alone.
+clip: companion-v0

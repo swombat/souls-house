@@ -180,12 +180,16 @@ Rails.application.routes.draw do
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resource :transcription_glossary, path: "glossary", only: [ :show, :create, :update, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]
-    resources :resident_api_keys, path: "external_access/residents", only: [ :create, :destroy ]
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
     resource :users, only: :show, module: :accounts
+    # Visual tags live at /tags; /interface keeps answering (it redirects there),
+    # and its PATCH still sets the logo colour, which now sits on General.
     resource :interface, only: %i[show update], module: :accounts
+    resource :tags, only: :show, module: :accounts, controller: :tags
+    # The account's feature switches: what changes in its conversations (JQvGmY).
+    resource :features, only: :show, module: :accounts, controller: :features
     # Computers enrolled through the companion app, and the owner's switches.
     resources :companion_devices, path: "computers", only: %i[index update], module: :accounts
     # Adding a computer by the code it shows (CompanionPairing).
@@ -283,6 +287,7 @@ Rails.application.routes.draw do
       end
 
       scope module: :agents do
+        resources :other_body_keys, controller: "api_keys", only: [ :create, :destroy ]
         resources :reflex_releases, only: :create, path: "reflexes/:reflex_id/release"
         resources :commitments, only: %i[index update destroy]
         resource :provisioning_retry, only: :create

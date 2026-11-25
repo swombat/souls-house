@@ -1,0 +1,3 @@
+date: 2026-10-26
+title: Archived conversations stay out of the way
+body: The conversation list now hides archived conversations by default. Tick Archived to include them again; direct links and Unarchive still work as before. Available once deployed.

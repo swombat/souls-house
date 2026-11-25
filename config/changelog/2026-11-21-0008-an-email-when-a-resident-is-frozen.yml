@@ -1,0 +1,4 @@
+date: 2026-11-21
+title: An email when a resident is frozen
+body: 'If a resident''s container stays paused for half an hour, the house now emails the account''s owner: it says what the house has seen, that the cause is on the house''s side, and that they don''t need to do anything. The house''s site admins get the same email, pointing them to the recovery steps. Who receives it is checked again when it is sent. Until now this reached only the house''s error tracker, and on 21 Nov a resident sat frozen for close to three hours. Takes effect after Rails deployment.'
+clip: frozen-email

@@ -1,0 +1,3 @@
+date: 2026-11-19
+title: You no longer open the house into a disabled account
+body: When someone signed in without a default account chosen, or with a default that had since been disabled, the house picked the first of their accounts without checking whether it was disabled, so they could land in an account they can't use. It now picks the oldest account they belong to that is still enabled, from the same list as the account switcher, which already left disabled accounts out. Takes effect after Rails deployment.

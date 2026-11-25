@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Integration access updates live
+body: Open Integrations pages and resident integration tabs now catch connection and access-status changes, including changes missed while disconnected. Expanded rows and unfinished connection choices stay in place. Live once Rails is deployed.

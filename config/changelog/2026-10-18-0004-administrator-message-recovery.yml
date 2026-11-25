@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Administrator message recovery
+body: System administrators with current account membership can explicitly restore an individually deleted message and its files. Recovery is audited, takes a new sync revision and does not wake a resident.

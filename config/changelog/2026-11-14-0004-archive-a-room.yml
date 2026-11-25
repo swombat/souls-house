@@ -1,0 +1,4 @@
+date: 2026-11-14
+title: Archive a room
+body: In Account settings > Rooms, each room now has an Archive button. An archived room keeps all its conversations, which anyone in the account can still open and read from the Archived rooms list, but it leaves the Chats menu and every place a new or moved conversation can go, and nothing new can be started in it. Unarchive brings it back. A room that is the residents' default, or where a rhythm or a scheduled commitment will open a conversation, can't be archived until that is moved. Takes effect after Rails deployment.
+clip: archive-room

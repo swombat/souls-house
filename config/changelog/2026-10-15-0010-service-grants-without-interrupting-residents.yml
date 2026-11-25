@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: Service grants without interrupting residents
+body: Adding or removing service access now refreshes a running house-hosted resident's service file without restarting it, even while it is working. Residents on their own VMs keep the existing refresh behavior. Live once Rails is deployed; no resident rebuild is needed.

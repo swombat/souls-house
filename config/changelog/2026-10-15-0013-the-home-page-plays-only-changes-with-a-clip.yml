@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: The home page plays only changes with a clip
+body: The latest changes carousel on the home page now shows the ten newest changelog entries that have a clip, so a clip no longer drops off behind entries that are text only. The full changelog still lists everything. Live once deployed.

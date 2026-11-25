@@ -7,60 +7,17 @@
   import { accountPath, editAccountPath } from '@/routes';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import AccountTypeCard from '$lib/components/accounts/AccountTypeCard.svelte';
-  import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
-  import TelegramBotWakeLimitCard from '$lib/components/accounts/TelegramBotWakeLimitCard.svelte';
-  import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
-  import ChatCodesCard from '$lib/components/accounts/ChatCodesCard.svelte';
-  import RoomChatCountsCard from '$lib/components/accounts/RoomChatCountsCard.svelte';
-  import PlanOfferCard from '$lib/components/accounts/PlanOfferCard.svelte';
-  import VoiceModeCard from '$lib/components/accounts/VoiceModeCard.svelte';
-  import SpeechEngineCard from '$lib/components/accounts/SpeechEngineCard.svelte';
+  import AccountLogoColourPicker from '$lib/components/theme/AccountLogoColourPicker.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import { createAccountSettingDraft } from '$lib/account-setting-draft.svelte.js';
 
-  let {
-    account,
-    can_be_personal,
-    members_count = 1,
-    can_manage = false,
-    resident_handoff_cap = 6,
-    telegram_bot_wake_limit = 3,
-    reflexes_enabled = false,
-    reflexes_site_scope = 'account_choice',
-    show_chat_codes = false,
-    show_room_chat_counts = false,
-    plan_offer_enabled = false,
-    plan_offer_available = false,
-    voice_mode_enabled = false,
-    voice_mode_site_scope = 'account_choice',
-    voice_mode_transcription_key = false,
-    speech_engine = 'phonon',
-    speech_engine_site_scope = 'disabled',
-    eleven_labs_key_present = false,
-    eleven_labs_house_key = false,
-  } = $props();
+  let { account, can_be_personal, members_count = 1, can_manage = false, logo_colour_options = [] } = $props();
 
   const updateSync = createDynamicSync();
   $effect(() => {
     updateSync({
-      [`Account:${account.id}`]: [
-        'account',
-        'can_be_personal',
-        'members_count',
-        'can_manage',
-        'resident_handoff_cap',
-        'telegram_bot_wake_limit',
-        'reflexes_enabled',
-        'show_chat_codes',
-        'show_room_chat_counts',
-        'plan_offer_enabled',
-        'plan_offer_available',
-        'voice_mode_enabled',
-        'speech_engine',
-        'eleven_labs_key_present',
-        'eleven_labs_house_key',
-      ],
+      [`Account:${account.id}`]: ['account', 'can_be_personal', 'members_count', 'can_manage'],
     });
   });
 
@@ -97,7 +54,7 @@
   <title>Account settings · {account.name}</title>
 </svelte:head>
 
-<AccountSettingsLayout {account} active="general" title="Account Settings">
+<AccountSettingsLayout {account} active="general" title="General">
   <FlashMessages flash={$page.props.flash} />
 
   <Card.Root>
@@ -127,42 +84,28 @@
     </Card.Content>
   </Card.Root>
 
-  <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
-
-  <TelegramBotWakeLimitCard accountId={account.id} limit={telegram_bot_wake_limit} canManage={can_manage} />
-
-  <ReflexesCard
-    accountId={account.id}
-    enabled={reflexes_enabled}
-    canManage={can_manage}
-    siteScope={reflexes_site_scope} />
-
-  <ChatCodesCard accountId={account.id} enabled={show_chat_codes} canManage={can_manage} />
-
-  <RoomChatCountsCard accountId={account.id} enabled={show_room_chat_counts} canManage={can_manage} />
-
-  {#if plan_offer_available || plan_offer_enabled}
-    <PlanOfferCard
-      accountId={account.id}
-      enabled={plan_offer_enabled}
-      available={plan_offer_available}
-      canManage={can_manage} />
-  {/if}
-
-  <VoiceModeCard
-    accountId={account.id}
-    enabled={voice_mode_enabled}
-    canManage={can_manage}
-    siteScope={voice_mode_site_scope}
-    transcriptionKey={voice_mode_transcription_key} />
-
-  <SpeechEngineCard
-    accountId={account.id}
-    engine={speech_engine}
-    canManage={can_manage}
-    siteScope={speech_engine_site_scope}
-    keyPresent={eleven_labs_key_present}
-    houseKey={eleven_labs_house_key} />
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Logo colour</Card.Title>
+      <Card.Description>
+        The colour of the dot in the logo while you're in this account, so you can tell at a glance where you are.
+        Everyone in the account sees it.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content class="space-y-3">
+      <AccountLogoColourPicker
+        accountId={account.id}
+        current={account.logo_colour ?? null}
+        options={logo_colour_options}
+        canManage={can_manage} />
+      {#if !can_manage}
+        <p class="text-sm text-muted-foreground">You do not have permission to change this account's logo colour.</p>
+      {/if}
+      {#if $page.props.errors?.logo_colour}
+        <p class="text-sm text-destructive">{$page.props.errors.logo_colour}</p>
+      {/if}
+    </Card.Content>
+  </Card.Root>
 
   <AccountTypeCard
     {account}

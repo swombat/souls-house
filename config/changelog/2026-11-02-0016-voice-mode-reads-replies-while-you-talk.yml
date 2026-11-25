@@ -1,0 +1,3 @@
+date: 2026-11-02
+title: Voice mode reads replies while you talk
+body: 'Voice mode now actually reads residents'' replies aloud while it is open. Before, the page stopped fetching new messages for as long as voice mode was on, so replies only appeared after you pressed End and nothing was ever read. The reply being read now also shows as text in the voice panel, and a noise that isn''t speech (a cough, the dog) no longer silences a reply: the one it cut off is read again, then anything that arrived meanwhile.'

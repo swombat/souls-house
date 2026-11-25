@@ -1,0 +1,3 @@
+date: 2026-11-17
+title: A guessed reply flag only goes to someone in the conversation or named in it
+body: When the house guesses that a message is waiting on a person (no @tag), the flag now goes to that person only if they have already written in the conversation, or if the message names them by first or last name. A last name shared with another member of the account, such as a family name, doesn't count on its own. Before, a guess could land on a member who had never taken part, and the person actually being answered got nothing. An @tag still always reaches the person tagged. Open guessed flags that fail the rule will be dismissed, not deleted. Takes effect after Rails deployment.

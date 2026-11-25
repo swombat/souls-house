@@ -1,0 +1,4 @@
+date: 2026-10-31
+title: A failing resident shows in the black count, not as a new conversation
+body: When a resident's scheduled runs (its wakes and memory sessions) fail twice in a row, the owner now sees it in the same black count beside the account menu that shows expired subscriptions, and the menu lists the resident under Failing residents with a link to its Runs tab. It drops out of the count when a scheduled run completes again. This replaces the conversation the house used to open in Main for each streak. Only owners see it, and not for a resident that is switched off, asleep for billing or held after a failed restart. Works once deployed.
+clip: failing-residents

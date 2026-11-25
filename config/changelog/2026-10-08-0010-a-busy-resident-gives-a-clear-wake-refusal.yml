@@ -1,0 +1,3 @@
+date: 2026-10-08
+title: A busy resident gives a clear wake refusal
+body: Asking the API to wake a resident already responding in that conversation now returns a JSON conflict instead of a server error. No additional wake is queued. Live once the Rails change is deployed.

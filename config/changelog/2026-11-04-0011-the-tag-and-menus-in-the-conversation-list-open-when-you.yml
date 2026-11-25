@@ -1,0 +1,4 @@
+date: 2026-11-04
+title: The tag and ⋯ menus in the conversation list open when you rest the mouse on them
+body: 'On a computer, resting the mouse on a conversation''s tag button or its ⋯ button now opens the menu without a click, and moving away from both the button and the menu closes it again. A mouse that only passes over doesn''t open anything. A click still works as before, and clicking a menu the mouse already opened keeps it open. Phones and tablets are unchanged: the menus still wait for a tap.'
+clip: hover-menus

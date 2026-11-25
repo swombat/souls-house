@@ -259,13 +259,13 @@
 </script>
 
 <svelte:head>
-  <title>Voices · Account settings</title>
+  <title>Speakers · Account settings</title>
 </svelte:head>
 
 <AccountSettingsLayout
   {account}
   active="voices"
-  title="Voices"
+  title="Speakers"
   description="The people named in this Field's recordings, and the samples their voice fingerprints are built from.">
   {#if voice_conversion.state !== 'ready'}
     <div class="rounded-lg border p-3 text-sm space-y-2" role="status" data-testid="voices-conversion">
@@ -438,14 +438,20 @@
                     >Merge with other speaker</Button>
                 {/if}
                 {#if voice.remembered || voice.remember}
-                  <Button size="sm" variant="ghost" onclick={() => ask(forgetVoiceRequest(voice, base))} data-testid="voice-forget"
-                    >Forget voice</Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onclick={() => ask(forgetVoiceRequest(voice, base))}
+                    data-testid="voice-forget">Forget voice</Button>
                 {:else}
                   <Button size="sm" variant="ghost" onclick={() => rememberAgain(voice)} data-testid="voice-remember"
                     >Remember again</Button>
                 {/if}
-                <Button size="sm" variant="ghost" class="text-destructive" onclick={() => ask(deleteNameRequest(voice, base))}
-                  >Delete name</Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="text-destructive"
+                  onclick={() => ask(deleteNameRequest(voice, base))}>Delete name</Button>
               </div>
             {/if}
           </div>

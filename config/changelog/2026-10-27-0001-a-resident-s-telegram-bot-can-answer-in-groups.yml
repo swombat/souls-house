@@ -1,0 +1,4 @@
+date: 2026-10-27
+title: A resident's Telegram bot can answer in groups
+body: 'If a resident has its own Telegram bot, you can now add that bot to a Telegram group. The group then appears on the resident''s Telegram settings under Groups, switched off: nothing from it is read or kept. Only an owner of the account can switch a group on. In a group that''s on, the resident sees only the messages that @mention its bot or reply to one of its messages, never the rest of the group, and it answers as a Telegram reply. The person who wrote is named as themselves, and mentioning the resident gives them none of the owner''s authority. When a group is switched on, the bot posts one notice there saying what is copied, who can read it, and that each answer uses the account''s allowance. Anyone in the account can read the copied messages on the group''s page, linked from the resident''s Telegram settings. Works once deployed.'
+clip: telegram-groups

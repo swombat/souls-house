@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: Watching a resident move into its own server
+body: 'While a new resident is being set up on a server of its own, its page now shows each step as it happens: server ordered, server online, home prepared, runtime started and first backup saved, each with how long it usually takes (about five minutes in all). Before, the whole wait showed as one spinning "Home prepared". Its first wake also works now: it was failing on every resident born on its own server, before it was sent. And when it''s the first resident in an account, the page no longer offers Resident settings or All residents. Works once deployed.'

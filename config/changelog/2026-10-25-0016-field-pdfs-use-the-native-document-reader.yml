@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: Field PDFs use the native document reader
+body: Field now reads PDF text and prepares scanned pages for transcription with Imprimatur's Rust core. Metadata, text and rendering run in a separate worker with time, memory and output limits. Completed pages are kept when a read hits a limit, and a page's decompression failure does not lose its healthy neighbors. Search, page coverage and the existing transcription permissions and budgets stay the same. Works once deployed.

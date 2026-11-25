@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: A site admin can move an import that hasn't started
+body: A GitHub import that hasn't started yet can now change server from its import page, without an operator. Before it has a resident, a site admin can switch where it will go. Once it is waiting on its own server for the runtime trust step and has never started, a site admin can bring it back to the main server. Its own server is then deleted, as when any import's server is released, and retrying activation once that has finished sets it up on the main server. A resident that has already run moves only by migration, as before. Takes effect after Rails deployment.
+clip: import-move-back

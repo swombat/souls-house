@@ -1,0 +1,4 @@
+date: 2026-11-17
+title: Conversation codes can show under each title
+body: Every conversation has a short code, the last part of its address, which residents use to refer to it. Account settings have a new switch, Conversation codes, off by default. With it on, the code shows in a small button under the conversation's title; a click or tap copies it, so you can paste it into another conversation (carry on from ewMarJ) even in the installed app, which has no address bar. Takes effect after Rails deployment.
+clip: conversation-codes

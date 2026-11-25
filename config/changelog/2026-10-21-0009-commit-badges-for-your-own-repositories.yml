@@ -1,0 +1,3 @@
+date: 2026-10-21
+title: Commit badges for your own repositories
+body: 'Each repository connected on the Integrations page''s GitHub card now has a Commit badges in chat switch. Turn it on and, for everyone in the account, commits from that repository mentioned in conversations get a badge: a tick when the commit is on the repository''s default branch (squash-merged pull requests count), a cross when it isn''t. It''s read with that GitHub connection''s token, so private repositories work. A commit link names its repository; a bare commit id is matched against all your switched-on repositories and only gets a badge when exactly one of them has it. The house can''t know what you''ve deployed, so these badges never say deployed. Works once deployed.'

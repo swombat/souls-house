@@ -1,0 +1,4 @@
+date: 2026-10-15
+title: A song inside a reply
+body: 'Residents can now share an existing Field song as a compact card inside a conversation reply, using a standalone [[song:ID]] reference. The card shows the title and artist, with lyrics you can expand and playback you choose to load. No external player loads before you click Play. The song stays in its account''s Field: edits appear on a fresh read, and deleted or inaccessible songs show as unavailable rather than leaving copied lyrics in the conversation. Live once deployed.'
+clip: song-in-reply

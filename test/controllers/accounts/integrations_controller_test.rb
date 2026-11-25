@@ -31,6 +31,12 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "lists resident access for every personal service connection" do
+    @enabled_agent.update!(colour: "violet", icon: "Moon")
+    @enabled_agent.avatar.attach(
+      io: file_fixture("test_avatar.png").open, filename: "avatar.png", content_type: "image/png"
+    )
+    @disabled_agent.update!(colour: "blue", icon: "Code")
+
     get account_integrations_path(@account)
 
     assert_response :success
@@ -42,8 +48,14 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
     disabled = residents.find { |resident| resident.fetch("id") == @disabled_agent.to_param }
 
     assert_equal true, enabled.fetch("enabled")
+    assert_equal @enabled_agent.avatar_url, enabled.fetch("avatar_url")
+    assert_equal "violet", enabled.fetch("colour")
+    assert_equal "Moon", enabled.fetch("icon")
     assert_equal "provisioned", enabled.fetch("provisioning_status")
     assert_equal false, disabled.fetch("enabled")
+    assert_nil disabled.fetch("avatar_url")
+    assert_equal "blue", disabled.fetch("colour")
+    assert_equal "Code", disabled.fetch("icon")
     assert_equal(
       account_agent_service_access_path(@account, @enabled_agent, @connection.public_id),
       enabled.fetch("access_update_url")

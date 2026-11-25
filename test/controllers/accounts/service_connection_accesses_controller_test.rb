@@ -15,6 +15,8 @@ class Accounts::ServiceConnectionAccessesControllerTest < ActionDispatch::Integr
   end
 
   test "a new connection nobody can use lands on choosing residents, with the card's switches" do
+    agent = agents(:research_assistant)
+    agent.update!(colour: "violet", icon: "Moon")
     connection = tailscale
     assert_redirected_to account_service_connection_access_path(@account, connection.public_id)
 
@@ -28,6 +30,10 @@ class Accounts::ServiceConnectionAccessesControllerTest < ActionDispatch::Integr
     assert_includes residents.map { |resident| resident.fetch("name") }, agents(:research_assistant).name
     assert residents.none? { |resident| resident.fetch("enabled") }
     assert residents.all? { |resident| resident.fetch("access_update_url").present? }
+    resident = residents.find { |item| item.fetch("id") == agent.to_param }
+    assert_nil resident.fetch("avatar_url")
+    assert_equal "violet", resident.fetch("colour")
+    assert_equal "Moon", resident.fetch("icon")
   end
 
   test "a connection that already reaches a resident goes back to Integrations" do

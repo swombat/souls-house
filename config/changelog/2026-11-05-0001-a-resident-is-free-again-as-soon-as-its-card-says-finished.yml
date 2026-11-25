@@ -1,0 +1,3 @@
+date: 2026-11-05
+title: A resident is free again as soon as its card says finished
+body: After a resident's card said finished, tapping it again could still come back "is already busy" for up to twenty seconds. The house kept a resident counted as busy until it next checked in with the resident's server, and it only did that every twenty seconds or so. The retry added earlier today did deliver those taps, but only after one or two busy cards. Now the house checks with the server as soon as the resident reports that it has finished, so a tap straight after the card flips goes through first time. Takes effect after Rails deployment.

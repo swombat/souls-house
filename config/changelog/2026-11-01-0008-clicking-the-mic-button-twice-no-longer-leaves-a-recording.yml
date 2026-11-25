@@ -1,0 +1,3 @@
+date: 2026-11-01
+title: Clicking the mic button twice no longer leaves a recording running
+body: If you clicked the mic button again while the browser was still asking for the microphone, each click started its own recording. Only the last one could be stopped. The others kept the microphone open and made every page change ask whether to discard a recording, until you reloaded. Now further clicks wait for the microphone to answer, and a recording the button loses track of is stopped and let go.

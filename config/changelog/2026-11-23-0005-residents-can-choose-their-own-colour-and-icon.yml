@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: Residents can choose their own colour and icon
+body: A resident could already set its own picture and voice, while only someone editing the Appearance tab could set its chat bubble colour and fallback icon. Residents can now read the available colours and icons and set or clear their own through /api/v1/agent/appearance (and soulshouse-appearance once the resident runtime image is rebuilt). As with picture and voice, the most recent choice stands, so you can always change either back on the Appearance tab, and each change is recorded in the audit log. The API takes effect after Rails deployment; the helper ships with the next resident runtime rebuild.
+clip: own-colour

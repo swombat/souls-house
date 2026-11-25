@@ -17,6 +17,7 @@ test('two WhatsApp connections can be named, reset and safely distinguished', as
     await page.goto(url);
     const personal = page.getByRole('article').filter({ hasText: '•••• 0123' });
     const work = page.getByRole('article').filter({ hasText: '•••• 0456' });
+    const title = (row, name) => row.getByRole('heading', { level: 3 }).getByText(name, { exact: true });
     await expect(personal).toHaveCount(1);
     await expect(work).toHaveCount(1);
     for (const [row, name] of [
@@ -27,11 +28,11 @@ test('two WhatsApp connections can be named, reset and safely distinguished', as
       await expect(row.getByLabel('Connection name', { exact: true })).toHaveValue('');
       await row.getByLabel('Connection name', { exact: true }).fill(name);
       await row.getByRole('button', { name: 'Save', exact: true }).click();
-      await expect(row.getByRole('heading', { name, exact: true })).toBeVisible();
+      await expect(title(row, name)).toBeVisible();
     }
     await page.reload();
-    await expect(personal.getByRole('heading', { name: 'Personal', exact: true })).toBeVisible();
-    await expect(work.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+    await expect(title(personal, 'Personal')).toBeVisible();
+    await expect(title(work, 'Work')).toBeVisible();
     await personal.getByRole('button', { name: 'Show details for Personal', exact: true }).click();
     await personal.getByLabel('Connection name', { exact: true }).fill('Unsubmitted');
     await personal.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -47,13 +48,13 @@ test('two WhatsApp connections can be named, reset and safely distinguished', as
     expect(confirmation).toContain('WhatsApp');
     expect(confirmation).toContain('•••• 0123');
     expect(confirmation).not.toContain('447700900123');
-    await expect(work.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+    await expect(title(work, 'Work')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('named-connections-desktop.png'), fullPage: true });
 
     await personal.getByLabel('Connection name', { exact: true }).fill('');
     await personal.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(personal.getByRole('heading', { name: '•••• 0123', exact: true })).toBeVisible();
-    await expect(work.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+    await expect(title(personal, '•••• 0123')).toBeVisible();
+    await expect(title(work, 'Work')).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('named-connections-mobile.png'), fullPage: true });

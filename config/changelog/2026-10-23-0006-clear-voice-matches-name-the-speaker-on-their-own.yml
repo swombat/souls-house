@@ -1,0 +1,4 @@
+date: 2026-10-23
+title: Clear voice matches name the speaker on their own
+body: When a recording is transcribed and a speaker's voice is a clear match for a voice this Field has checked against other recordings (a score of at least 70 out of 100, leading every other voice by 20), the speaker is now named without asking, instead of waiting for you to confirm a chip. The speaker's card says named by voice, with the match score and a Not them button that un-names them; after that, who they are is yours to say. Weaker matches stay as "Anna?" chips to confirm, "maybe" hints stay hints, and a voice that hasn't passed its check never names anyone. A speaker named this way adds a candidate sample for you to accept in Voices, like any naming; nothing enters a voice's fingerprint until you've listened to it. Account settings → Voices has a switch to go back to chips only. Works once deployed.
+clip: voice-autoname

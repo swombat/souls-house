@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: A tidier Billing tab and Plan step
+body: With an at-cost code, the Plan step showed six plan cards at once, standard and at-cost interleaved. It now shows three, with a Standard / At cost switch above them that keeps the plan you'd picked. On the Billing tab, the three plans sit side by side with their at-cost price under the standard one, and a resident whose plan can be changed no longer has its name and renewal date squeezed out by the change buttons. Works once deployed.

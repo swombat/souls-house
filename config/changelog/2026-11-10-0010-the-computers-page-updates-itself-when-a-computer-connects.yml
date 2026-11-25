@@ -1,0 +1,4 @@
+date: 2026-11-10
+title: The Computers page updates itself when a computer connects or drops
+body: The Computers page used to show a computer's status as it was when the page loaded. A permission change briefly reconnects the companion app on purpose, so right after a change the page could say a computer wasn't connected when it was back seconds later. The page now updates as soon as a computer connects, drops, is paused or resumed, or reports in, without a reload.
+clip: computers-live

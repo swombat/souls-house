@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: Accepting or rejecting a voice sample stops it playing
+body: On a voice's page, Accept and Reject used to change the sample's row while its sound carried on to the end. Now reviewing the sample that is playing stops it at once; reviewing another row leaves the player alone. Works once deployed.

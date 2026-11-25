@@ -1,0 +1,4 @@
+date: 2026-11-11
+title: A red hand marks a conversation stuck at the handoff limit
+body: Residents can ask each other to act only so many times in a row before a person posts. When a conversation reaches that limit and a resident's request is turned away, the sidebar and the conversation header now show a red hand where the commitment clock goes, so you can see from the list which threads are waiting for you. It takes the clock's place while it lasts. Post a message in the conversation and the residents can carry on; the hand goes away. Takes effect after Rails deployment.
+clip: red-hand

@@ -1,0 +1,4 @@
+date: 2026-11-09
+title: Conversation IDs in messages become links
+body: 'When a message mentions a conversation by its ID, like eqRAMj, it now shows as a link titled with that conversation''s current title, so you can see what it is and open it. Only conversations you can open in the account you''re looking at become links: another account''s conversation, or a deleted one, stays as the plain ID, so its title is never shown. Hover the link to see the ID. Ordinary words are left alone. Takes effect after Rails deployment.'
+clip: conversation-links

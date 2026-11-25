@@ -1,0 +1,3 @@
+date: 2026-10-26
+title: Archive a conversation from the list
+body: On a computer, hovering a conversation in the list now shows a ⋯ menu instead of the door icon. It has Archive at the top (Unarchive for a conversation that's already archived), and Move to room beneath it when the account has rooms. The menu appears on every conversation, including in accounts with no rooms. On a phone, the menu inside the conversation does this as before. Works once deployed.

@@ -40,6 +40,7 @@
   import AgentReflexesPanel from '$lib/components/agents/AgentReflexesPanel.svelte';
   import AgentCommitmentsPanel from '$lib/components/agents/AgentCommitmentsPanel.svelte';
   import ResidentPortabilityPanel from '$lib/components/agents/resident-portability-panel.svelte';
+  import ResidentApiKeys from '$lib/components/api_keys/ResidentApiKeys.svelte';
 
   let {
     agent,
@@ -78,6 +79,7 @@
     interactions_pagination: interactionsPagination = {},
     cost_report: costReport = {},
     portability = null,
+    resident_api_keys: residentApiKeys = null,
     subagent_catalog = [],
     subagent_catalog_empty_reason = null,
     subagent_providers = [],
@@ -160,7 +162,7 @@
     { id: 'settings', label: 'Settings', icon: Gear },
     ...(showSubagents ? [{ id: 'subagents', label: 'Sub-agents', icon: UsersThree }] : []),
     { id: 'integrations', label: 'Integrations', icon: Plug },
-    ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp }] : []),
+    ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp, adminOnly: true }] : []),
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'reflexes', label: 'Reflexes', icon: Lightning },
     { id: 'commitments', label: 'Commitments', icon: Handshake },
@@ -247,16 +249,17 @@
   <AgentEditHeader backHref={accountAgentsPath(account.id)} agentName={agent.name} />
   {#if billingHold}<AsleepBanner name={agent.name} billingUrl={billingHold.billing_url} />{/if}
 
-  <form
-    onsubmit={(e) => {
-      e.preventDefault();
-      updateAgent();
-    }}>
-    <div class="flex flex-col md:flex-row gap-6 md:gap-8">
-      <AgentSettingsTabs {tabs} bind:activeTab />
+  <div class="flex flex-col md:flex-row gap-6 md:gap-8">
+    <AgentSettingsTabs {tabs} bind:activeTab />
 
-      <!-- Content area -->
-      <div class="flex-1 min-w-0 space-y-6">
+    <!-- Content area -->
+    <div class="flex-1 min-w-0 space-y-6">
+      <form
+        class="space-y-6"
+        onsubmit={(e) => {
+          e.preventDefault();
+          updateAgent();
+        }}>
         {#if hostingVisited && canViewHosting}
           <div hidden={activeTab !== 'hosting'}>
             <AgentHostingPanel
@@ -362,7 +365,10 @@
             </Button>
           </div>
         {/if}
-      </div>
+      </form>
+      {#if activeTab === 'settings' && residentApiKeys}
+        <ResidentApiKeys residentName={agent.name} {...residentApiKeys} />
+      {/if}
     </div>
-  </form>
+  </div>
 </div>

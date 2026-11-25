@@ -1,0 +1,4 @@
+date: 2026-11-07
+title: At-cost hosting for existing residents
+body: 'Eligible accounts can now choose an available at-cost plan in Billing for a resident hosted free by the house: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their rate when changing plans. Takes effect after Rails deployment.'
+clip: at-cost-existing

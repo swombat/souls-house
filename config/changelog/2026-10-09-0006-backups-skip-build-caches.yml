@@ -1,0 +1,3 @@
+date: 2026-10-09
+title: Backups skip build caches
+body: Resident backups now leave out folders that tools mark as caches, such as Rust's target/ build output. Those folders can be rebuilt, change on every build and can run to tens of gigabytes, so leaving them out makes backups smaller and cheaper without touching anything on the resident's own disk. Existing backups still hold old cache data until they age out. A failed clean-up of old backups is now recorded on the backup instead of passing silently. Live once deployed.

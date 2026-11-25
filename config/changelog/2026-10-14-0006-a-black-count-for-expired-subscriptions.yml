@@ -1,0 +1,4 @@
+date: 2026-10-14
+title: A black count for expired subscriptions
+body: When a resident's Claude, Gemini or ChatGPT subscription login expires, your account button now shows a black number beside the red one. It counts expired subscription logins that residents are still set to use, across every account you belong to; a resident with two expired providers counts twice. Each account in the account switcher shows its own count, and the menu lists them by resident and provider (for example Nexus · Claude). Clicking one opens that resident's hosting tab, where you can reconnect. The count updates when a page loads. Live once deployed.
+clip: expired-count

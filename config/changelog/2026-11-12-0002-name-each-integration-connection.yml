@@ -1,0 +1,4 @@
+date: 2026-11-12
+title: Name each integration connection
+body: Give individual connections names such as Personal and Work from their Integrations cards. WhatsApp cards and disconnect confirmations also show the linked number's last four digits when available, so multiple accounts are easier to tell apart. Takes effect after Rails deployment.
+clip: connection-names

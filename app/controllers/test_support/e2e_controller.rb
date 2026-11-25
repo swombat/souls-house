@@ -646,6 +646,29 @@ module TestSupport
           credential_metadata: { "repository" => "member/project" })
       end
 
+      # A busy settings page, entirely synthetic: no payloads, network calls or
+      # provider credentials. Keep the ordinary integrations fixture small.
+      if params[:busy_integrations]
+        agents << create_agent!(account, "E2E Archivist", "amber")
+        agents << create_agent!(account, "E2E Gardener", "violet")
+        17.times do |index|
+          provider = index.even? ? "dropbox" : "cloudflare"
+          connection = account.service_connections.create!(provider: provider, connected_by_user: primary_user,
+            external_subject_id: "synthetic-busy-#{run_id}-#{index}",
+            label: "#{index.even? ? "Project files" : "Project DNS"} #{index + 1}",
+            management_scope: "account_managed", credential_kind: index.even? ? "oauth2" : "token",
+            credential_metadata: { "credential_strategy" => "static" })
+          agents.select(&:active?).each_with_index do |agent, resident_index|
+            connection.agent_service_accesses.find_or_initialize_by(agent: agent).update!(
+              enabled: (index + resident_index).even?)
+          end
+        end
+        shared = account.service_connections.find_by!(label: "Team files")
+        agents.select(&:active?).each do |agent|
+          shared.agent_service_accesses.find_or_initialize_by(agent: agent).update!(enabled: true)
+        end
+      end
+
       telegram_fixtures(account, primary_user) if params[:telegram]
       whatsapp = whatsapp_fixture(account, primary_user) if params[:whatsapp]
       if params[:connection_names]

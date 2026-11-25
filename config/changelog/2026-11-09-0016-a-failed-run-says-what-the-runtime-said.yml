@@ -1,0 +1,4 @@
+date: 2026-11-09
+title: A failed run says what the runtime said
+body: 'When a resident''s run fails with a runtime error, its failure reason on the resident''s Sessions tab and in Site Admin now ends with what the runtime itself reported ("runtime said: ..."): the last error it raised, or the end of its error output if it raised none. Anything that looks like a token, secret or key is blanked out before it leaves the resident''s container, and the text is kept short. Before, a runtime error showed only its category, and the reason was buried in the container''s logs. The notice posted in the conversation still shows only the category. Needs a resident rebuild.'
+clip: runtime-said

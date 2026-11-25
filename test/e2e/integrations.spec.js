@@ -4,7 +4,7 @@ for (const role of ['primary_user', 'secondary_user']) {
   test(`integrations are unified for ${role}`, async ({ page, request }, testInfo) => {
     const runId = `integrations-${role}-${Date.now()}`;
     const response = await request.post('/test/e2e/setup', {
-      data: { run_id: runId, resident_dashboard: true, integrations: true },
+      data: { run_id: runId, resident_dashboard: true, integrations: true, busy_integrations: true },
     });
     expect(response.ok()).toBe(true);
     const setup = await response.json();
@@ -23,10 +23,17 @@ for (const role of ['primary_user', 'secondary_user']) {
       await expect(page.getByRole('heading', { name: 'Integrations', exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Connect a new integration', exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Your integrations', exact: true })).toBeVisible();
+      // Each member sees the 18 account connections and their own personal one,
+      // not the other person's private repository.
+      await expect(page.getByRole('article')).toHaveCount(19);
+      const compact = page.getByRole('button', { name: 'Compact', exact: true });
+      const expanded = page.getByRole('button', { name: 'Expanded', exact: true });
+      await expect(compact).toHaveAttribute('aria-pressed', 'true');
+      await expect(expanded).toHaveAttribute('aria-pressed', 'false');
       const shared = page.getByRole('article').filter({ hasText: 'Team files' });
       await expect(shared).toBeVisible();
       // The icon alone does not say which service a row is; the name does.
-      await expect(shared.getByTestId('connection-service')).toHaveText('Dropbox');
+      await expect(shared).toContainText('Dropbox');
       // Connected integrations come before the picker, each one a compact row
       // that says who has access; the switches open underneath it.
       const existingTop = (await page.getByRole('heading', { name: 'Your integrations', exact: true }).boundingBox()).y;
@@ -34,12 +41,30 @@ for (const role of ['primary_user', 'secondary_user']) {
         await page.getByRole('heading', { name: 'Connect a new integration', exact: true }).boundingBox()
       ).y;
       expect(existingTop).toBeLessThan(pickerTop);
-      await expect(shared.getByTestId('connection-access-summary')).toBeVisible();
+      await expect(shared.locator('[data-agent-avatar]').first()).toBeVisible();
+      expect(await shared.locator('[data-agent-avatar]').count()).toBeGreaterThanOrEqual(4);
       await expect(shared.getByRole('switch')).toHaveCount(0);
-      const toggle = shared.getByRole('button', { name: 'Show details for Team files', exact: true });
+      await page.screenshot({ path: testInfo.outputPath(`${role}-desktop-compact.png`), fullPage: true });
+      const pickerLink = page.getByRole('link', { name: 'Add an integration', exact: true });
+      await expect(pickerLink).toHaveAttribute('href', /#.+/);
+      await pickerLink.click();
+      await expect(page).toHaveURL(/#.+/);
+      await expect(page.getByRole('heading', { name: 'Connect a new integration', exact: true })).toBeInViewport();
+      await expanded.click();
+      await expect(expanded).toHaveAttribute('aria-pressed', 'true');
+      await expect(compact).toHaveAttribute('aria-pressed', 'false');
+      await expect(shared.getByTestId('connection-service')).toHaveText('Dropbox');
+      await expect(shared.getByTestId('connection-access-summary')).toBeVisible();
+      await page.reload();
+      await expect(expanded).toHaveAttribute('aria-pressed', 'true');
+      await compact.click();
+      await page.reload();
+      await expect(compact).toHaveAttribute('aria-pressed', 'true');
+      await expect(expanded).toHaveAttribute('aria-pressed', 'false');
+      const toggle = shared.getByRole('button', { name: /^Show details for Team files/ });
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
       await toggle.click();
-      await expect(shared.getByRole('button', { name: 'Hide details for Team files', exact: true })).toHaveAttribute(
+      await expect(shared.getByRole('button', { name: /^Hide details for Team files/ })).toHaveAttribute(
         'aria-expanded',
         'true'
       );
@@ -49,7 +74,7 @@ for (const role of ['primary_user', 'secondary_user']) {
         await expect(shared.getByText('Managed by account admins')).toBeVisible();
         await expect(shared.getByRole('button', { name: 'Disconnect' })).toHaveCount(0);
         for (const control of await shared.getByRole('switch').all()) await expect(control).toBeDisabled();
-        await expect(page.getByRole('heading', { name: 'member/project', exact: true })).toBeVisible();
+        await expect(page.getByRole('article').filter({ hasText: 'member/project' })).toBeVisible();
       } else {
         await expect(shared.getByRole('button', { name: 'Disconnect' })).toBeVisible();
       }
@@ -64,7 +89,7 @@ for (const role of ['primary_user', 'secondary_user']) {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.screenshot({ path: testInfo.outputPath(`${role}-mobile.png`), fullPage: true });
       // Collapsed, a row is short enough that a phone shows several at once.
-      await page.getByRole('button', { name: 'Hide details for Team files', exact: true }).click();
+      await page.getByRole('button', { name: /^Hide details for Team files/ }).click();
       expect((await shared.boundingBox()).height).toBeLessThan(140);
       await page.screenshot({ path: testInfo.outputPath(`${role}-mobile-collapsed.png`), fullPage: true });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

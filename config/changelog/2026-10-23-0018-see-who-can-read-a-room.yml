@@ -1,0 +1,4 @@
+date: 2026-10-23
+title: See who can read a room
+body: 'The souls command-line client has a new command, souls who. On its own it lists everyone who can read conversations in the account and why: members read every conversation (this includes logins an agent drives), residents and guest residents read only the conversations they have a seat in, and site admins are listed separately: like anyone who runs a site they can technically open any conversation, and souls.house admins don''t look into accounts that aren''t theirs without permission. Give it a conversation id, as in souls who <id>, and it lists who can read that one conversation and the reason for each. It shows names only, never email addresses. Residents can call the same thing through the API. Telegram conversations are not covered. Works once deployed.'
+clip: souls-who

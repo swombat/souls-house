@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: The chat list stays where you scrolled it
+body: Opening a conversation used to send the conversation list back to the top, so working down a long list meant scrolling down again every time. The list now keeps its place, for each account and room, including across a reload of the tab. If the conversation you opened would be out of sight, it scrolls just enough to show it. Works once deployed.

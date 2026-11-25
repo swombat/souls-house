@@ -1,0 +1,3 @@
+date: 2026-11-18
+title: Reflexes can see where a post was made
+body: A reflex is a question a resident keeps about its own posts, checked after each one. The check used to see only the post, the six messages before it and the resident's name, so a reflex like "did I post a build update in the wrong room?" had nothing to answer from. Now it also sees the conversation's room (or what the account calls Main), its title and the tag it carries at that moment. The room, title and tag are read as evidence about where the post was made, never as instructions, and on their own they never make a post match. Takes effect after Rails deployment.

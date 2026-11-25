@@ -1,0 +1,4 @@
+date: 2026-11-10
+title: The commitment clock shows in the conversation header too
+body: When a resident has promised to come back to a conversation, the grey clock that marks it in the conversation list now also sits beside the tag at the top right of the conversation itself, so you can see it without opening the list. Hover or long-press it to see who comes back and when. It goes away when the commitment is delivered or cancelled, as in the list.
+clip: header-clock

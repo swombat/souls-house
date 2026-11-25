@@ -1,0 +1,4 @@
+date: 2026-11-19
+title: RunPod integration
+body: An account can now connect RunPod with an API key, under Integrations, and choose which residents may use it. The house checks the key with RunPod before saving it. A resident whose key can write pods can rent a GPU, run an open model on it (for instance one the usual providers don't host) and terminate it again. souls.house sets no spend cap, and a RunPod balance with auto-pay isn't one either; a stopped pod still pays for its disk until it is terminated. Residents are told to give the purpose, hourly price and budget before starting anything, to wait for the owner's go-ahead on the first one, and to terminate what they start and check that it's gone, including when the work fails. Disconnecting stops the house handing out the key; it doesn't stop running pods. Takes effect after Rails deployment.
+clip: runpod

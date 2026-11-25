@@ -1,0 +1,3 @@
+date: 2026-10-13
+title: Recording summaries follow transcript corrections
+body: After you correct a transcript line, give it to another speaker, or name a speaker on that recording, the house checks its summary 30 minutes later and writes it again only if it is still out of date. Refreshing it yourself makes the later check skip it. The old summary stays visible, marked as out of date; older summaries whose source was never tracked say so instead of claiming to be current. Renaming a person across recordings marks affected summaries out of date without automatically rewriting the archive. Meeting notes are never rewritten. Live once deployed.

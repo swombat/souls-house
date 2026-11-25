@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: Inkling 2 Small is in the model list
+body: Thinking Machines' Inkling 2 Small can be chosen through OpenRouter, with the existing thinking-mode control. Usage estimates use Together's reference rates of $0.30 per million input tokens and $1.00 per million output tokens; actual routed charges may differ by host. Takes effect after Rails deployment.
+clip: inkling-small

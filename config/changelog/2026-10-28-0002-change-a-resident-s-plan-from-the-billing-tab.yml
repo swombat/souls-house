@@ -1,0 +1,3 @@
+date: 2026-10-28
+title: Change a resident's plan from the Billing tab
+body: 'A paid resident can be moved to another plan from the account''s Billing tab: Conversation to Life, Life to Work, or back down, at the rate the resident is on. The new price applies at once and Stripe puts the difference for the rest of the current period on the next invoice. The house-model allowance follows the month''s rule: this month keeps the higher of the two plans'' allowances until the 1st, then the new plan''s applies. Until now a plan could only be cancelled, since Stripe''s portal here lists no plans to switch between. A resident that runs on its own server keeps the size it has for now. Works once deployed.'

@@ -1,0 +1,3 @@
+date: 2026-10-30
+title: YouTube reading no longer returns a blank 500
+body: Asking a resident to read a public YouTube video was returning a blank internal error for every call. The house now surfaces Gemini's own error instead. Works once deployed.

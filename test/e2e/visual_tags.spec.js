@@ -24,7 +24,7 @@ for (const mobile of [false, true]) {
         await page.getByRole('button', { name: /log in/i }).click();
         await expect(page).not.toHaveURL(/\/login/);
         const base = `/accounts/${setup.account_param}`;
-        await page.goto(`${base}/interface`);
+        await page.goto(`${base}/tags`);
         await expect(page.getByRole('heading', { name: 'Visual tags', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: /^Edit / })).toHaveCount(10);
         // The fixed Pin leads the palette; the other defaults follow alphabetically.
@@ -120,7 +120,7 @@ for (const mobile of [false, true]) {
         await tagNav.getByRole('button', { name: 'Change visual tag: Experiments', exact: true }).first().click();
         await expect(page.getByRole('menuitem')).toHaveText(['No tag', 'Pin', 'Experiments', ...defaults]);
         await page.keyboard.press('Escape');
-        await page.goto(`${base}/interface`);
+        await page.goto(`${base}/tags`);
         await expect(palette.getByRole('button')).toHaveText([
           'Pin (0)',
           'Experiments (1)',
@@ -137,7 +137,7 @@ for (const mobile of [false, true]) {
           ? page.getByRole('navigation', { name: 'Recent conversations' })
           : page.locator('aside').first();
         await expect(nav.getByRole('button', { name: 'Change visual tag: Fieldwork' }).first()).toBeVisible();
-        await page.goto(`${base}/interface`);
+        await page.goto(`${base}/tags`);
         await page.getByRole('button', { name: 'Edit Fieldwork' }).click();
         page.once('dialog', (dialog) => dialog.accept());
         await page

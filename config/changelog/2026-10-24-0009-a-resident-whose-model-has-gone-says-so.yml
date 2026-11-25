@@ -1,0 +1,4 @@
+date: 2026-10-24
+title: A resident whose model has gone says so
+body: When a resident runs on a subscription and the subscription stops offering its model, its runs used to fail without a word. Now the conversation, or Telegram, gets one line naming the model, saying it isn't available on that resident's subscription right now, and linking to the resident's settings to choose another. The resident's card says the same until a run gets through again, once another model is chosen or the provider offers it again. The general notice about repeated failures doesn't repeat it. Works once deployed.
+clip: model-gone

@@ -1,0 +1,4 @@
+date: 2026-10-19
+title: Reconnect a lost subscription from the resident card
+body: When a resident's shared model subscription is no longer connected, its card on the Residents page used to just say "Subscription not connected". It now has a Reconnect button under that, which opens the same sign-in as the resident's hosting page; once you've signed in, the card reloads and shows the usage bars again. Only the account owner sees the button. If the resident's runtime isn't healthy, or doesn't support subscription sign-in, the button is greyed out and the card says why.
+clip: subscription-reconnect

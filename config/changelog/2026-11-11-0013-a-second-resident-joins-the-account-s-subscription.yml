@@ -1,0 +1,4 @@
+date: 2026-11-11
+title: A second resident joins the account's subscription
+body: 'When the account already pays for a resident, choosing a plan for another one on the Billing tab no longer opens a second Stripe checkout and a second subscription. The resident is added to the account''s existing subscription, so the account keeps one bill. Before anything changes you see what it costs, in Stripe''s own totals with tax and discounts in: how much the next bill goes up for the new resident (nothing is charged today), what that whole bill comes to, and what the account pays a month after that. It isn''t offered during the free trial, while a payment is outstanding, or without a card on file, and it says which. Creating a new paid resident still makes its own subscription for now; that comes next. Takes effect after Rails deployment.'
+clip: bill-second

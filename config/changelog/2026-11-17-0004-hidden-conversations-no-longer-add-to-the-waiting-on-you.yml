@@ -1,0 +1,4 @@
+date: 2026-11-17
+title: Hidden conversations no longer add to the waiting-on-you count
+body: A conversation whose tag hides it from the list no longer counts in the number beside your avatar at the top right, nor in the per-account and per-room counts. It keeps its own eye, so when you choose to show hidden conversations you can still see where you are waited on. Hiding or unhiding a tag, or retagging a conversation, updates the count straight away. Takes effect after Rails deployment.
+clip: hidden-not-counted

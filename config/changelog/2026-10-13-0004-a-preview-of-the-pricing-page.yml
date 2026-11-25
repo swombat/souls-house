@@ -1,0 +1,3 @@
+date: 2026-10-13
+title: A preview of the pricing page
+body: There is now a page at /pricing that shows the hosted plans, Starter at $20 a month and Studio at $50 a month, with VAT added where it applies, beside running your own house for free. It says what is true today. Hosting is free for now with your own provider key, paid plans are not available yet, and the house inference each plan would include is marked as planned. Nothing on the page can take a payment yet. It isn't linked from the menus while the sign-up and purchase flow is being tried out. Live once deployed.

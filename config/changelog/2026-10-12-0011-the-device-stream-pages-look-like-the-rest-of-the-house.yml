@@ -1,0 +1,3 @@
+date: 2026-10-12
+title: The device stream pages look like the rest of the house
+body: The pages for publishing your own device readings, such as a Polar H10 heart-rate stream, were plain unstyled HTML. They now sit inside the house's own layout under Account settings, Integrations, with the same look as every other page, and the personal recovery page, where you revoke devices or delete your own data across accounts, has a frame of its own. Deleting or revoking now asks you to confirm first. A device's one-time token is shown once and no longer comes back if you press Back after leaving the page. What the pages do and who can read a stream are unchanged. Live once deployed.

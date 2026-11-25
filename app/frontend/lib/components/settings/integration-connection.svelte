@@ -3,6 +3,7 @@
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
   import { serviceIconClass } from '$lib/service-presentation';
+  import CompactIntegrationHeader from './compact-integration-header.svelte';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
   import ConnectionName from './connection-name.svelte';
   import ConnectionRepositories from './connection-repositories.svelte';
@@ -17,16 +18,25 @@
     connectionIdentity,
     connectionTitle,
     grantDaysLeft,
+    residentHasAccess,
     serviceLine,
   } from '$lib/connection-summary';
   import { submitNativePost } from '$lib/integration-forms';
   import { CaretDown, UsersThree, WarningCircle } from 'phosphor-svelte';
-  let { connection, services, account, open = false, onToggle = () => {} } = $props();
+  let { connection, services, account, compact = false, open = false, onToggle = () => {} } = $props();
   let title = $derived(connectionTitle(connection));
   let service = $derived(serviceLine(connection));
   let identity = $derived(connectionIdentity(connection));
   let summary = $derived(accessSummary(connection));
   let attention = $derived(attentionLabel(connection));
+  let granted = $derived((connection.residents || []).filter(residentHasAccess));
+  let compactDetail = $derived(
+    [...new Set([service, identity].filter((value) => value && value !== title))].join(' · ')
+  );
+  let compactWarning = $derived(
+    (connection.status !== 'connected' && (attention || 'Not connected')) ||
+      (granted.length === 0 ? 'No residents have access' : null)
+  );
   // LinkedIn's sign-in ends after 60 days and only a fresh Connect renews it;
   // connecting the same profile again updates this connection in place.
   let grantDays = $derived(grantDaysLeft(connection));
@@ -82,68 +92,78 @@
 
 <article
   class={`overflow-hidden rounded-xl border shadow-sm ${
-    summary.unshared ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40' : 'bg-card'
+    !compact && summary.unshared ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40' : 'bg-card'
   }`}
   data-unshared={summary.unshared ? 'true' : undefined}
   data-provider={connection.provider}
   data-status={connection.status}>
-  <div class="relative flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
-    <button
-      type="button"
-      class="absolute inset-0 rounded-xl transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      aria-expanded={open}
-      aria-controls={panelId}
-      aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
-      onclick={onToggle}></button>
-    <div
-      class={`pointer-events-none relative flex size-10 shrink-0 items-center justify-center rounded-lg ${serviceIconClass(connection.provider)}`}>
-      <ServiceIcon provider={connection.provider} size={22} />
-    </div>
-    <div class="pointer-events-none relative min-w-0 flex-1 space-y-1">
-      <div>
-        <h3 class="line-clamp-2 break-words font-semibold leading-snug">{title}</h3>
-        {#if service}
-          <p class="truncate text-xs text-muted-foreground" data-testid="connection-service">{service}</p>
-        {/if}
-        {#if identity && identity !== title}
-          <p class="break-words text-xs text-muted-foreground" data-testid="connection-identity">{identity}</p>
-        {/if}
-      </div>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+  {#if compact}
+    <CompactIntegrationHeader
+      {title}
+      detail={compactDetail}
+      residents={granted}
+      warning={compactWarning}
+      {open}
+      {panelId}
+      {onToggle}>
+      {#snippet icon()}
         <span
-          class={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-            connection.management_scope === 'personal'
-              ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200'
-              : 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
-          }`}>
-          {connection.management_scope === 'personal' ? 'Personal' : 'Account'}
+          class={`flex size-7 shrink-0 items-center justify-center rounded-md ${serviceIconClass(connection.provider)}`}>
+          <ServiceIcon provider={connection.provider} size={16} />
         </span>
-        {#if attention}
+      {/snippet}
+    </CompactIntegrationHeader>
+  {:else}
+    <div class="relative flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
+      <button
+        type="button"
+        class="absolute inset-0 rounded-xl transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
+        onclick={onToggle}></button>
+      <div
+        class={`pointer-events-none relative flex size-10 shrink-0 items-center justify-center rounded-lg ${serviceIconClass(connection.provider)}`}>
+        <ServiceIcon provider={connection.provider} size={22} />
+      </div>
+      <div class="pointer-events-none relative min-w-0 flex-1 space-y-1">
+        <div>
+          <h3 class="line-clamp-2 break-words font-semibold leading-snug">{title}</h3>
+          {#if service}
+            <p class="truncate text-xs text-muted-foreground" data-testid="connection-service">{service}</p>
+          {/if}
+          {#if identity && identity !== title}
+            <p class="break-words text-xs text-muted-foreground" data-testid="connection-identity">{identity}</p>
+          {/if}
+        </div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          {#if attention}
+            <span
+              class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+              data-testid="connection-attention">
+              <WarningCircle size={14} weight="bold" />
+              {attention}
+            </span>
+          {/if}
           <span
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-            data-testid="connection-attention">
-            <WarningCircle size={14} weight="bold" />
-            {attention}
+            class={`inline-flex min-w-0 items-center gap-1.5 ${
+              summary.unshared
+                ? 'font-medium text-red-700 dark:text-red-300'
+                : summary.none
+                  ? 'italic text-muted-foreground/80'
+                  : 'text-muted-foreground'
+            }`}
+            data-testid="connection-access-summary">
+            <UsersThree size={16} class="shrink-0" />
+            <span class="break-words">{summary.text}</span>
           </span>
-        {/if}
-        <span
-          class={`inline-flex min-w-0 items-center gap-1.5 ${
-            summary.unshared
-              ? 'font-medium text-red-700 dark:text-red-300'
-              : summary.none
-                ? 'italic text-muted-foreground/80'
-                : 'text-muted-foreground'
-          }`}
-          data-testid="connection-access-summary">
-          <UsersThree size={16} class="shrink-0" />
-          <span class="break-words">{summary.text}</span>
-        </span>
+        </div>
       </div>
+      <CaretDown
+        size={18}
+        class={`pointer-events-none relative shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
     </div>
-    <CaretDown
-      size={18}
-      class={`pointer-events-none relative shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-  </div>
+  {/if}
 
   {#if open}
     <div id={panelId} class="space-y-5 border-t px-4 pb-5 pt-4 sm:px-6">

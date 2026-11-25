@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Remembered voices and pending samples stay current
+body: Open Field recording details and voice rosters now follow remembered-voice changes, pending sample preparation and removal, and forgetting or deleting names on other recordings. Refreshes do not start recognition or change consent.

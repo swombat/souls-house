@@ -1,0 +1,4 @@
+date: 2026-10-10
+title: Old notes and transcripts keep their own date in the Field
+body: Files and notes brought into the Field through the API can now say when they are from, so a transcript from 2019 or an old diary page sits at its own date instead of the day it was uploaded. The Field list and search order them by that date, as they already did for imported recordings, and the item shows it. Send dated_at (an ISO 8601 date like 2019-03-14, or a time like 2019-03-14T09:30:00Z) when uploading a file or creating a note; an impossible date such as 30 February is refused rather than guessed. The souls command-line client gains souls field upload and souls field note, both with --date. Live once deployed.
+clip: field-history

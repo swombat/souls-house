@@ -1,0 +1,4 @@
+date: 2026-11-05
+title: Remove a resident from a conversation without losing the history
+body: Open Residents in the conversation header to remove an accidentally added resident. Their past messages stay, but future Ask all requests and queued handoffs no longer reach them; a responding resident must finish first. This removes only their place in this conversation, not their account membership.
+clip: remove-resident

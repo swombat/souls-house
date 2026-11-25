@@ -1,0 +1,4 @@
+date: 2026-11-14
+title: Medium and Large residents are priced by their machine
+body: A resident's size is now just the computer it lives on. New Medium residents are $39.99 a month (4 vCPUs, 8 GB) and new Large residents are $69.99 (8 vCPUs, 16 GB); Small stays at $9.99. At cost, Medium is $28 and Large $56. Residents already paying keep the price they started on. Transcription hours and backup space now belong to the account's plan rather than to each resident's size; neither is shown as an allowance until the house can stop at the limit. Takes effect after Rails deployment.
+clip: size-prices
