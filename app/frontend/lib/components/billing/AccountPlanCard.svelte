@@ -50,9 +50,14 @@
     const rank = ORDER.indexOf(current.id);
     return accountPlans.filter((plan) => {
       if (!plan.purchasable) return false;
-      // On a bill with no plan line every plan can be added, Companions too:
-      // the account is on it without paying for it.
-      if (plan.id === base.id && !(onBill && !subscriptionLive)) return false;
+      // On a live plan line, the plan it carries is not a move. On a bill
+      // with no plan line every plan can be added, Companions too: the
+      // account is on it without paying for it. With no bill, Partners and
+      // Colleagues are bought now whatever was chosen before (a choice made
+      // before plans could be bought alone does not hide them, Reed #1149),
+      // and Companions is offered back while another plan is chosen.
+      if (subscriptionLive && plan.id === current.id) return false;
+      if (!onBill && plan.id === current.id && !(chosen && chosen.id !== current.id)) return false;
       // A plan the house gave is never lowered by a purchase.
       if (source === 'grant') return ORDER.indexOf(plan.id) > rank;
       return true;
@@ -120,7 +125,9 @@
         its size. {#if subscription?.current_period_end}Renews on {date(subscription.current_period_end)}.{/if}
       {:else if chosen}
         Your first resident's bill will carry {chosen.name}: {usd(chosen.monthly_usd)} a month + VAT, with that resident
-        included. Nothing is charged until then.
+        included. Nothing is charged until then.{moves.some((plan) => plan.id === chosen.id)
+          ? ' Or buy it now, below.'
+          : ''}
       {:else}
         Every account starts on Companions.
       {/if}
@@ -157,9 +164,9 @@
             confirm.
           {:else}
             {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, one small
-            resident included. Choosing one charges nothing now: it starts with your first resident.{trialShown
-              ? ' Only Companions has the free days.'
-              : ''}
+            resident included. Partners and Colleagues are paid now, in Stripe Checkout, and your first resident then
+            joins that bill as the one the plan includes. Choosing Companions charges nothing now: it starts with your
+            first resident.{trialShown ? ' Only Companions has the free days.' : ''}
           {/if}
         </p>
       </div>

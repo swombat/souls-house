@@ -115,7 +115,8 @@ module Billing
 
     # A first purchase: the house holds nothing on this subscription, it is
     # paid, and its metadata names what was bought. It carries one line of
-    # one, or, when the metadata names a plan, two: that plan's and its
+    # one (a resident, or a plan alone: kind account_plan), or, when the
+    # metadata names a plan with a resident, two: that plan's and its
     # included resident's (Billing::Included). Anything else on a
     # subscription with no rows is left as drift.
     def adopt!(remote, lines, account)
@@ -124,23 +125,39 @@ module Billing
         AccountSubscription.exists?(stripe_subscription_id: remote.id)
 
       named = metadata(remote)
+      # A plan alone (Billing::PlanCheckout) names its plan too, so it is
+      # told apart before the plan-with-resident branch.
+      return adopt_plan!(remote, lines, account, named) if named["kind"] == "account_plan"
+
       if named["plan"].present?
         adopt_with_plan!(remote, lines, account, named)
         return
       end
       return unless lines.size == 1
 
+      adopt_resident!(remote, account, lines.keys.first, named)
+    end
+
+    # A plan bought by itself: one line, the plan's price. The Checkout
+    # attempt that bought it is resolved with it (Checkouts before 17 Nov
+    # name none).
+    def adopt_plan!(remote, lines, account, named)
+      return unless lines.size == 1
+
       price = lines.keys.first
-      if named["kind"] == "account_plan" # Checkouts for a plan alone, before 17 Nov
-        plan = AccountPlan.for_price(price) || return
-        if account.account_subscriptions.live.exists?
-          raise InvalidSubscription, "Account #{account.id} already has a live plan; #{remote.id} is a second one"
-        end
-        return AccountSubscription.create!(account:, stripe_subscription_id: remote.id, plan: plan.id,
-          stripe_price_id: price, stripe_status: remote.status, last_synced_at: @now)
+      plan = AccountPlan.for_price(price) || return
+      return if named["plan"].present? && named["plan"] != plan.id
+      if account.account_subscriptions.live.exists?
+        raise InvalidSubscription, "Account #{account.id} already has a live plan; #{remote.id} is a second one"
       end
 
-      adopt_resident!(remote, account, price, named)
+      row = AccountSubscription.create!(account:, stripe_subscription_id: remote.id, plan: plan.id,
+        stripe_price_id: price, stripe_status: remote.status, last_synced_at: @now)
+      if named["plan_checkout_attempt"].present?
+        AccountPlanCheckoutAttempt.unresolved.where(idempotency_key: named["plan_checkout_attempt"], account:)
+          .update_all(resolved_at: @now, updated_at: @now)
+      end
+      row
     end
 
     # The plan and its included resident, adopted together or not at all.

@@ -26,6 +26,23 @@ class Billing::PaymentMethodTest < ActiveSupport::TestCase
     assert_equal({ brand: "visa", last4: "4242", exp_month: 3, exp_year: 2031 }, payment_method.current.as_json)
   end
 
+  test "an ended bill the customer still points at doesn't hide the live bill's card" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1", stripe_subscription_id: "sub_old")
+    @stripe.put_customer("cus_1")
+    @stripe.put_account_subscription(id: "sub_old", account: @account, customer: "cus_1", price: PARTNERS_PRICE,
+      status: "canceled")
+    AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_old", plan: "partners",
+      stripe_price_id: PARTNERS_PRICE, stripe_status: "canceled")
+    @stripe.put_account_subscription(id: "sub_new", account: @account, customer: "cus_1", price: PARTNERS_PRICE,
+      status: "active")
+    AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_new", plan: "partners",
+      stripe_price_id: PARTNERS_PRICE, stripe_status: "active")
+    @stripe.put_payment_method("pm_new", last4: "1881")
+    @stripe.subscription("sub_new")[:default_payment_method] = "pm_new"
+
+    assert_equal "1881", payment_method.current.last4
+  end
+
   test "the card form saves a card without charging, and its card becomes the account's" do
     started = payment_method.start_setup!
     params, = @stripe.checkout_sessions.sole

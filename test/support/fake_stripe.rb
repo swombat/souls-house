@@ -97,13 +97,16 @@ class FakeStripe
   # A subscription-mode Checkout session is completed by the customer: Stripe
   # makes its subscription from the session's subscription_data, trialing if
   # it asked for a trial (no card needed), and reports the session complete.
-  def complete_checkout_session(id, subscription_id:, trial_end: 14.days.from_now)
+  # A delayed payment method completes it unpaid, its subscription
+  # incomplete until the payment lands (payment_status: "unpaid").
+  def complete_checkout_session(id, subscription_id:, trial_end: 14.days.from_now, payment_status: "paid")
     state = @session_states.fetch(id)
     params = state.fetch(:create_params)
     data = params[:subscription_data] || {}
     trial = data[:trial_period_days].present?
+    status = if payment_status == "unpaid" then "incomplete" elsif trial then "trialing" else "active" end
     @subscriptions[subscription_id] = {
-      id: subscription_id, object: "subscription", status: trial ? "trialing" : "active", customer: params[:customer],
+      id: subscription_id, object: "subscription", status:, customer: params[:customer],
       cancel_at_period_end: false, metadata: (data[:metadata] || {}).transform_keys(&:to_s),
       trial_end: trial ? trial_end.to_i : nil, default_payment_method: nil,
       items: { object: "list", data: params[:line_items].each_with_index.map { |item, index|
@@ -111,7 +114,8 @@ class FakeStripe
           current_period_end: trial_end.to_i }
       } }
     }
-    @session_states[id] = state.merge(status: "complete", subscription: subscription_id)
+    @session_states[id] = state.merge(status: "complete", subscription: subscription_id,
+      payment_status: trial ? "no_payment_required" : payment_status)
   end
 
   # The first invoice of a subscription is paid (or not).
@@ -132,6 +136,10 @@ class FakeStripe
   def fail_next_checkout_create(error = Stripe::APIConnectionError.new("timed out"), created: true)
     @checkout_fault = [ error, created ]
   end
+
+  # The next Checkout session create answers with error before anything,
+  # replay or not.
+  def fail_next_checkout_send(error) = @checkout_replay_fault = error
 
   # Search hasn't indexed anything yet (Stripe's search lags by up to a minute).
   def search_lags!
@@ -333,6 +341,14 @@ class FakeStripe
     )
   end
 
+  def payment_methods
+    Service.new(retrieve: lambda { |id|
+      raise Stripe::InvalidRequestError.new("No such PaymentMethod: '#{id}'", "id") unless @payment_methods.key?(id)
+
+      construct(@payment_methods[id])
+    })
+  end
+
   def customers
     Service.new(
       create: lambda { |params, opts|
@@ -361,6 +377,15 @@ class FakeStripe
   def checkout
     sessions = Service.new(
       create: lambda { |params, opts|
+        if (fault = @checkout_replay_fault)
+          @checkout_replay_fault = nil
+          raise fault
+        end
+        # As the live API (2026-09-30.endive on), seen in test mode on #1149.
+        if params.key?(:payment_method_types)
+          raise Stripe::InvalidRequestError.new("The `payment_method_types` parameter is no longer supported when " \
+                                                "creating a Checkout Session.", "payment_method_types", http_status: 400)
+        end
         # Stripe replays an idempotency key only for identical parameters.
         if (replayed = @session_states.find { |_id, state| state[:idempotency_key] && state[:idempotency_key] == opts[:idempotency_key] })
           id, state = replayed
@@ -375,7 +400,8 @@ class FakeStripe
         raise fault[0] if fault && !fault[1]
         @checkout_sessions << [ params, opts ]
         id = "cs_test_#{@checkout_sessions.size}"
-        @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer],
+        @session_states[id] = { status: "open", payment_status: "unpaid", subscription: nil,
+                                mode: params[:mode] || "subscription", customer: params[:customer],
                                 client_reference_id: params[:client_reference_id],
                                 metadata: params[:metadata]&.transform_keys(&:to_s) || {},
                                 url: "https://checkout.stripe.com/c/pay/#{id}",

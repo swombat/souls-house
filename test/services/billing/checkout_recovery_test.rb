@@ -35,6 +35,24 @@ class Billing::CheckoutRecoveryTest < ActiveSupport::TestCase
     assert_equal "synthetic operator", audit.data["operator"]
   end
 
+  test "an account plan's attempt binds its own session, and not a resident's" do
+    account = @agent.account
+    params = { mode: "subscription", customer: "cus_recovery", client_reference_id: "account-#{account.id}",
+      metadata: { kind: "account_plan", plan: "partners", account_id: account.id.to_s, plan_checkout_attempt: "plan-test" },
+      line_items: [ { price: PARTNERS_PRICE, quantity: 1 } ] }
+    attempt = AccountPlanCheckoutAttempt.create!(account:, plan: "partners", stripe_price_id: PARTNERS_PRICE,
+      idempotency_key: "plan-test", create_params: params)
+
+    assert_raises(Billing::InvalidSubscription) do
+      Billing::CheckoutRecovery.attach!(attempt:, session_id: @session.id, operator: "op", reason: "r", client: @stripe)
+    end
+    session = @stripe.checkout.sessions.create(params, { idempotency_key: "plan-test" })
+    Billing::CheckoutRecovery.attach!(attempt:, session_id: session.id, operator: "op", reason: "lost response", client: @stripe)
+    assert_equal session.id, attempt.reload.stripe_session_id
+    audit = AuditLog.find_by!(action: "billing_checkout_reconciled", auditable: account)
+    assert_equal "AccountPlanCheckoutAttempt", audit.data["attempt_type"]
+  end
+
   test "another customer resident or attempt cannot be bound" do
     [ [ :customer, "cus_foreign" ], [ :client_reference_id, "foreign" ],
       [ :metadata, { "checkout_attempt" => "different" } ] ].each do |key, value|
