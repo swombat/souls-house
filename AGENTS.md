@@ -27,7 +27,7 @@ Minitest lives in `test/`; mirror Rails naming such as `accounts_controller_test
 
 ## Commit & Pull Request Guidelines
 Every user-visible change adds an entry under `config/changelog/` in the same PR, and new capabilities also go on the features page; see `CONTRIBUTING.md`.
-Use short, imperative commit subjects (<72 chars) like `Add chats index pagination`, grouping related work. Reference issues in the body when useful. PRs need a problem summary, UI screenshots when visuals change, and explicit notes on migrations or secrets. Run `bin/rubocop`, `bun run format:check`, `bin/rails test`, and `bun run test` before requesting review.
+Use short, imperative commit subjects (<72 chars) like `Add chats index pagination`, grouping related work. Reference issues in the body when useful. PRs need a problem summary, UI screenshots when visuals change, and explicit notes on migrations or secrets. Before pushing for review, run targeted tests for the files you changed plus `bin/rubocop` (for Ruby changes) or `bun run format:check` and `bun run check:svelte-size` (for frontend changes), and let sharded PR CI run the full suite instead of running unsharded `bin/rails test` and `bun run test` locally.
 
 ## Branch Policy
 Changes to `master` go through a pull request. The exception: Lume, Mira and

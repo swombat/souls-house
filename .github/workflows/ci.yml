@@ -14,8 +14,31 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  plan:
+    name: Plan CI suites
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      run_application: ${{ steps.plan.outputs.run_application }}
+      run_frontend: ${{ steps.plan.outputs.run_frontend }}
+      run_runtime: ${{ steps.plan.outputs.run_runtime }}
+      reason: ${{ steps.plan.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide which suites to run
+        id: plan
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BEFORE: ${{ github.event.before }}
+        run: python3 scripts/ci_plan.py --github-output "$GITHUB_OUTPUT"
+
   application:
     name: ${{ matrix.suite }} (${{ matrix.shard }}/${{ matrix.total }})
+    needs: [plan]
+    if: needs.plan.outputs.run_application == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     container:
@@ -168,6 +191,8 @@ jobs:
 
   frontend:
     name: Frontend unit tests
+    needs: [plan]
+    if: needs.plan.outputs.run_frontend == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -183,6 +208,8 @@ jobs:
 
   runtime:
     name: Python runtime tests
+    needs: [plan]
+    if: needs.plan.outputs.run_runtime == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     services:
@@ -282,19 +309,37 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [application, frontend, runtime]
+    needs: [plan, application, frontend, runtime]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
-      - name: Require every suite to pass
+      - name: Require planned suites to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           python3 - <<'PY'
           import json, os
+
           results = json.loads(os.environ["RESULTS"])
-          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          plan = results.get("plan") or {}
+          if plan.get("result") != "success":
+              raise SystemExit(f"CI plan job did not succeed: {plan.get('result')!r}")
+
+          outputs = plan.get("outputs") or {}
+          failed = {}
+          for suite in ("application", "frontend", "runtime"):
+              flag = outputs.get(f"run_{suite}")
+              state = (results.get(suite) or {}).get("result")
+              if flag == "true":
+                  if state != "success":
+                      failed[suite] = f"expected success, got {state!r}"
+              elif flag == "false":
+                  if state != "skipped":
+                      failed[suite] = f"expected skipped, got {state!r}"
+              else:
+                  failed[suite] = f"invalid plan flag {flag!r} (state {state!r})"
+
           if failed:
-              raise SystemExit(f"CI did not fully pass: {failed}")
-          print("All suites and shards passed.")
+              raise SystemExit(f"CI did not pass: {failed}")
+          print("All planned suites passed.")
           PY
