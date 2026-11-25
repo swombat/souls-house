@@ -109,6 +109,22 @@ class RhythmTidyCheckJobTest < ActiveSupport::TestCase
     assert_equal "cancelled", wake.reload.execution_state
   end
 
+  test "past the cache window nobody is asked, at reservation or at claim" do
+    finish(run_of(@first), at: 7.minutes.ago)
+    finish(run_of(@second), at: 6.minutes.ago)
+    assert_settled_without_wake
+
+    reset!
+    finish(run_of(@second), at: 1.minute.ago)
+    perform
+    wake = @occurrence.reload.tidy_interaction
+    assert_equal @second, wake.agent
+    travel RhythmTidy::CACHE_WINDOW do
+      assert_not wake.claim_dispatch!
+    end
+    assert_equal "cancelled", wake.reload.execution_state
+  end
+
   test "nothing is asked or settled while a run is still going" do
     finish(run_of(@first))
 

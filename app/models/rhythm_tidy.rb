@@ -18,6 +18,10 @@
 class RhythmTidy
 
   NOT_A_TURN = %w[cancelled busy].freeze
+  # The question is short only while the finisher's session is still in the
+  # provider's prompt cache (Daniel, JWdPZY). Past this, from the end of the
+  # turn it continues, it isn't asked, at reservation or at claim.
+  CACHE_WINDOW = 5.minutes
 
   attr_reader :occurrence
 
@@ -65,14 +69,23 @@ class RhythmTidy
   # asked here. Only turns that were claimed and ran count: a reservation
   # that expired unclaimed also gets a finished_at, but was nobody's turn.
   def last_finisher
-    run = dispatch.runtime_interactions.where.not(finished_at: nil)
-      .where(trigger_kind: "conversation").where.not(dispatch_claimed_at: nil)
-      .where.not(execution_state: NOT_A_TURN)
-      .reorder(finished_at: :desc, id: :desc).first
-    agent = run&.agent
+    agent = last_turn&.agent
     return unless agent && chat.agents.exists?(agent.id) && agent.eligible_for_conversation?
 
     agent
+  end
+
+  def last_turn
+    dispatch.runtime_interactions.where.not(finished_at: nil)
+      .where(trigger_kind: "conversation").where.not(dispatch_claimed_at: nil)
+      .where.not(execution_state: NOT_A_TURN)
+      .reorder(finished_at: :desc, id: :desc).first
+  end
+
+  # Too late to ask cheaply: the last opening turn ended over CACHE_WINDOW ago.
+  def past_cache_window?(now: Time.current)
+    turn = last_turn
+    turn.nil? || turn.finished_at < now - CACHE_WINDOW
   end
 
   # The ways this resident has to tidy this run; nil if none.
