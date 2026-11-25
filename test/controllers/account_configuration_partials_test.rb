@@ -57,7 +57,8 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
       [
         [ account_path(@account), "accounts/show" ],
         [ account_users_path(@account), "accounts/users" ],
-        [ account_interface_path(@account), "accounts/interface" ],
+        [ account_tags_path(@account), "accounts/tags" ],
+        [ account_features_path(@account), "accounts/features" ],
         [ account_rooms_path(@account), "accounts/rooms" ]
       ].each do |path, component|
         get path, headers: partial(component, "account,is_account_admin,can_manage")
@@ -68,7 +69,7 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
         assert_equal true, props.fetch("can_manage")
       end
       patch account_path(@account), params: { account: { resident_handoff_cap: role.length } }
-      assert_redirected_to @account
+      assert_redirected_to account_features_path(@account)
       assert_equal role.length, @account.reload.resident_handoff_cap
     end
   end
@@ -78,7 +79,8 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
     [
       [ account_path(@account), "accounts/show" ],
       [ account_users_path(@account), "accounts/users" ],
-      [ account_interface_path(@account), "accounts/interface" ],
+      [ account_tags_path(@account), "accounts/tags" ],
+      [ account_features_path(@account), "accounts/features" ],
       [ account_rooms_path(@account), "accounts/rooms" ]
     ].each do |path, component|
       get path, headers: partial(component, "account,is_account_admin,can_manage,resident_handoff_cap")
@@ -88,7 +90,7 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
       assert_equal "teal", props.dig("account", "logo_colour")
       assert_equal true, props.fetch("can_manage")
       assert_equal true, props.fetch("is_account_admin")
-      assert_equal 11, props.fetch("resident_handoff_cap") if component == "accounts/show"
+      assert_equal 11, props.fetch("resident_handoff_cap") if component == "accounts/features"
       assert_not props.key?("members")
     end
   end
@@ -113,7 +115,8 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
     [
       [ account_path(@account), "accounts/show" ],
       [ account_users_path(@account), "accounts/users" ],
-      [ account_interface_path(@account), "accounts/interface" ],
+      [ account_tags_path(@account), "accounts/tags" ],
+      [ account_features_path(@account), "accounts/features" ],
       [ account_rooms_path(@account), "accounts/rooms" ]
     ].each do |path, component|
       get path, headers: partial(component, "account,is_account_admin,can_manage")

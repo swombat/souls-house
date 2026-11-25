@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { expect, test, vi } from 'vitest';
-import Interface from './interface.svelte';
+import Tags from './tags.svelte';
 
 const { subscribe } = vi.hoisted(() => ({ subscribe: vi.fn(() => vi.fn()) }));
 vi.mock('$lib/cable', () => ({ subscribeToModel: subscribe }));
@@ -14,7 +14,7 @@ const props = {
 };
 
 test('palette shows counts including zero in server usage order and explains the scope', () => {
-  render(Interface, props);
+  render(Tags, props);
   const palette = screen.getByLabelText('Visual tag palette');
   expect(
     within(palette)
@@ -26,7 +26,7 @@ test('palette shows counts including zero in server usage order and explains the
 });
 
 test('palette updates counts and ordering when server props refresh', async () => {
-  const { rerender } = render(Interface, props);
+  const { rerender } = render(Tags, props);
   await rerender({
     ...props,
     visual_tags: [{ ...unused, conversation_count: 4 }, popular],
@@ -36,8 +36,8 @@ test('palette updates counts and ordering when server props refresh', async () =
   expect(buttons[1]).toHaveTextContent('Zulu (3)');
 });
 
-test('Interface keeps tag modal drafts across refreshes and closes them on account switch', async () => {
-  const view = render(Interface, props);
+test('Tags keeps tag modal drafts across refreshes and closes them on account switch', async () => {
+  const view = render(Tags, props);
   await fireEvent.click(screen.getByRole('button', { name: 'Edit Zulu' }));
   await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Unfinished tag' } });
   await view.rerender({

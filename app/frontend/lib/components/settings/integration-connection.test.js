@@ -24,14 +24,48 @@ const base = {
   ],
 };
 
-function mount(attributes) {
+function mount(attributes, props = {}) {
   return render(IntegrationConnection, {
     open: true,
     account: { id: 'selected-house' },
     services: [],
     connection: { ...base, ...attributes },
+    ...props,
   });
 }
+
+describe('compact integration summaries', () => {
+  const compact = { compact: true, open: false };
+
+  it('shows hosted residents and approved guests, not requests still pending at their home', () => {
+    mount(
+      {
+        provider_name: 'Dropbox',
+        identity: 'Example team',
+        residents: [
+          ...base.residents,
+          { id: 'approved', name: 'Approved guest', guest: true, enabled: true, effective: true },
+          { id: 'pending', name: 'Pending guest', guest: true, enabled: true, effective: false },
+        ],
+      },
+      compact
+    );
+    const row = screen.getByRole('button', { name: 'Show details for Shared Dropbox' });
+    expect(row).toHaveTextContent('Shared Dropbox · Dropbox · Example team');
+    expect(row).toHaveAccessibleDescription('Dropbox · Example team. Shared with Enabled resident, Approved guest');
+    expect(screen.getByTitle('Approved guest')).toBeInTheDocument();
+    expect(screen.queryByTitle('Pending guest')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('compact-integration-warning')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ status: 'error' }, 'Needs attention'],
+    [{ residents: [] }, 'No residents have access'],
+  ])('marks a broken or unshared connection', (props, warning) => {
+    mount(props, compact);
+    expect(screen.getByTestId('compact-integration-warning')).toHaveAttribute('title', warning);
+  });
+});
 
 describe('existing integration permission controls', () => {
   it('shows account integrations read-only to ordinary members', () => {

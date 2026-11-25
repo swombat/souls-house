@@ -22,6 +22,7 @@
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
   import FieldActions from '$lib/components/field/FieldActions.svelte';
+  import FieldTranscriptionLinks from '$lib/components/field/FieldTranscriptionLinks.svelte';
   import FieldSharing from '$lib/components/field/FieldSharing.svelte';
   import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
   import { fieldItemLink } from '$lib/field';
@@ -322,6 +323,7 @@
     <div>
       <h1 class="text-3xl font-bold">Field</h1>
       <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
+      <FieldTranscriptionLinks accountId={account.id} />
     </div>
     <FieldActions
       tablesHref={`/accounts/${account.id}/field/tables`}

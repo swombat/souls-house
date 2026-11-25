@@ -39,7 +39,7 @@ class AccountsController < ApplicationController
   def update
     handle_account_conversion || update_account_settings
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to @account, alert: e.message
+    redirect_to settings_return_path, alert: e.message
   end
 
   private
@@ -50,21 +50,7 @@ class AccountsController < ApplicationController
       can_be_personal: @account.can_be_personal?,
       members_count: @account.personal? ? 1 : @account.memberships.count,
       can_manage: @account.manageable_by?(Current.user),
-      resident_handoff_cap: @account.resident_handoff_cap,
-      telegram_bot_wake_limit: @account.telegram_bot_wake_limit,
-      reflexes_enabled: @account.reflexes_enabled,
-      show_chat_codes: @account.show_chat_codes,
-      show_room_chat_counts: @account.show_room_chat_counts,
-      plan_offer_enabled: @account.plan_offer_enabled,
-      plan_offer_available: @account.plan_offer_available?,
-      reflexes_site_scope: Setting.instance.reflexes_scope,
-      voice_mode_enabled: @account.voice_mode_enabled,
-      voice_mode_site_scope: Setting.instance.voice_mode_scope,
-      voice_mode_transcription_key: VoiceMode.transcription_key?(@account),
-      speech_engine: @account.speech_engine,
-      speech_engine_site_scope: Setting.instance.speech_engine_scope,
-      eleven_labs_key_present: @account.eleven_labs_api_key.present?,
-      eleven_labs_house_key: @account.house_eleven_labs_key?
+      logo_colour_options: Account::LOGO_COLOURS
     }
   end
 
@@ -103,11 +89,27 @@ class AccountsController < ApplicationController
   end
 
   def update_account_settings
-    return redirect_to(@account, alert: SPEECH_ENGINE_NOT_OFFERED) if choosing_unoffered_engine?
+    return redirect_to(settings_return_path, alert: SPEECH_ENGINE_NOT_OFFERED) if choosing_unoffered_engine?
     return unless @account.update!(account_params)
 
     audit_account_changes if account_has_meaningful_changes?
-    redirect_to @account, notice: "Account updated"
+    redirect_to settings_return_path, notice: "Account updated"
+  end
+
+  # The settings on the Features tab, which save here too.
+  FEATURE_SETTINGS = %w[
+    resident_handoff_cap telegram_bot_wake_limit reflexes_enabled voice_mode_enabled speech_engine
+    eleven_labs_api_key plan_offer_enabled show_chat_codes show_room_chat_counts
+  ].freeze
+
+  # A Features change goes back to Features rather than to General, where
+  # only the name is edited now. Only fields this person may change count, so
+  # an ignored Features field from a non-manager doesn't pick the page.
+  def settings_return_path
+    submitted = params[:account]
+    return account_path(@account) unless submitted.respond_to?(:keys) && @account.manageable_by?(Current.user)
+
+    submitted.keys.map(&:to_s).intersect?(FEATURE_SETTINGS) ? account_features_path(@account) : account_path(@account)
   end
 
   def account_has_meaningful_changes?
@@ -139,7 +141,7 @@ class AccountsController < ApplicationController
   def account_params
     permitted = [ :name ]
     if @account.manageable_by?(Current.user)
-      permitted.push(:resident_handoff_cap, :telegram_bot_wake_limit, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key, :plan_offer_enabled, :show_chat_codes, :show_room_chat_counts)
+      permitted.push(*FEATURE_SETTINGS.map(&:to_sym))
     end
     params.require(:account).permit(permitted)
   end

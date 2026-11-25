@@ -5,12 +5,22 @@
   // account-wide switch stay on the X page.
   import { router } from '@inertiajs/svelte';
   import { Switch } from '$lib/components/shadcn/switch';
+  import CompactIntegrationHeader from './compact-integration-header.svelte';
   import { XLogo, CaretDown, UsersThree, WarningCircle, ArrowRight } from 'phosphor-svelte';
 
-  let { x, open = false, onToggle = () => {} } = $props();
+  let { x, compact = false, open = false, onToggle = () => {} } = $props();
 
   let updating = $state({});
   let granted = $derived(x.residents.filter((resident) => resident.enabled));
+  let compactWarning = $derived(
+    !x.connected
+      ? 'Not connected'
+      : x.enabled && !x.media_scope_granted
+        ? 'Reconnect X to post media'
+        : granted.length === 0
+          ? 'No resident can post'
+          : null
+  );
   let summary = $derived(
     granted.length === 0 ? 'No resident can post' : `${granted.map((resident) => resident.name).join(', ')} can post`
   );
@@ -42,43 +52,57 @@
 </script>
 
 <div class="rounded-xl border bg-card" data-testid="x-posting-connection">
-  <button
-    type="button"
-    class="flex w-full items-start gap-3 px-4 py-4 text-left sm:px-6"
-    aria-expanded={open}
-    aria-controls="x-posting-panel"
-    onclick={onToggle}>
-    <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-black text-white">
-      <XLogo size={22} weight="bold" />
-    </span>
-    <div class="min-w-0 flex-1 space-y-1">
-      <div>
-        <h3 class="font-semibold leading-snug">{x.x_username ? `@${x.x_username}` : 'X posting'}</h3>
-        <p class="truncate text-xs text-muted-foreground">X posting</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span
-          class="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-950 dark:text-violet-200">
-          Account
+  {#if compact}
+    <CompactIntegrationHeader
+      title="X"
+      detail={x.x_username ? `@${x.x_username}` : null}
+      toggleName={x.x_username ? `X · @${x.x_username}` : 'X posting'}
+      residents={granted}
+      warning={compactWarning}
+      {open}
+      panelId="x-posting-panel"
+      {onToggle}>
+      {#snippet icon()}
+        <span class="flex size-7 shrink-0 items-center justify-center rounded-md bg-black text-white">
+          <XLogo size={16} weight="bold" />
         </span>
-        {#if attention}
+      {/snippet}
+    </CompactIntegrationHeader>
+  {:else}
+    <button
+      type="button"
+      class="flex w-full items-start gap-3 px-4 py-4 text-left sm:px-6"
+      aria-expanded={open}
+      aria-controls="x-posting-panel"
+      onclick={onToggle}>
+      <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-black text-white">
+        <XLogo size={22} weight="bold" />
+      </span>
+      <div class="min-w-0 flex-1 space-y-1">
+        <div>
+          <h3 class="font-semibold leading-snug">{x.x_username ? `@${x.x_username}` : 'X posting'}</h3>
+          <p class="truncate text-xs text-muted-foreground">X posting</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          {#if attention}
+            <span
+              class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+              data-testid="x-posting-attention">
+              <WarningCircle size={14} weight="bold" />
+              {attention}
+            </span>
+          {/if}
           <span
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-            data-testid="x-posting-attention">
-            <WarningCircle size={14} weight="bold" />
-            {attention}
+            class={`inline-flex min-w-0 items-center gap-1.5 ${granted.length === 0 ? 'italic text-muted-foreground/80' : 'text-muted-foreground'}`}
+            data-testid="x-posting-summary">
+            <UsersThree size={16} class="shrink-0" />
+            <span class="break-words">{summary}</span>
           </span>
-        {/if}
-        <span
-          class={`inline-flex min-w-0 items-center gap-1.5 ${granted.length === 0 ? 'italic text-muted-foreground/80' : 'text-muted-foreground'}`}
-          data-testid="x-posting-summary">
-          <UsersThree size={16} class="shrink-0" />
-          <span class="break-words">{summary}</span>
-        </span>
+        </div>
       </div>
-    </div>
-    <CaretDown size={18} class={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-  </button>
+      <CaretDown size={18} class={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+  {/if}
 
   {#if open}
     <div id="x-posting-panel" class="space-y-4 border-t px-4 pb-5 pt-4 sm:px-6">

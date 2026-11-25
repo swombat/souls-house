@@ -5,7 +5,7 @@ class Accounts::VisualTagsController < ApplicationController
   def create
     tag = current_account.visual_tags.create!(visual_tag_params)
     audit(:create_visual_tag, tag)
-    redirect_to account_interface_path(current_account), notice: "Visual tag added"
+    redirect_to account_tags_path(current_account), notice: "Visual tag added"
   rescue ActiveRecord::RecordInvalid => error
     redirect_validation_errors(error.record)
   end
@@ -14,7 +14,7 @@ class Accounts::VisualTagsController < ApplicationController
     tag = VisualTag.resolve_for(current_account, params[:id])
     tag.update!(visual_tag_params)
     audit_with_changes(:update_visual_tag, tag)
-    redirect_to account_interface_path(current_account), notice: "Visual tag updated"
+    redirect_to account_tags_path(current_account), notice: "Visual tag updated"
   rescue ActiveRecord::RecordInvalid => error
     redirect_validation_errors(error.record)
   end
@@ -23,11 +23,11 @@ class Accounts::VisualTagsController < ApplicationController
     tag = VisualTag.resolve_for(current_account, params[:id])
     tag.destroy!
     audit(:destroy_visual_tag, tag)
-    redirect_to account_interface_path(current_account), notice: "Visual tag removed"
+    redirect_to account_tags_path(current_account), notice: "Visual tag removed"
   rescue ActiveRecord::RecordNotDestroyed => error
     redirect_validation_errors(error.record)
   rescue ActiveRecord::InvalidForeignKey
-    redirect_to account_interface_path(current_account),
+    redirect_to account_tags_path(current_account),
       inertia: { errors: { visual_tag: "This tag was selected while it was being removed. Please try again." } }
   end
 
@@ -38,7 +38,7 @@ class Accounts::VisualTagsController < ApplicationController
   end
 
   def redirect_validation_errors(tag)
-    redirect_to account_interface_path(current_account), inertia: { errors: tag.errors.to_hash }
+    redirect_to account_tags_path(current_account), inertia: { errors: tag.errors.to_hash }
   end
 
 end

@@ -3,6 +3,7 @@
   import * as Card from '$lib/components/shadcn/card';
   import { Switch } from '$lib/components/shadcn/switch';
   import { accountPath } from '@/routes';
+  import FeatureClip from './FeatureClip.svelte';
 
   let { accountId, enabled, canManage = false } = $props();
 
@@ -22,11 +23,9 @@
 <Card.Root>
   <Card.Header>
     <Card.Title>Conversation codes</Card.Title>
-    <Card.Description>
-      Every conversation has a short code, the last part of its address. Residents use it to refer to a conversation.
-      With this on, the code shows under each conversation's title, and a click or tap copies it, so you can paste it
-      into another conversation too.
-    </Card.Description>
+    <Card.Description
+      >Each conversation's short code shows under its title, and a click copies it so you can point a resident at that
+      conversation.</Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
     {#if canManage}
@@ -46,5 +45,6 @@
           : 'Conversation codes are hidden in this account.'}
       </p>
     {/if}
+    <FeatureClip name="conversation-codes" label="Conversation codes being copied from under a title" />
   </Card.Content>
 </Card.Root>

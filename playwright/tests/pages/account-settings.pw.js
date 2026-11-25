@@ -37,6 +37,10 @@ test.describe('Account settings', () => {
       component.getByText('Covers image generation and any model without a direct provider key.')
     ).toBeVisible();
 
+    await expect(component.getByRole('link', { name: 'Model keys', exact: true })).toHaveAttribute(
+      'href',
+      '/accounts/2/agent_api_keys'
+    );
     const keyInputs = component.locator('input[type="password"]');
     await expect(keyInputs).toHaveCount(8);
     for (const input of await keyInputs.all()) {

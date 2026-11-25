@@ -8,12 +8,12 @@ class Accounts::IntegrationsController < ApplicationController
       definition.supports_management_scope?("personal") ||
         (can_manage_account && definition.supports_management_scope?("account_managed"))
     end
-    agents = current_account.agents.by_name.to_a
+    agents = current_account.agents.includes(avatar_attachment: :blob).by_name.to_a
     # Residents hosted elsewhere and seated here as guests (JWblqj). They are
     # offered beside the hosted residents, switched on by the owner (or by
     # whoever may provision an account-wide connection), and get nothing
     # until their home approves.
-    guests = current_account.guest_agents.includes(:account).by_name.to_a
+    guests = current_account.guest_agents.includes(:account, avatar_attachment: :blob).by_name.to_a
     connections = current_account.service_connections.account_managed
       .or(current_account.service_connections.personal.where(connected_by_user: Current.user))
       .includes(:connected_by_user).order(:id).to_a
@@ -50,7 +50,11 @@ class Accounts::IntegrationsController < ApplicationController
         enabled = granted.include?(agent.id)
         next unless agent.offered_for_sharing?(granted: enabled)
 
-        { id: agent.to_param, name: agent.name, active: agent.active?, enabled: enabled }
+        {
+          id: agent.to_param, name: agent.name,
+          avatar_url: agent.avatar_url, colour: agent.colour, icon: agent.icon,
+          active: agent.active?, enabled: enabled
+        }
       end
     }
   end

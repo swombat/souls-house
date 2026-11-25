@@ -1,0 +1,3 @@
+date: "2026-11-25"
+title: "Hide disabled residents’ API keys by default"
+body: "Disabled residents and their keys are tucked away on the account’s API page. Their keys cannot authenticate while the resident is disabled; re-enabling the resident restores existing keys."

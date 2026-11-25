@@ -1,0 +1,3 @@
+date: "2026-11-25"
+title: "Adding a resident to an account that already pays works again"
+body: "Creating a resident in an account with a bill could stop with \"Checkout must start outside a database transaction.\" The new resident now goes onto the bill as quoted."

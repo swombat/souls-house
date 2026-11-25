@@ -10,12 +10,9 @@ class ApiKeysController < ApplicationController
 
     render inertia: "api_keys/index", props: {
       account: current_account,
-      external_access_keys: external_access_keys.by_creation.map { |key| api_key_json(key) },
-      chaos_agent_access_keys: chaos_agent_access_keys.by_creation.map { |key| api_key_json(key) },
-      resident_named_keys: resident_named_keys.by_creation.map { |key| api_key_json(key) },
-      can_manage_resident_keys: current_account.owned_by?(Current.user),
-      key_residents: current_account.agents.where(runtime: Agent::HOSTED_RUNTIMES).order(:name)
-        .map { |agent| { id: agent.to_param, name: agent.name } }
+      external_access_keys: external_access_keys.by_creation.map { |key| ApiKeyPresentation.new(key).as_json },
+      resident_keys: resident_keys,
+      key_residents: key_residents
     }
   end
 
@@ -24,7 +21,7 @@ class ApiKeysController < ApplicationController
 
     render inertia: "api_keys/show", props: {
       account: current_account,
-      api_key: api_key_json(api_key),
+      api_key: ApiKeyPresentation.new(api_key).as_json,
       raw_token: api_key.raw_token
     }
   end
@@ -40,31 +37,25 @@ class ApiKeysController < ApplicationController
     Current.user.api_keys.where(account: current_account, agent_id: nil)
   end
 
-  def chaos_agent_access_keys
-    current_account.api_keys.where.not(agent_id: nil).where.not(id: resident_named_keys.select(:id)).includes(:agent, :user)
+  def resident_keys
+    current_account.api_keys.where(agent: current_account.agents).includes(:agent).by_creation.map do |key|
+      ApiKeyPresentation.new(key).as_json.merge(
+        kind: key.resident_named? ? "other_body" : "house",
+        resident_active: key.agent.active?
+      )
+    end
   end
 
-  def resident_named_keys
-    ApiKey.resident_named.where(account: current_account).includes(:agent, :user)
-  end
+  def key_residents
+    return [] unless Setting.feature_enabled?(:agents) && current_account.owned_by?(Current.user)
 
-  def api_key_json(key)
-    {
-      id: key.id,
-      name: key.name,
-      prefix: key.display_prefix,
-      actor: api_key_actor_json(key),
-      created_at: key.created_at.strftime("%b %d, %Y"),
-      last_used_at: key.last_used_at&.strftime("%b %d, %Y at %l:%M %p"),
-      last_used_ip: key.last_used_ip
-    }
-  end
-
-  def api_key_actor_json(key)
-    if key.agent
-      { type: "agent", id: key.agent.to_param, name: key.agent.name }
-    else
-      { type: "user", id: key.user.to_param, name: key.user.display_name }
+    current_account.agents.where(runtime: Agent::HOSTED_RUNTIMES).order(:name).map do |agent|
+      {
+        id: agent.to_param,
+        name: agent.name,
+        resident_active: agent.active?,
+        settings_url: edit_account_agent_path(current_account, agent, tab: "settings", anchor: "connect-another-body")
+      }
     end
   end
 

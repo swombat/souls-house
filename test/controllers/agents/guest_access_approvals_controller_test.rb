@@ -54,6 +54,7 @@ class Agents::GuestAccessApprovalsControllerTest < ActionDispatch::IntegrationTe
   end
 
   test "the sharing page lists the guest with its home and where the request stands" do
+    @lume.update!(colour: "violet", icon: "Moon")
     @lume.set_service_access!(@connection, enabled: true, actor: @anna)
     sign_in @anna
 
@@ -63,11 +64,39 @@ class Agents::GuestAccessApprovalsControllerTest < ActionDispatch::IntegrationTe
     connection = inertia_shared_props["connections"].find { |c| c["id"] == @connection.public_id }
     guest = connection["residents"].find { |r| r["id"] == @lume.to_param }
     assert guest["guest"]
+    assert_nil guest.fetch("avatar_url")
+    assert_equal "violet", guest.fetch("colour")
+    assert_equal "Moon", guest.fetch("icon")
     assert_equal @home.name, guest["home_account_name"]
     assert_equal "pending", guest["home_approval"]
     assert guest["enabled"]
     assert_not guest["effective"]
     assert guest["can_share"]
+  end
+
+  test "an approved guest grant keeps its appearance and effective access on the sharing page" do
+    @lume.update!(colour: "blue", icon: "Star")
+    @lume.avatar.attach(
+      io: file_fixture("test_avatar.png").open, filename: "guest.png", content_type: "image/png"
+    )
+    access = @lume.set_service_access!(@connection, enabled: true, actor: @anna)
+    access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
+    sign_in @anna
+
+    get account_integrations_path(@sharing)
+
+    assert_response :success
+    connection = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == @connection.public_id }
+    guest = connection.fetch("residents").find { |resident| resident.fetch("id") == @lume.to_param }
+    assert_equal @lume.avatar_url, guest.fetch("avatar_url")
+    assert_equal "blue", guest.fetch("colour")
+    assert_equal "Star", guest.fetch("icon")
+    assert guest.fetch("guest")
+    assert guest.fetch("enabled")
+    assert guest.fetch("effective")
+    assert_equal "approved", guest.fetch("home_approval")
+    assert_equal @home.name, guest.fetch("home_account_name")
+    assert_equal account_agent_service_access_path(@sharing, @lume, @connection.public_id), guest.fetch("access_update_url")
   end
 
   test "the home's owner sees the offer on the resident's Integrations tab and approves it" do

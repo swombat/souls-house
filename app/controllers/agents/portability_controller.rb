@@ -43,15 +43,17 @@ class Agents::PortabilityController < ApplicationController
     raise Agents::Portability::Error, "V1 stop/export supports native hosted residents only" unless agent.externally_hosted? && !agent.imported_home?
     raise Agents::Portability::Error, "Confirm that idle background processes may stop" unless params[:confirmed].to_s == "true"
     agent.with_lock do
-      agent.update!(active: false, paused: true)
+      agent.update!(paused: true)
     end
-    # Admission remains disabled even on busy failure; do not roll this back.
+    # Pause admission on a busy failure, but leave the key usable so a
+    # running turn can finish before disabling the resident.
     agent.with_lock do
-      raise Agents::Portability::Error, "Resident remains paused/inactive: wait for pending or uncertain turns to finish" if ResidentTurn.pending.where(agent: agent).exists? || agent.agent_runtime_interactions.where(finished_at: nil).exists?
+      raise Agents::Portability::Error, "Resident remains paused: wait for pending or uncertain turns to finish, then retry" if ResidentTurn.pending.where(agent: agent).exists? || agent.agent_runtime_interactions.where(finished_at: nil).exists?
       sandbox = Agents::Sandbox.new(agent)
       Agents::Portability::Transport.new(agent).idle!
       sandbox.stop!
       Agents::Portability::Transport.new(agent).stopped!
+      agent.update!(active: false)
     end
     redirect_to edit_account_agent_path(current_account, agent, tab: "portability"), status: :see_other
   end

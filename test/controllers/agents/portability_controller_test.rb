@@ -155,7 +155,7 @@ class Agents::PortabilityControllerTest < ActionDispatch::IntegrationTest
     refute @agent.reload.active?
   end
 
-  test "stop rejects unknown idle probe and retains disabled admission without killing" do
+  test "stop rejects unknown idle probe and pauses admission without disabling the resident's ongoing access" do
     @agent.update_columns(active: true, paused: false, scheduled_wakes_enabled: true)
     transport = Object.new
     transport.define_singleton_method(:idle!) { raise Agents::Portability::Error, "Unknown execution state" }
@@ -167,9 +167,29 @@ class Agents::PortabilityControllerTest < ActionDispatch::IntegrationTest
       end
     end
     assert_response :unprocessable_entity
-    refute @agent.reload.active?
+    assert @agent.reload.active?
     assert @agent.paused?
     assert @agent.scheduled_wakes_enabled?
+  end
+
+  test "successful stop disables the resident only after the stopped probe" do
+    @agent.update_columns(active: true, paused: false)
+    agent = @agent
+    transport = Object.new
+    transport.define_singleton_method(:idle!) { true }
+    transport.define_singleton_method(:stopped!) { agent.reload.active? || raise("disabled before stop was verified") }
+    sandbox = Object.new
+    sandbox.define_singleton_method(:stop!) { true }
+
+    Agents::Portability::Transport.stub(:new, transport) do
+      Agents::Sandbox.stub(:new, sandbox) do
+        post portability_stop_account_agent_path(@account, @agent), params: { confirmed: true }
+      end
+    end
+
+    assert_response :see_other
+    refute @agent.reload.active?
+    assert @agent.paused?
   end
 
   test "native source activation preserves schedule preference and import activation does not" do
