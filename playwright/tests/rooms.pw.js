@@ -67,6 +67,11 @@ test('rooms settings list Main first, mark the resident default on the row, and 
   await expect(component.getByTestId('room-description')).toHaveText('home, family and anything personal');
   await expect(component.getByLabel("Lume's model in Dev")).toContainText('Claude Fable 5.1');
   await expect(component.getByLabel("Reed's model in Dev")).toContainText('Default');
+  const dotColours = await rows
+    .nth(1)
+    .getByTestId('room-model-dot')
+    .evaluateAll((els) => els.map((el) => getComputedStyle(el).color));
+  expect(new Set(dotColours).size).toBe(3);
   await expect(component.getByTestId('add-room-row')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
     true

@@ -73,7 +73,7 @@
   }
 
   function dotClass(resident) {
-    return resident.colour ? `text-${resident.colour}-500 dark:text-${resident.colour}-400` : 'text-muted-foreground';
+    return resident.colour ? `text-${resident.colour}-600 dark:text-${resident.colour}-400` : 'text-muted-foreground';
   }
 </script>
 
@@ -216,12 +216,15 @@
                     ? `${resident.name}: ${entry.label}`
                     : `${resident.name}: ${resident.default_label} (default)`}
                   aria-label={`${resident.name}'s model in ${room.name}`}>
-                  <span
-                    class={`inline-block size-2 shrink-0 rounded-full bg-current ${dotClass(resident)}`}
-                    aria-hidden="true"></span>
-                  <span class="shrink-0 text-muted-foreground">{resident.name}:</span>
-                  <span class={`min-w-0 truncate ${entry ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
-                    {triggerModelLabel(resident)}
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span
+                      data-testid="room-model-dot"
+                      class={`inline-block size-2 shrink-0 rounded-full bg-current ${dotClass(resident)}`}
+                      aria-hidden="true"></span>
+                    <span class="shrink-0 text-muted-foreground">{resident.name}:</span>
+                    <span class={`min-w-0 truncate ${entry ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                      {triggerModelLabel(resident)}
+                    </span>
                   </span>
                 </Select.Trigger>
                 <Select.Content sideOffset={4}>
