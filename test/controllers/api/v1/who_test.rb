@@ -118,16 +118,21 @@ module Api
         assert_response :not_found
       end
 
-      test "an inactive resident is still listed, because a seat and a key still read" do
+      test "a disabled resident's seats are retained but not listed as current readers" do
         @agent.update_columns(active: false)
-        @home.chats.create!(title: "Still seated", model_id: "openrouter/auto", agents: [ @agent ])
+        chat = @home.chats.create!(title: "Still seated", model_id: "openrouter/auto", agents: [ @agent ])
 
         get api_v1_who_url, headers: @account_headers
         assert_response :success
         mine = response.parsed_body["residents"].find { |r| r["id"] == @agent.to_param }
         assert mine, "inactive resident missing from the directory"
         assert_equal false, mine["active"]
+        assert_equal "none while disabled", mine["reads"]
         assert_operator mine["seats"], :>=, 1
+
+        get api_v1_conversation_who_url(chat), headers: @account_headers
+        assert_response :success
+        assert_not_includes response.parsed_body.fetch("readers").pluck("id"), @agent.to_param
       end
 
       test "a member's key can ask about any conversation in the account" do

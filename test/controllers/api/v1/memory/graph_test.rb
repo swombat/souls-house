@@ -48,7 +48,7 @@ class Api::V1::Memory::GraphTest < ActionDispatch::IntegrationTest
     @resident.account.update_columns(disabled_at: nil)
     @resident.update_columns(active: false)
     get "#{@base}/nodes", headers: @headers
-    assert_response :forbidden
+    assert_response :unauthorized
     @resident.update_columns(active: true)
     @vault.update!(suspended_at: Time.current)
     get "#{@base}/nodes", headers: @headers
