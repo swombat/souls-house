@@ -202,9 +202,9 @@
             class="underline underline-offset-4 hover:text-foreground">{resident.name}</Link
           >{/each}.
       {:else}
-        Provider subscriptions are connected
+        Provider subscriptions are connected on a resident's own settings. View
         <Link href={accountAgentsPath(account.id)} class="underline underline-offset-4 hover:text-foreground"
-          >on each resident's own settings</Link
+          >Residents</Link
         >.
       {/if}
     </p>

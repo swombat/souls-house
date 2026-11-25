@@ -19,7 +19,7 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "secret-account-key"
   end
 
-  test "show lists active hosted residents for settings links without subscription details" do
+  test "show lists only subscription-eligible active hosted residents without subscription details" do
     agent = agents(:other_account_agent)
     agent.update!(
       active: true,
@@ -35,12 +35,19 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
         }
       }
     )
+    openrouter_only = @account.agents.create!(
+      name: "OpenRouter Resident",
+      active: true,
+      runtime: "external",
+      model_id: "openrouter/auto"
+    )
 
     get account_agent_api_keys_path(@account)
 
     residents = inertia_shared_props.fetch("residents")
     entry = residents.find { |item| item.fetch("id") == agent.to_param }
     assert_equal({ "id" => agent.to_param, "name" => agent.name }, entry)
+    assert_not_includes residents.pluck("id"), openrouter_only.to_param
     assert_not inertia_shared_props.key?("subscription_agents")
     assert_not_includes response.body, "subscriber@example.com"
   end

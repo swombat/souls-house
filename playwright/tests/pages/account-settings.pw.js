@@ -112,7 +112,10 @@ test.describe('Account settings', () => {
     await expect(component.getByRole('button', { name: 'Remove' })).toHaveCount(0);
     await expect(component.getByRole('button', { name: 'Save model API keys', exact: true })).toHaveCount(0);
     await expect(component.getByText('Shared AI keys are available as a fallback')).toHaveCount(0);
-    await expect(component.getByRole('link', { name: "on each resident's own settings", exact: true })).toHaveAttribute(
+    await expect(
+      component.getByText("Provider subscriptions are connected on a resident's own settings.")
+    ).toBeVisible();
+    await expect(component.getByRole('link', { name: 'Residents', exact: true })).toHaveAttribute(
       'href',
       '/accounts/2/residents'
     );

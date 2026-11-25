@@ -28,7 +28,9 @@ module Accounts
     private
 
     def residents
-      current_account.agents.active.externally_hosted.by_name.map do |agent|
+      current_account.agents.active.externally_hosted.by_name.filter_map do |agent|
+        next unless Agents::ProviderSubscriptionPresentation.call(agent)
+
         {
           id: agent.to_param,
           name: agent.name
