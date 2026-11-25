@@ -18,12 +18,6 @@ class Agent < ApplicationRecord
   include Agent::HostedSetup
   include RetainsReplacedAttachment
 
-  # The column is dropped in 20261125090000. Only web runs db:prepare, so a
-  # jobs or stones process can boot on this image before the drop commits;
-  # ignoring the column keeps it out of their cached schema. Remove this
-  # line in a later deploy, once the drop is live.
-  self.ignored_columns += [ "journal_source" ]
-
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
 
