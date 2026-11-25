@@ -39,7 +39,10 @@ class ApiKeysController < ApplicationController
 
   def resident_keys
     current_account.api_keys.where(agent: current_account.agents).includes(:agent).by_creation.map do |key|
-      ApiKeyPresentation.new(key).as_json.merge(kind: key.resident_named? ? "other_body" : "house")
+      ApiKeyPresentation.new(key).as_json.merge(
+        kind: key.resident_named? ? "other_body" : "house",
+        resident_active: key.agent.active?
+      )
     end
   end
 
@@ -50,6 +53,7 @@ class ApiKeysController < ApplicationController
       {
         id: agent.to_param,
         name: agent.name,
+        resident_active: agent.active?,
         settings_url: edit_account_agent_path(current_account, agent, tab: "settings", anchor: "connect-another-body")
       }
     end

@@ -63,6 +63,19 @@ class Agents::ApiKeysControllerTest < ActionDispatch::IntegrationTest
     assert_equal "revoke_resident_api_key", AuditLog.order(:created_at).last.action
   end
 
+  test "both resident keys are unauthorized while disabled and work again after re-enabling" do
+    desktop = ApiKey.generate_for(@owner, name: "Desktop", agent: @agent, account: @account)
+    chat = @account.chats.create!(title: "Resident conversation", manual_responses: true, agents: [ @agent ])
+
+    [ true, false, true ].each do |enabled|
+      @agent.update_columns(active: enabled)
+      [ @outbound, desktop ].each do |key|
+        get api_v1_conversation_url(chat), headers: { "Authorization" => "Bearer #{key.raw_token}" }
+        assert_response(enabled ? :success : :unauthorized)
+      end
+    end
+  end
+
   test "the outbound key cannot be revoked here" do
     sign_in(@owner)
 

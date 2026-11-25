@@ -46,8 +46,20 @@ class ApiKeysControllerTest < ActionDispatch::IntegrationTest
     assert_includes inertia_shared_props.fetch("key_residents"), {
       "id" => agent.to_param,
       "name" => agent.name,
+      "resident_active" => true,
       "settings_url" => edit_account_agent_path(@account, agent, tab: "settings", anchor: "connect-another-body")
     }
+  end
+
+  test "index marks disabled residents and their keys for the disclosure" do
+    agent = agents(:other_account_agent)
+    agent.update_columns(active: false)
+    key = ApiKey.generate_for(@user, agent: agent, name: "Desktop")
+
+    get account_api_keys_path(@account)
+
+    assert_equal false, inertia_shared_props.fetch("resident_keys").find { |item| item["id"] == key.id }.fetch("resident_active")
+    assert_equal false, inertia_shared_props.fetch("key_residents").find { |item| item["id"] == agent.to_param }.fetch("resident_active")
   end
 
   test "index omits resident settings links for non-owners" do

@@ -55,7 +55,8 @@ class AccessDirectory
         { name: name_of(user), kind: "site_admin", why: "site admin: #{self.class.reads_any}" }
       end
     end
-    readers += chat.chat_agents.includes(:agent).sort_by { |seat| seat.agent.name.to_s.downcase }.map do |seat|
+    seats = chat.chat_agents.includes(:agent).select { |seat| seat.agent.active? }
+    readers += seats.sort_by { |seat| seat.agent.name.to_s.downcase }.map do |seat|
       guest = seat.agent.account_id != @account.id
       { id: seat.agent.to_param, name: seat.agent.name, kind: guest ? "guest_resident" : "resident",
         why: guest ? "guest seat in this conversation" : "seat in this conversation",
@@ -72,9 +73,8 @@ class AccessDirectory
     @memberships ||= @account.memberships.confirmed.includes(user: :profile).sort_by { |membership| name_of(membership.user).downcase }
   end
 
-  # Every resident, not only active ones: an inactive resident with a seat
-  # and a key can still read (ApiKey.authenticate checks hosting, not
-  # activity), so hiding it would understate who reads (Mira, #525).
+  # Include disabled residents as a roster, not as current readers. Their
+  # seats remain in place for re-enabling.
   def residents
     home = @account.agents.to_a
     guests = @account.guest_agents.to_a
@@ -84,7 +84,8 @@ class AccessDirectory
   def resident_json(agent)
     guest = agent.account_id != @account.id
     { id: agent.to_param, name: agent.name, kind: guest ? "guest_resident" : "resident",
-      reads: READS_SEATED, seats: seat_counts.fetch(agent.id, 0), paused: agent.paused?, active: agent.active? }
+      reads: agent.active? ? READS_SEATED : "none while disabled",
+      seats: seat_counts.fetch(agent.id, 0), paused: agent.paused?, active: agent.active? }
   end
 
   def person_json(membership)
