@@ -1,6 +1,6 @@
 <script>
   import { tick } from 'svelte';
-  import { router } from '@inertiajs/svelte';
+  import { Link, router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
@@ -322,6 +322,12 @@
     <div>
       <h1 class="text-3xl font-bold">Field</h1>
       <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
+      <p class="mt-1 text-sm text-muted-foreground" data-testid="field-transcription-links">
+        Transcription:
+        <Link href={`/accounts/${account.id}/field/voices`} class="underline hover:text-foreground">Speakers</Link>
+        ·
+        <Link href={`/accounts/${account.id}/glossary`} class="underline hover:text-foreground">Glossary</Link>
+      </p>
     </div>
     <FieldActions
       tablesHref={`/accounts/${account.id}/field/tables`}

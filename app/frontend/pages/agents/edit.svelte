@@ -160,7 +160,7 @@
     { id: 'settings', label: 'Settings', icon: Gear },
     ...(showSubagents ? [{ id: 'subagents', label: 'Sub-agents', icon: UsersThree }] : []),
     { id: 'integrations', label: 'Integrations', icon: Plug },
-    ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp }] : []),
+    ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp, adminOnly: true }] : []),
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'reflexes', label: 'Reflexes', icon: Lightning },
     { id: 'commitments', label: 'Commitments', icon: Handshake },

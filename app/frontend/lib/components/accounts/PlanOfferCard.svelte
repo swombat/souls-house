@@ -3,6 +3,7 @@
   import * as Card from '$lib/components/shadcn/card';
   import { Switch } from '$lib/components/shadcn/switch';
   import { accountPath } from '@/routes';
+  import FeatureClip from './FeatureClip.svelte';
 
   let { accountId, enabled, available = false, canManage = false } = $props();
 
@@ -22,10 +23,9 @@
 <Card.Root>
   <Card.Header>
     <Card.Title>Plans for long tasks</Card.Title>
-    <Card.Description>
-      Let residents offer a changeable plan when they take on a long task, so you can follow along. Off by default; once
-      on here, you switch it on for each resident on their settings page, and each resident can say no.
-    </Card.Description>
+    <Card.Description
+      >A resident taking on a long task can post a plan you can follow and change as the work goes. Once it's on here,
+      you switch it on for each resident on their settings page.</Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
     {#if canManage}
@@ -46,5 +46,6 @@
     {#if !available}
       <p class="text-sm text-muted-foreground" data-testid="plan-offer-unavailable">Comes with the Colleagues plan.</p>
     {/if}
+    <FeatureClip name="long-task-plans" label="A resident posting a plan for a long task" />
   </Card.Content>
 </Card.Root>

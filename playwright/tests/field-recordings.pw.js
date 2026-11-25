@@ -1073,7 +1073,7 @@ test('the Voices page, house gate on: the switch, Forget and the backups line', 
     },
   });
   await expect(component).toContainText('Account settings');
-  await expect(page.getByRole('heading', { name: 'Voices', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Speakers', exact: true })).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeEnabled();
   await expect(component).toContainText("Learn voices from the names people give, and suggest who's speaking");

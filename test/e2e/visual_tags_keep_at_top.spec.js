@@ -44,7 +44,7 @@ test('keep at top on an ordinary tag moves its conversations up', async ({ page,
     await expect.poll(order).toEqual(['Help', 'Research']);
 
     async function setKeepAtTop(on) {
-      await page.goto(`${base}/interface`);
+      await page.goto(`${base}/tags`);
       await page.getByRole('button', { name: /^Edit Research/ }).click();
       const form = page.getByRole('form', { name: 'Edit Research', exact: true });
       const toggle = form.getByRole('switch', { name: 'Keep conversations with this tag at the top' });

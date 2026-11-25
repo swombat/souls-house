@@ -24,8 +24,9 @@ for (const role of ['primary_user', 'secondary_user']) {
       const nav = page.getByRole('navigation', { name: 'Account settings', exact: true });
       for (const [label, path] of [
         ['Users', '/users'],
-        ['Interface', '/interface'],
-        ['Model API keys', '/agent_api_keys'],
+        ['Tags', '/tags'],
+        ['Features', '/features'],
+        ['Model keys', '/agent_api_keys'],
         ['Integrations', '/integrations'],
         ['Notices', '/notices'],
         ['Costs', '/costs'],
@@ -47,7 +48,7 @@ for (const role of ['primary_user', 'secondary_user']) {
       await expect(internal.getByRole('button')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('api-desktop.png'), fullPage: true });
 
-      await nav.getByRole('link', { name: 'Model API keys', exact: true }).click();
+      await nav.getByRole('link', { name: 'Model keys', exact: true }).click();
       const key = page.getByLabel('OpenRouter API key', { exact: true });
       if (role === 'secondary_user') {
         await expect(key).toBeDisabled();
@@ -57,7 +58,7 @@ for (const role of ['primary_user', 'secondary_user']) {
       }
 
       await page.setViewportSize({ width: 390, height: 844 });
-      await nav.getByRole('button', { name: 'Model API keys', exact: true }).click();
+      await nav.getByRole('button', { name: 'Model keys', exact: true }).click();
       await page.getByRole('option', { name: 'General', exact: true }).click();
       await expect(page).toHaveURL(new RegExp(`${base}$`));
       await expect(nav.getByRole('button', { name: 'General', exact: true })).toBeVisible();

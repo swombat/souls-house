@@ -56,8 +56,8 @@ test('personal tint, account logo colour and account name in the navbar', async 
     const coral = /rgb\(241, 93, 97\)|oklch\(0\.6715 0\.1825 21\.87\)/;
     await expect(dot).toHaveCSS('fill', coral);
 
-    // Account logo colour, set on the Interface page.
-    await page.goto(`/accounts/${setup.account_id}/interface`);
+    // Account logo colour, set on General.
+    await page.goto(`/accounts/${setup.account_id}`);
     await page.getByRole('radio', { name: 'Teal' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-account-colour', 'teal');
     await expect(dot).not.toHaveCSS('fill', coral);

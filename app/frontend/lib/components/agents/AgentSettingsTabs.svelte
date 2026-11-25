@@ -1,5 +1,9 @@
 <script>
   import * as Select from '$lib/components/shadcn/select/index.js';
+  import { ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
+
+  // A tab with adminOnly is shown only to site admins, and marked red like the
+  // house's other site-admin-only controls.
 
   let { tabs = [], activeTab = $bindable('appearance') } = $props();
 </script>
@@ -12,7 +16,8 @@
       </Select.Trigger>
       <Select.Content>
         {#each tabs as tab (tab.id)}
-          <Select.Item value={tab.id} label={tab.label}>{tab.label}</Select.Item>
+          <Select.Item value={tab.id} label={tab.label} class={tab.adminOnly ? ADMIN_ONLY_TEXT : ''}
+            >{tab.label}</Select.Item>
         {/each}
       </Select.Content>
     </Select.Root>
@@ -27,7 +32,11 @@
         class="flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors whitespace-nowrap
           {activeTab === tab.id
           ? 'bg-primary text-primary-foreground font-medium'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted'}">
+          : tab.adminOnly
+            ? `${ADMIN_ONLY_TEXT} hover:bg-muted`
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
+        title={tab.adminOnly ? `${tab.label} (site admins only)` : undefined}
+        data-admin-only={tab.adminOnly ? '' : undefined}>
         <tab.icon size={18} weight={activeTab === tab.id ? 'fill' : 'regular'} />
         {tab.label}
       </button>

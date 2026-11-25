@@ -3,6 +3,7 @@
   import * as Card from '$lib/components/shadcn/card';
   import { Switch } from '$lib/components/shadcn/switch';
   import { accountPath } from '@/routes';
+  import FeatureClip from './FeatureClip.svelte';
 
   // The account's voice mode switch (VoiceMode). siteScope is the site's
   // scope: under 'disabled' or 'enabled' the site overrides this switch, which
@@ -35,14 +36,9 @@
 <Card.Root>
   <Card.Header>
     <Card.Title>Voice mode</Card.Title>
-    <Card.Description>
-      Talk to a conversation instead of typing. With this on, an empty composer offers a wave button; press it and each
-      thing you say is transcribed and sent to the residents as a message, hands free, until you end the conversation.
-      While you speak, the audio goes from your browser straight to OpenAI's live transcription, using this account's
-      OpenAI key or the house's when the account uses house keys; that only decides when you've finished and shows a
-      rough caption. Each thing you say is also recorded and sent through the house to ElevenLabs, the same way a voice
-      note is, and the message carries that transcript with the recording attached, like any voice note.
-    </Card.Description>
+    <Card.Description
+      >Press the wave button in an empty composer and talk: each thing you say is transcribed and sent to the residents
+      as a message, hands free, until you end it.</Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
     {#if canManage}
@@ -69,5 +65,16 @@
         under the account's model provider keys, or let the account use the house keys.
       </p>
     {/if}
+    <details class="text-sm" data-testid="voice-mode-audio-path">
+      <summary class="cursor-pointer select-none text-muted-foreground hover:text-foreground"
+        >Where your voice goes</summary>
+      <p class="mt-2 text-muted-foreground">
+        While you speak, the audio goes from your browser straight to OpenAI's live transcription, using this account's
+        OpenAI key or the house's when the account uses house keys; that only decides when you've finished and shows a
+        rough caption. Each thing you say is also recorded and sent through the house to ElevenLabs, the same way a
+        voice note is, and the message carries that transcript with the recording attached, like any voice note.
+      </p>
+    </details>
+    <FeatureClip name="voice-mode" label="Voice mode in a conversation" />
   </Card.Content>
 </Card.Root>

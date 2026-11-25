@@ -415,7 +415,7 @@ test.describe('browser contracts', () => {
   test('new conversations remain resident-backed without an account conversation-mode setting', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(`/accounts/${setup.account_id}`);
-    await expect(page.getByRole('heading', { name: 'Account Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible();
     await expect(page.getByText('New Conversation Default')).toBeHidden();
 
     await page.goto(`/accounts/${setup.account_id}/chats`);
@@ -466,7 +466,7 @@ test.describe('browser contracts', () => {
 
     await login(page, setup.primary_user, setup.password);
     await page.goto(`/accounts/${setup.account_id}`);
-    await expect(page.getByRole('heading', { name: 'Account Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible();
 
     await page
       .getByRole('navigation', { name: 'Account settings', exact: true })

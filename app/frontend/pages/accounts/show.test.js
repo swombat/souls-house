@@ -12,11 +12,8 @@ const props = {
   can_manage: true,
   can_be_personal: true,
   members_count: 1,
-  resident_handoff_cap: 6,
-  reflexes_enabled: false,
 };
 const name = () => screen.getByLabelText('Account name');
-const cap = () => screen.getByTestId('resident-handoff-cap');
 const input = (element, value) => fireEvent.input(element, { target: { value: String(value) } });
 const submit = (element) => fireEvent.submit(element.closest('form'));
 const response = (value, limit, id = 'first') => ({
@@ -30,46 +27,30 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'can_be_personal',
     'members_count',
     'can_manage',
-    'resident_handoff_cap',
-    'telegram_bot_wake_limit',
-    'reflexes_enabled',
-    'show_chat_codes',
-    'show_room_chat_counts',
-    'plan_offer_enabled',
-    'plan_offer_available',
-    'voice_mode_enabled',
-    'speech_engine',
-    'eleven_labs_key_present',
-    'eleven_labs_house_key',
   ]);
   const cleanup = subscribe.mock.results[0].value;
-  await view.rerender({
-    ...props,
-    account: { ...props.account, name: 'Remote' },
-    resident_handoff_cap: 9,
-    can_be_personal: false,
-  });
+  await view.rerender({ ...props, account: { ...props.account, name: 'Remote' }, can_be_personal: false });
   expect(name()).toHaveValue('Remote');
-  expect(cap()).toHaveValue(9);
   expect(screen.queryByRole('button', { name: 'Convert to personal account' })).not.toBeInTheDocument();
   expect(subscribe).toHaveBeenCalledTimes(1);
   expect(cleanup).not.toHaveBeenCalled();
 
   await input(name(), 'My name draft');
-  await input(cap(), 4);
-  await view.rerender({ ...props, account: { ...props.account, name: 'Remote again' }, resident_handoff_cap: 12 });
+  await view.rerender({ ...props, account: { ...props.account, name: 'Remote again' } });
   expect(name()).toHaveValue('My name draft');
-  expect(cap()).toHaveValue(4);
-  await view.rerender({ ...props, can_manage: false, resident_handoff_cap: 0 });
-  expect(screen.getByTestId('resident-handoff-cap-readonly')).toHaveTextContent('Resident handoffs are off.');
   view.unmount();
   expect(cleanup).toHaveBeenCalledOnce();
 });
 
-test.each([
-  ['name', name, 'Submitted', 'Newer edit', 'Remote', 'Accepted', (value) => response(value, 6)],
-  ['cap', cap, 7, 8, 9, 7, (value) => response('First', value)],
-])(
+test('General holds only the name, the logo colour and the account type', () => {
+  render(General, { ...props, logo_colour_options: ['teal', 'sky'] });
+  expect(screen.getByRole('radiogroup', { name: 'Logo colour' })).toBeVisible();
+  expect(screen.queryByTestId('resident-handoff-cap')).toBeNull();
+  expect(screen.queryByTestId('show-chat-codes')).toBeNull();
+  expect(screen.queryByTestId('voice-mode-enabled')).toBeNull();
+});
+
+test.each([['name', name, 'Submitted', 'Newer edit', 'Remote', 'Accepted', (value) => response(value, 6)]])(
   '%s saves acknowledge only the submitted edit, preserving dirty and in-flight drafts',
   async (kind, field, submitted, newer, remote, accepted, pageFor) => {
     const view = render(General, props);
@@ -144,44 +125,24 @@ test('late callbacks from an earlier save cannot acknowledge or finish a newer s
   expect(name()).toHaveValue('Second save');
 });
 
-test('handoff limits retain range validation and follow later baselines after an unchanged successful save', async () => {
-  const view = render(General, props);
-  for (const value of ['', -1, 51, 1.5]) {
-    await input(cap(), value);
-    await submit(cap());
-    expect(router.put).not.toHaveBeenCalled();
+test.each([['name', name, 'Refused name']])(
+  '%s redirect-alert refusals keep the submitted draft',
+  async (kind, field, value) => {
+    render(General, props);
+    await input(field(), value);
+    await submit(field());
+    const options = router.put.mock.calls.at(-1)[2];
+    options.onSuccess({
+      props: { ...response('First', 6).props, flash: { alert: 'Account settings could not be saved.' } },
+    });
+    options.onFinish();
+    await tick();
+    expect(field()).toHaveValue(value);
+    expect(field().closest('form').querySelector('button[type="submit"]')).not.toBeDisabled();
   }
-  await input(cap(), 0);
-  await submit(cap());
-  const options = router.put.mock.calls.at(-1)[2];
-  options.onSuccess(response('First', 0));
-  options.onFinish();
-  await view.rerender({ ...props, resident_handoff_cap: 0 });
-  await view.rerender({ ...props, resident_handoff_cap: 10 });
-  expect(cap()).toHaveValue(10);
-});
+);
 
-test.each([
-  ['name', name, 'Refused name'],
-  ['cap', cap, 7],
-])('%s redirect-alert refusals keep the submitted draft', async (kind, field, value) => {
-  render(General, props);
-  await input(field(), value);
-  await submit(field());
-  const options = router.put.mock.calls.at(-1)[2];
-  options.onSuccess({
-    props: { ...response('First', 6).props, flash: { alert: 'Account settings could not be saved.' } },
-  });
-  options.onFinish();
-  await tick();
-  expect(field()).toHaveValue(value);
-  expect(field().closest('form').querySelector('button[type="submit"]')).not.toBeDisabled();
-});
-
-test.each([
-  ['name', name, 'Old draft', 'New account draft'],
-  ['cap', cap, 7, 8],
-])(
+test.each([['name', name, 'Old draft', 'New account draft']])(
   '%s resets on account switch and ignores old-account success and finish callbacks',
   async (kind, field, oldValue, newValue) => {
     const view = render(General, props);
@@ -210,57 +171,3 @@ test.each([
     expect(subscribe).toHaveBeenLastCalledWith('Account', 'second', expect.any(Array));
   }
 );
-
-test('reflexes switch saves immediately and the readonly text reflects the account setting', async () => {
-  const view = render(General, props);
-  await fireEvent.click(screen.getByTestId('reflexes-enabled'));
-  const [path, data] = router.put.mock.calls.at(-1);
-  expect(path).toBe('/accounts/first');
-  expect(data).toEqual({ account: { reflexes_enabled: true } });
-
-  await view.rerender({ ...props, can_manage: false, reflexes_enabled: true });
-  expect(screen.getByTestId('reflexes-enabled-readonly')).toHaveTextContent('Reflexes are on for this account.');
-});
-
-test('reflexes card hides the switch when enforced site-wide and keeps it usable when disabled site-wide', async () => {
-  const view = render(General, { ...props, reflexes_site_scope: 'account_choice' });
-  expect(screen.queryByTestId('reflexes-site-override')).toBeNull();
-  expect(screen.getByTestId('reflexes-enabled')).toBeVisible();
-
-  await view.rerender({ ...props, reflexes_site_scope: 'disabled', reflexes_enabled: true });
-  expect(screen.getByTestId('reflexes-site-override')).toHaveTextContent('The site has reflexes off for every account');
-  expect(screen.getByTestId('reflexes-enabled')).not.toBeDisabled();
-
-  await view.rerender({ ...props, reflexes_site_scope: 'enabled', reflexes_enabled: false });
-  expect(screen.getByTestId('reflexes-site-override')).toHaveTextContent('The site has reflexes on for every account');
-  expect(screen.queryByTestId('reflexes-enabled')).toBeNull();
-
-  await view.rerender({ ...props, can_manage: false, reflexes_site_scope: 'enabled' });
-  expect(screen.getByTestId('reflexes-site-override')).toBeVisible();
-  expect(screen.queryByTestId('reflexes-enabled-readonly')).toBeNull();
-});
-
-test('plans for long tasks switch saves immediately when the plan allows it', async () => {
-  render(General, { ...props, plan_offer_available: true, plan_offer_enabled: false });
-  expect(screen.queryByTestId('plan-offer-unavailable')).toBeNull();
-  await fireEvent.click(screen.getByTestId('plan-offer-enabled'));
-  const [path, data] = router.put.mock.calls.at(-1);
-  expect(path).toBe('/accounts/first');
-  expect(data).toEqual({ account: { plan_offer_enabled: true } });
-});
-
-test('plans for long tasks is not shown outside Colleagues', () => {
-  render(General, { ...props, plan_offer_available: false, plan_offer_enabled: false });
-  expect(screen.queryByTestId('plan-offer-enabled')).toBeNull();
-  expect(screen.queryByTestId('plan-offer-unavailable')).toBeNull();
-});
-
-test('plans for long tasks switch is disabled with a note when left on after the plan lapsed, and readonly for non-managers', async () => {
-  const view = render(General, { ...props, plan_offer_available: false, plan_offer_enabled: true });
-  expect(screen.getByTestId('plan-offer-enabled')).toBeDisabled();
-  expect(screen.getByTestId('plan-offer-unavailable')).toHaveTextContent('Comes with the Colleagues plan.');
-
-  await view.rerender({ ...props, can_manage: false, plan_offer_available: true, plan_offer_enabled: true });
-  expect(screen.queryByTestId('plan-offer-enabled')).toBeNull();
-  expect(screen.getByTestId('plan-offer-enabled-readonly')).toHaveTextContent('on for this account');
-});
