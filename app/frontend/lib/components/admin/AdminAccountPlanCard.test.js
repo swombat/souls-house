@@ -19,6 +19,8 @@ function account(plan = {}) {
       id: 'colleagues',
       name: 'Colleagues',
       source: 'grant',
+      given_by: 'house',
+      bill: false,
       granted_plan: 'colleagues',
       plans,
       subscription: null,
@@ -43,7 +45,9 @@ test('says where the plan comes from and saves a new grant', async () => {
   });
 
   expect(screen.getByTestId('plan-in-force')).toHaveTextContent('On Companions, the default');
-  expect(screen.getByText(/A first bill would carry Companions/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/first purchase that includes the plan's resident would carry a Companions plan line/)
+  ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Save plan' })).toBeDisabled();
 
   await fireEvent.change(screen.getByLabelText('Plan from the house'), { target: { value: 'partners' } });
@@ -57,13 +61,13 @@ test('a paid plan line stays on the bill', () => {
     account: account({ subscription: { plan: 'partners', plan_name: 'Partners', status: 'active', in_force: true } }),
   });
 
-  expect(screen.getByText(/pays for a Partners plan line \(active\)/)).toBeInTheDocument();
+  expect(screen.getByText(/Its bill has a Partners plan line \(active\)/)).toBeInTheDocument();
   expect(screen.getByText(/does not take that line off its bill/)).toBeInTheDocument();
 });
 
 test('a grant that covers the first bill says it carries no plan line', () => {
   render(AdminAccountPlanCard, { account: account() });
-  expect(screen.getByText(/A first bill would carry no plan line/)).toBeInTheDocument();
+  expect(screen.getByText(/would carry no plan line, because what it is given already covers it/)).toBeInTheDocument();
 });
 
 test('lowering or removing the grant says nobody is removed', async () => {
@@ -85,4 +89,22 @@ test('a live refresh of the same account keeps an unsaved choice', async () => {
 
   await rerender({ account: { ...account(), users_count: 3 } });
   expect(screen.getByLabelText('Plan from the house')).toHaveValue('partners');
+});
+
+test('an existing bill without a plan line gets no first-bill forecast', () => {
+  render(AdminAccountPlanCard, { account: account({ bill: true, plan_to_pay_for: 'companions' }) });
+  expect(screen.getByText(/already has a bill, with no plan line on it/)).toBeInTheDocument();
+  expect(screen.queryByText(/first purchase/)).toBeNull();
+});
+
+test('a plan code that wins is named, not the house', () => {
+  render(AdminAccountPlanCard, {
+    account: account({
+      granted_plan: null,
+      given_by: 'code',
+      plan_codes: [{ code: 'COLLEAGUES-FREE', plan: 'colleagues', plan_name: 'Colleagues' }],
+    }),
+  });
+  expect(screen.getByTestId('plan-in-force')).toHaveTextContent('On Colleagues, given by the code COLLEAGUES-FREE');
+  expect(screen.getByLabelText('Plan from the house')).toHaveValue('');
 });

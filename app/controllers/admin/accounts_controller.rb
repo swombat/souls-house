@@ -82,16 +82,17 @@ class Admin::AccountsController < ApplicationController
   # the plan offer, ElevenLabs, swarm searches, transcription hours) reads
   # Account#plan when it is needed, so nothing else has to follow. A paid plan
   # line stays on the account's bill either way; this never touches Stripe.
+  # The value must be sent: a plan id, or an empty string to clear. A missing
+  # or malformed value is refused, never read as "remove the grant".
   def granted_plan
-    value = params.require(:account).fetch(:granted_plan, nil).presence
-    if value && !value.in?(Billing::AccountPlan::IDS)
-      raise ActionController::BadRequest, "Unknown plan #{value.to_s.truncate(40).inspect}"
-    end
+    value = requested_granted_plan
 
-    before = @account.granted_plan
-    @account.update!(granted_plan: value)
-    audit(:admin_update_account_granted_plan, @account, account_id: @account.id, granted_plan_before: before,
-      granted_plan: value, plan_now: @account.plan.id)
+    @account.with_lock do
+      before = @account.granted_plan
+      @account.update!(granted_plan: value)
+      audit(:admin_update_account_granted_plan, @account, account_id: @account.id, granted_plan_before: before,
+        granted_plan: value, plan_now: @account.plan.id)
+    end
     redirect_back_or_to admin_accounts_path(account_id: @account), notice: granted_plan_notice(value)
   end
 
@@ -151,6 +152,20 @@ class Admin::AccountsController < ApplicationController
 
   private
 
+  def requested_granted_plan
+    fields = params[:account]
+    unless fields.is_a?(ActionController::Parameters) && fields.key?(:granted_plan)
+      raise ActionController::BadRequest, "account[granted_plan] is required (an empty string clears it)"
+    end
+
+    raw = fields[:granted_plan]
+    raise ActionController::BadRequest, "account[granted_plan] must be a string" unless raw.is_a?(String)
+    return nil if raw.empty?
+    return raw if raw.in?(Billing::AccountPlan::IDS)
+
+    raise ActionController::BadRequest, "Unknown plan #{raw.truncate(40).inspect}"
+  end
+
   def accounts_json
     @accounts.as_json(
       include: [ :owner ],
@@ -198,11 +213,19 @@ class Admin::AccountsController < ApplicationController
   def plan_json(account)
     subscription = account.live_plan_subscription
     codes = account.billing_code_redemptions.live.includes(:billing_code).where("effect LIKE 'plan:%'").order(:id)
+    source = account.plan_source
     {
       "id" => account.plan.id,
       "name" => account.plan.name,
-      "source" => account.plan_source,
+      "source" => source,
+      # Which kind of gift wins when the source is "grant": the house's grant
+      # or a plan code (the house's grant when they give the same plan).
+      "given_by" => (given_by(account) if source == "grant"),
       "granted_plan" => account.granted_plan,
+      # Whether the account already pays a bill, with or without a plan line
+      # (Billing::Reconcile.applies?, read only). Without one, plan_to_pay_for
+      # is what the first purchase that includes the plan's resident carries.
+      "bill" => Billing::Reconcile.applies?(account),
       "plans" => Billing::AccountPlan.all.map { |plan| { "id" => plan.id, "name" => plan.name } },
       "subscription" => subscription && {
         "plan" => subscription.plan,
@@ -216,6 +239,11 @@ class Admin::AccountsController < ApplicationController
       end,
       "plan_to_pay_for" => account.plan_to_pay_for&.id
     }
+  end
+
+  def given_by(account)
+    granted = Billing::AccountPlan.find(account.granted_plan)
+    granted && granted >= account.given_plan ? "house" : "code"
   end
 
   def granted_plan_notice(value)

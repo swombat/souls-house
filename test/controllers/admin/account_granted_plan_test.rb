@@ -52,6 +52,28 @@ class Admin::AccountGrantedPlanTest < ActionDispatch::IntegrationTest
     assert_not AuditLog.exists?(action: "admin_update_account_granted_plan")
   end
 
+  test "a missing or malformed value is refused and leaves the grant alone" do
+    @account.update!(granted_plan: "colleagues")
+    sign_in(users(:site_admin_user))
+
+    [ { account: { other: "x" } }, { account: { granted_plan: [ "" ] } }, { account: { granted_plan: { id: "" } } } ].each do |params|
+      patch granted_plan_admin_account_path(@account), params: params
+      assert_response :bad_request, params.inspect
+      assert_equal "colleagues", @account.reload.granted_plan, params.inspect
+    end
+    assert_not AuditLog.exists?(action: "admin_update_account_granted_plan")
+  end
+
+  test "a grant whose audit row fails is not saved" do
+    @account.update!(granted_plan: "partners")
+    sign_in(users(:site_admin_user))
+    AuditLog.stub :create!, ->(*) { raise ActiveRecord::RecordInvalid } do
+      patch granted_plan_admin_account_path(@account), params: { account: { granted_plan: "colleagues" } }
+    end
+    assert_response :unprocessable_entity
+    assert_equal "partners", @account.reload.granted_plan
+  end
+
   test "a paid plan line stays on the bill and wins while it is at least the grant" do
     AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_grant_test", plan: "partners",
       stripe_status: "active")
@@ -80,6 +102,8 @@ class Admin::AccountGrantedPlanTest < ActionDispatch::IntegrationTest
     plan = inertia_shared_props.fetch("selected_account").fetch("plan")
     assert_equal "colleagues", plan.fetch("id")
     assert_equal "grant", plan.fetch("source")
+    assert_equal "house", plan.fetch("given_by")
+    assert_equal true, plan.fetch("bill")
     assert_equal "colleagues", plan.fetch("granted_plan")
     assert_equal "partners", plan.fetch("subscription").fetch("plan")
     assert_equal true, plan.fetch("subscription").fetch("in_force")
@@ -93,7 +117,28 @@ class Admin::AccountGrantedPlanTest < ActionDispatch::IntegrationTest
     get admin_accounts_path, params: { account_id: @account.to_param }
     plan = inertia_shared_props.fetch("selected_account").fetch("plan")
     assert_nil plan.fetch("subscription")
+    assert_equal false, plan.fetch("bill")
     assert_nil plan.fetch("plan_to_pay_for")
+  end
+
+  test "a bill for a resident alone is a bill, though it has no plan line" do
+    ResidentSubscription.create!(agent: agents(:research_assistant), account: @account,
+      stripe_subscription_id: "sub_resident_only", tier: "conversation", stripe_status: "active")
+    sign_in(users(:site_admin_user))
+    get admin_accounts_path, params: { account_id: @account.to_param }
+    plan = inertia_shared_props.fetch("selected_account").fetch("plan")
+    assert_nil plan.fetch("subscription")
+    assert_equal true, plan.fetch("bill")
+  end
+
+  test "a plan code that gives more than the house is named as the source" do
+    code = BillingCode.create!(code: "COLLEAGUES-FREE", effect: "plan:colleagues", created_by: users(:site_admin_user))
+    BillingCodeRedemption.create!(account: @account, billing_code: code, effect: code.effect,
+      redeemed_by: users(:site_admin_user), redeemed_at: Time.current)
+    sign_in(users(:site_admin_user))
+    get admin_accounts_path, params: { account_id: @account.to_param }
+    plan = inertia_shared_props.fetch("selected_account").fetch("plan")
+    assert_equal [ "colleagues", "grant", "code", nil ], plan.values_at("id", "source", "given_by", "granted_plan")
   end
 
 end

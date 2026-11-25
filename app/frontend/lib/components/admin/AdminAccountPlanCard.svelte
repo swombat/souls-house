@@ -25,13 +25,16 @@
   const changed = $derived(choice !== current);
   const lowering = $derived(changed && current !== '' && (choice === '' || rank(choice) < rank(current)));
 
-  const sourceText = $derived(
-    {
-      grant: 'given by the house',
-      subscription: 'paid for on its bill',
-      default: 'the default: nothing is given or paid for',
-    }[plan?.source] || plan?.source
-  );
+  // plan_source says "grant" for any gift; given_by says whose gift wins.
+  const sourceText = $derived.by(() => {
+    if (plan?.source === 'subscription') return 'from the plan line on its bill';
+    if (plan?.source === 'default') return 'the default: nothing is given and no plan line is on its bill';
+    if (plan?.given_by === 'code') {
+      const code = (plan.plan_codes || []).find((entry) => entry.plan === plan.id);
+      return code ? `given by the code ${code.code}` : 'given by a plan code';
+    }
+    return 'given by the house';
+  });
 
   function save() {
     router.patch(`/admin/accounts/${account.id}/granted_plan`, { account: { granted_plan: choice } });
@@ -54,17 +57,24 @@
         </p>
         {#if plan.subscription}
           <p class="mt-2 text-sm text-muted-foreground">
-            It pays for a {plan.subscription.plan_name || plan.subscription.plan} plan line ({plan.subscription
+            Its bill has a {plan.subscription.plan_name || plan.subscription.plan} plan line ({plan.subscription
               .status}{plan.subscription.in_force ? '' : ', not in force'}). Giving a plan does not take that line off
             its bill.
           </p>
+        {:else if plan.bill}
+          <p class="mt-2 text-sm text-muted-foreground">
+            It already has a bill, with no plan line on it. Giving a plan adds nothing to that bill.
+          </p>
         {:else if plan.plan_to_pay_for}
           <p class="mt-2 text-sm text-muted-foreground">
-            It has no paid plan line. A first bill would carry {nameOf(plan.plan_to_pay_for)}.
+            It has no bill yet. The first purchase that includes the plan's resident would carry a {nameOf(
+              plan.plan_to_pay_for
+            )} plan line.
           </p>
         {:else}
           <p class="mt-2 text-sm text-muted-foreground">
-            It has no paid plan line. A first bill would carry no plan line, because what it is given already covers it.
+            It has no bill yet. The first purchase that includes the plan's resident would carry no plan line, because
+            what it is given already covers it.
           </p>
         {/if}
         {#each plan.plan_codes || [] as code (code.code)}
