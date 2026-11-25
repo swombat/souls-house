@@ -102,15 +102,22 @@ module Billing
         raise Refused, error.message
       end
 
+      # Not in a transaction: proposing takes the account's billing lock,
+      # which refuses inside one (CheckoutLock). An order whose proposal
+      # fails is removed, as the transaction's rollback did: nothing of it
+      # reached Stripe.
       def start_item!(account:, creator:, attributes:, open_beginning:, offer:)
-        ResidentBirthOrder.transaction do
-          order = ResidentBirthOrder.create!(kind: ITEM, account: account, creator: creator, tier: offer.tier.id,
-            rate: offer.rate, stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
-            billing_code_redemption: account.grant_for(offer), birth_attributes: attributes.to_h,
-            open_beginning: open_beginning)
+        order = ResidentBirthOrder.create!(kind: ITEM, account: account, creator: creator, tier: offer.tier.id,
+          rate: offer.rate, stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+          billing_code_redemption: account.grant_for(offer), birth_attributes: attributes.to_h,
+          open_beginning: open_beginning)
+        begin
           order.update!(bill_change: propose_item(order))
-          order
+        rescue StandardError
+          order.destroy!
+          raise
         end
+        order
       end
 
       def propose_item(order)
