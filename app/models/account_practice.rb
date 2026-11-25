@@ -84,11 +84,21 @@ class AccountPractice < ApplicationRecord
     end
   end
 
+  # Reloads under the lock, so the audit describes the line as it was when
+  # it went, not as this object last saw it. If another removal won the
+  # race, there is nothing left to remove and nothing to audit.
   def remove!(by:, request: nil)
     self.class.transaction do
       account.lock!
-      audit!("remove_account_practice", by:, request:)
-      destroy!
+      current = self.class.lock.find_by(id:, account_id:)
+      return self unless current
+
+      self.attributes = current.attributes
+      clear_changes_information
+      current.destroy!
+      # The row is gone, so the audit names it by practice_id, text and
+      # position in its data rather than pointing at a missing record.
+      audit!("remove_account_practice", by:, request:, auditable: nil)
       account.account_practices.ordered.each.with_index(1) do |line, index|
         line.update_column(:position, index) unless line.position == index
       end
@@ -148,7 +158,7 @@ class AccountPractice < ApplicationRecord
     end
   end
 
-  def audit!(action, by:, request: nil, **extra)
+  def audit!(action, by:, request: nil, auditable: self, **extra)
     data = { practice_id: to_param, text:, position: }
     data.merge!(extra.compact)
     if by.is_a?(Agent)
@@ -161,7 +171,7 @@ class AccountPractice < ApplicationRecord
       user: (by if by.is_a?(User)),
       account:,
       action:,
-      auditable: (self unless destroyed?),
+      auditable:,
       data:,
       ip_address: request&.dig(:ip_address),
       user_agent: request&.dig(:user_agent)

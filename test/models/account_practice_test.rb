@@ -98,4 +98,20 @@ class AccountPracticeTest < ActiveSupport::TestCase
     assert_equal [ { "action" => "refresh" } ], capture_broadcasts(channel) { practice.remove!(by: @user) }
   end
 
+  test "a removal audits the line as it was under the lock, and a second removal of the same line audits nothing" do
+    practice = AccountPractice.add!(account: @account, text: "Original", by: @user)
+    stale = AccountPractice.find(practice.id)
+    practice.revise!(text: "Edited since", by: @agent)
+
+    stale.remove!(by: @user)
+    audit = AuditLog.where(action: "remove_account_practice").sole
+    assert_equal "Edited since", audit.data["text"]
+    assert_equal practice.to_param, audit.data["practice_id"]
+    assert_nil audit.auditable_id
+
+    assert_no_difference -> { AuditLog.count } do
+      practice.remove!(by: @agent)
+    end
+  end
+
 end

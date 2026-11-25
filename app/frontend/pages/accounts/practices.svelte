@@ -47,13 +47,16 @@
   function send(method, url, data = {}, onDone = () => {}) {
     if (busy) return;
     busy = true;
-    router[method](url, data, {
+    const options = {
       preserveScroll: true,
       onSuccess: (response) => {
         if (Object.keys(response.props.errors ?? {}).length === 0) onDone();
       },
       onFinish: () => (busy = false),
-    });
+    };
+    // Inertia's delete takes (url, options): it has no data argument.
+    if (method === 'delete') router.delete(url, options);
+    else router[method](url, data, options);
   }
 
   function add() {

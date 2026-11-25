@@ -237,18 +237,20 @@ module Accounts::Portability
       end
     end
 
-    # The account's practices, in order, after any it already keeps. A line
-    # the account already has (same text) is not added twice, so a resumed or
-    # repeated import doesn't double them. Over the limits, the rest fail
-    # visibly in the summary rather than being cut silently.
+    # The account's practices, in order, after any it already keeps. Each
+    # line and its ledger note commit together, so a resumed import never adds
+    # a line twice and never re-adds one that was edited since. Repeated lines
+    # are kept: the archive's order is the account's order. Over the limits,
+    # the rest fail visibly in the summary rather than being cut silently.
     def import_practices
       Array(@archive.setup["practices"]).each_with_index do |doc, index|
         key = "p#{index + 1}"
         next if ledger("practices").key?(key)
 
-        text = AccountPractice.clean(doc["text"])
-        practice = @account.account_practices.find_by(text:) || AccountPractice.add!(account: @account, text:, by: @user)
-        note!("practices", key, practice.id)
+        AccountPractice.transaction do
+          practice = AccountPractice.add!(account: @account, text: doc["text"], by: @user)
+          note!("practices", key, practice.id)
+        end
         clear_failure!("practices", key)
       rescue ActiveRecord::RecordInvalid => error
         fail!("practices", key, doc["text"].to_s.truncate(80), error.record.errors.full_messages.to_sentence)

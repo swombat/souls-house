@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { expect, test, beforeEach, vi } from 'vitest';
 import { router } from '@inertiajs/svelte';
 import Practices from './practices.svelte';
@@ -59,4 +60,17 @@ test('a full account cannot add more', () => {
   }));
   render(Practices, { ...props, practices: many });
   expect(screen.getByRole('textbox', { name: 'New practice' })).toBeDisabled();
+});
+
+test('removing a line passes its callbacks to router.delete, so the controls come back', async () => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  render(Practices, props);
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove "Book afternoons."' }));
+  const call = router.delete.mock.calls.at(-1);
+  expect(call[0]).toBe(`${path}/b`);
+  expect(call).toHaveLength(2);
+  expect(screen.getByRole('button', { name: 'Remove "Finished threads get the done tag."' })).toBeDisabled();
+  await call[1].onFinish();
+  await tick();
+  expect(screen.getByRole('button', { name: 'Remove "Finished threads get the done tag."' })).not.toBeDisabled();
 });
