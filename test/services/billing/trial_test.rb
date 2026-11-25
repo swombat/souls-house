@@ -221,6 +221,19 @@ class Billing::TrialTest < ActiveSupport::TestCase
     assert_empty @stripe.checkout_sessions
   end
 
+  test "an account that bought a plan alone is past the trial, while it lasts and after it ends" do
+    assert Billing::Trial.eligible?(@account), "control"
+    plan = AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_plan", stripe_status: "active",
+      plan: "companions", stripe_price_id: COMPANIONS_PRICE)
+    assert_not Billing::Trial.eligible?(@account)
+    assert_equal({ eligible: false, days: 14 }, Billing::Trial.as_json_for(@account))
+    assert_raises(Billing::PaidBirth::Refused) { start_trial! }
+
+    plan.update!(stripe_status: "canceled")
+    assert_not Billing::Trial.eligible?(@account), "a plan once paid for spent it"
+    assert_empty @stripe.checkout_sessions
+  end
+
   test "Site Admin offers the trial by default" do
     assert Setting.instance.free_trial_enabled?
   end

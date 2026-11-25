@@ -2,13 +2,13 @@
   // The Billing tab's account plan: which one the account is on, where it
   // comes from (a subscription, a grant from the house, or the default), what
   // it includes, and the plans it can move to. Each move says what it costs
-  // before the click. Every plan includes one small resident, and a plan is
-  // never bought alone (Billing::AccountPlan): an account that pays changes
-  // the plan on its bill; one with no bill yet chooses the plan its first
-  // resident's bill will carry, and nothing is charged until then. Stripe's
-  // portal can't cancel (Billing::Portal). A paid plan moves down here like
-  // any other move (Billing::PlanDownTest); it ends with its last resident,
-  // ended from the residents' End plan, as /pricing and the Terms say.
+  // before the click. Every plan includes one small resident, and a plan can
+  // stand alone on a bill (jGgWgj): an account that pays puts a plan on its
+  // bill or changes it there, every move quoted before it is confirmed; one
+  // with no bill yet chooses the plan its first resident's bill will carry,
+  // and nothing is charged until then. Stripe's portal can't cancel
+  // (Billing::Portal), so the plan is ended and kept here: it stays when its
+  // last resident leaves, and is ended only from here.
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
@@ -30,11 +30,13 @@
   let source = $derived(accountPlan?.source ?? 'default');
   let subscription = $derived(accountPlan?.subscription ?? null);
   let subscriptionLive = $derived(LIVE.includes(subscription?.status));
-  // A live subscription changes price in place; without one, the plan is
-  // chosen for the first bill and nothing is charged.
+  // An account with a bill puts the plan on it, or changes it there, quoted
+  // first; without one, the plan is chosen for the first bill and nothing is
+  // charged.
+  let onBill = $derived(subscriptionLive || Boolean(accountPlan?.bill));
   let changing = $derived(subscriptionLive);
   let chosen = $derived(
-    !subscriptionLive && accountPlan?.chosen ? accountPlans.find((plan) => plan.id === accountPlan.chosen) || null : null
+    !onBill && accountPlan?.chosen ? accountPlans.find((plan) => plan.id === accountPlan.chosen) || null : null
   );
   // The plan the moves are measured from: the one paid for, or the one chosen.
   let base = $derived(chosen ?? current);
@@ -42,11 +44,9 @@
 
   let moves = $derived.by(() => {
     if (!base || !canPay) return [];
-    // A bill with no plan line on it (at cost only, or from before plans
-    // included a resident) gets no plan from here: a plan comes with its resident.
-    if (accountPlan?.bill && !subscriptionLive) return [];
-    // The bill can't change while its free days run, nor while a payment is owed.
-    if (subscriptionLive && subscription?.status !== 'active') return [];
+    // The bill can't change while its free days run, nor while a payment is
+    // owed, nor while it is set to end.
+    if (subscriptionLive && (subscription?.status !== 'active' || subscription?.cancel_at_period_end)) return [];
     const rank = ORDER.indexOf(current.id);
     return accountPlans.filter((plan) => {
       if (!plan.purchasable || plan.id === base.id) return false;
@@ -61,13 +61,31 @@
     return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value));
   }
 
+  // The paid plan is ended here, and an ending made here kept.
+  let endable = $derived(
+    canPay &&
+      source === 'subscription' &&
+      ['active', 'past_due'].includes(subscription?.status) &&
+      !subscription?.cancel_at_period_end
+  );
+  let keepable = $derived(
+    canPay && source === 'subscription' && subscriptionLive && subscription?.cancel_at_period_end
+  );
+
+  // Every move goes through account_plan_checkout: on a bill it comes back
+  // as a quote to confirm (?add=), never a change made unseen.
   function move(plan) {
     busy = plan.id;
     router.post(
-      `/accounts/${account.id}/billing/${changing ? 'account_plan_change' : 'account_plan_checkout'}`,
+      `/accounts/${account.id}/billing/account_plan_checkout`,
       { plan: plan.id },
       { onFinish: () => (busy = null) }
     );
+  }
+
+  function act(action) {
+    busy = action;
+    router.post(`/accounts/${account.id}/billing/${action}`, {}, { onFinish: () => (busy = null) });
   }
 </script>
 
@@ -91,11 +109,11 @@
         {current.name} is {usd(current.monthly_usd)} a month + VAT. It ends with the bill on
         {date(subscription.current_period_end)}. Nobody is removed from the account.
       {:else if source === 'subscription' && trialing}
-        {current.name} is free until {date(subscription.current_period_end)}, its small resident with it. After that
-        it is {usd(current.monthly_usd)} a month + VAT. The plan can be changed once the free days are over.
+        {current.name} is free until {date(subscription.current_period_end)}, its small resident with it. After that it
+        is {usd(current.monthly_usd)} a month + VAT. The plan can be changed once the free days are over.
       {:else if source === 'subscription'}
-        {current.name} is {usd(current.monthly_usd)} a month + VAT, one small resident included; any further resident
-        is its size. {#if subscription?.current_period_end}Renews on {date(subscription.current_period_end)}.{/if}
+        {current.name} is {usd(current.monthly_usd)} a month + VAT, one small resident included; any further resident is
+        its size. {#if subscription?.current_period_end}Renews on {date(subscription.current_period_end)}.{/if}
       {:else if chosen}
         Your first resident's bill will carry {chosen.name}: {usd(chosen.monthly_usd)} a month + VAT, with that resident
         included. Nothing is charged until then.
@@ -119,20 +137,42 @@
               <span class="text-muted-foreground">· {accountPlanTaglines[plan.id] ?? ''}</span>
             </p>
             <Button size="sm" variant="outline" onclick={() => move(plan)} disabled={busy !== null}>
-              {busy === plan.id ? 'Saving…' : `${changing ? 'Move to' : 'Choose'} ${plan.name} · ${usd(plan.monthly_usd)} a month`}
+              {busy === plan.id
+                ? 'Saving…'
+                : `${changing ? 'Move to' : onBill ? 'Add' : 'Choose'} ${plan.name} · ${usd(plan.monthly_usd)} a month`}
             </Button>
           </div>
         {/each}
         <p class="text-xs text-muted-foreground" data-testid="account-plan-terms">
           {#if changing}
-            The new price starts today. Stripe puts the difference for the rest of this period on the next invoice.
+            The new price starts today. Stripe puts the difference for the rest of this period on the next invoice. You
+            see what it costs before you confirm.
+          {:else if onBill}
+            {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}. It goes on the
+            account's bill from today, the part of this period on the next invoice. You see what it costs before you
+            confirm.
           {:else}
             {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, one small
             resident included. Choosing one charges nothing now: it starts with your first resident.{trialShown
-              ? " Only Companions has the free days."
+              ? ' Only Companions has the free days.'
               : ''}
           {/if}
         </p>
+      </div>
+    {/if}
+
+    {#if endable || keepable}
+      <div class="mt-4 flex flex-wrap items-center gap-2 border-t pt-4" data-testid="account-plan-end">
+        {#if keepable}
+          <Button size="sm" variant="outline" onclick={() => act('keep_plan')} disabled={busy !== null}>
+            {busy === 'keep_plan' ? 'Saving…' : `Keep ${current.name}`}
+          </Button>
+        {:else}
+          <Button size="sm" variant="outline" onclick={() => act('end_plan')} disabled={busy !== null}>
+            {busy === 'end_plan' ? 'Saving…' : `End ${current.name}`}
+          </Button>
+          <span class="text-xs text-muted-foreground">You see what it changes before anything is sent.</span>
+        {/if}
       </div>
     {/if}
   </section>

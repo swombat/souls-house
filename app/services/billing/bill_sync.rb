@@ -276,6 +276,9 @@ module Billing
     # change, its size does not.
     def apply_promote(remote, account, op) = apply_resize(remote, account, op)
 
+    # The included resident going back to its size when the plan leaves.
+    def apply_demote(remote, account, op) = apply_resize(remote, account, op)
+
     def apply_plan(remote, account, op)
       current = AccountSubscription.live.find_by(stripe_subscription_id: remote.id)
       return current&.update!(stripe_status: "canceled", last_synced_at: @now) if op["price"].blank?

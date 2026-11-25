@@ -69,7 +69,7 @@ class Billing::PlanIncludesResidentTest < ActiveSupport::TestCase
     assert_equal 5999 + 6000, monthly(sub)
   end
 
-  test "a second Small adds $9.99; the included one ending promotes it to $0; the last one ending ends the bill" do
+  test "a second Small adds $9.99; the included one ending promotes it to $0; the last one ending leaves the plan" do
     _, sub = first_bill!("conversation", name: "Aria")
     assert_equal 999, monthly(sub)
     second = @account.agents.where.not(id: agent("Aria").id).first
@@ -81,9 +81,10 @@ class Billing::PlanIncludesResidentTest < ActiveSupport::TestCase
     assert_equal "included", ResidentSubscription.live.find_by!(agent: second).rate
 
     change = reconcile.propose_end(second)
-    assert_equal [ { "op" => "end_bill", "agent_id" => second.id } ], change.ops
+    assert_equal [ { "op" => "end", "agent_id" => second.id } ], change.ops
     reconcile.confirm(change, digest: change.digest)
-    assert @stripe.subscriptions.retrieve(sub).cancel_at_period_end, "the bill, plan and all, ends at the period's end"
+    assert_not @stripe.subscriptions.retrieve(sub).cancel_at_period_end
+    assert_equal 999, monthly(sub), "Companions alone, until it is ended from the plan"
   end
 
   test "a Medium promoted to the included one drops from $39.99 to $30" do

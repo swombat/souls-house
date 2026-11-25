@@ -111,7 +111,9 @@ test('the numbers it states are the server constants, not copies (negative contr
     contact_email: 'hello@example.com',
     free_trial_enabled: true,
   });
-  expect(screen.getByTestId('pricing-model-use')).toHaveTextContent("Each account gets $12.50 a month of the house's own model");
+  expect(screen.getByTestId('pricing-model-use')).toHaveTextContent(
+    "Each account gets $12.50 a month of the house's own model"
+  );
   expect(screen.getByTestId('pricing-trial')).toHaveTextContent('Free for 21 days');
   expect(screen.getByTestId('pricing-trial')).toHaveTextContent('goes to sleep on day 21');
   expect(document.body).toHaveTextContent('Partners includes 33 and Colleagues includes 100 swarm searches a month');
@@ -129,7 +131,9 @@ test('how to cancel says what End plan does, not a portal that cannot cancel', (
   });
   expect(document.body).toHaveTextContent('with End plan on the resident');
   expect(document.body).toHaveTextContent('the unused part of the month is credit on the next bill');
-  expect(document.body).toHaveTextContent("it ends with the account's last resident, and a smaller plan is a move on the Billing tab");
+  expect(document.body).toHaveTextContent(
+    'The plan stays when its last resident leaves: end it with End plan on the account plan, and a smaller plan is a move on the Billing tab'
+  );
   expect(document.body).not.toHaveTextContent('To end a Partners or Colleagues plan');
   expect(document.body).not.toHaveTextContent(/Stripe's billing page|Stripe's portal/);
 });

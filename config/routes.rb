@@ -158,7 +158,6 @@ Rails.application.routes.draw do
       post :add_resident
       post :plan_change
       post :account_plan_checkout
-      post :account_plan_change
       post :portal
       post :end_plan
       post :confirm_end_plan

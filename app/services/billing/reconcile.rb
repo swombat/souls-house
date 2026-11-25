@@ -60,7 +60,7 @@ module Billing
       ops = ops.map { |op| op.to_h.stringify_keys.compact }
       CheckoutLock.synchronize_residents(@account) do
         settle_earlier!
-        ops = with_successor(ops)
+        ops = with_demotion(with_promotion(with_successor(ops)))
         parent = parent!(ops)
         base = BillSync.remote_lines(parent, client: @client)
         raise NotReady, "#{DRIFTED} Contact #{Billing.contact_email}." unless base == BillSync.house_lines(parent.id)
@@ -74,15 +74,29 @@ module Billing
     end
 
     # Ending one resident's plan: off the bill now when the bill carries
-    # anything else, otherwise the whole bill ends at the period's end.
+    # anything else (another resident, or a plan line, which stays without
+    # it), otherwise the whole bill ends at the period's end.
     def propose_end(agent, by: nil)
       row = ResidentSubscription.live.find_by(agent:, account: @account) ||
         raise(Refused, "#{agent.name} has no plan on this account's bill.")
-      # Alone: no other resident on the bill. Its plan line, if any, goes
-      # with the bill.
+      # Alone: nothing else on the bill, neither a resident nor a plan line.
+      # A free trial's plan line is the trial's, not bought for itself: it
+      # ends with the trial's resident, as before.
       alone = !ResidentSubscription.live.where(stripe_subscription_id: row.stripe_subscription_id)
-        .where.not(id: row.id).exists?
+        .where.not(id: row.id).exists? &&
+        (row.stripe_status == "trialing" || !AccountSubscription.live.exists?(stripe_subscription_id: row.stripe_subscription_id))
       propose([ alone ? { op: "end_bill", agent_id: agent.id } : { op: "end", agent_id: agent.id } ], by:)
+    end
+
+    # Ending the account's plan (a plan stands alone on a bill: bought before
+    # any resident, kept after the last one leaves). The bill ends at the
+    # period's end when the plan is all it carries; otherwise the plan line
+    # comes off now and the residents stay, the included one at its size.
+    def propose_end_plan(by: nil)
+      plan = AccountSubscription.live.where(account: @account).order(:id).last ||
+        raise(Refused, "This account has no plan on its bill.")
+      alone = !ResidentSubscription.live.exists?(stripe_subscription_id: plan.stripe_subscription_id)
+      propose([ alone ? { op: "end_bill" } : { op: "plan" } ], by:)
     end
 
     def confirm(change, digest:)
@@ -151,11 +165,12 @@ module Billing
       change
     end
 
-    # The plan includes its resident, so it never stays on a bill without
-    # one: when the included resident ends, the oldest standard-rate
-    # resident left becomes the included one (a promote op), or, with none,
-    # the plan line leaves too (a plan op with no price). Worked out once,
-    # here, and stored on the change, so a replay judges the same ops.
+    # When the included resident ends, the oldest standard-rate resident
+    # left becomes the included one (a promote op). With none the plan
+    # stays on the bill by itself: it was bought for itself as much as for
+    # its resident (jGgWgj), and is ended from the plan, not with a
+    # resident. Worked out once, here, and stored on the change, so a
+    # replay judges the same ops; the same for the two below.
     def with_successor(ops)
       ends = ops.select { |op| op["op"] == "end" }
       return ops if ends.empty? || ops.any? { |op| op["op"].in?(%w[promote plan]) }
@@ -165,14 +180,44 @@ module Billing
         next unless row.rate == "included"
 
         successor = Included.successor(row.stripe_subscription_id, row.agent_id)
-        if successor
-          ops += [ { "op" => "promote", "agent_id" => successor.agent_id,
-                     "price" => successor.offer.tier.offer("included").price_id } ]
-        elsif AccountSubscription.live.exists?(stripe_subscription_id: row.stripe_subscription_id)
-          ops += [ { "op" => "plan" } ]
-        end
+        next unless successor
+
+        ops += [ { "op" => "promote", "agent_id" => successor.agent_id,
+                   "price" => successor.offer.tier.offer("included").price_id } ]
       end
       ops
+    end
+
+    # A first plan line on a bill that already has residents at their size:
+    # the oldest of them becomes the plan's included one in the same change,
+    # so nobody pays a size's full price on top of the plan that includes it.
+    # An account holding an at-cost code has no included resident.
+    def with_promotion(ops)
+      plan = ops.find { |op| op["op"] == "plan" && op["price"].present? }
+      return ops if plan.nil? || @account.at_cost_holder? || ops.any? { |op| op["op"] == "promote" }
+
+      id = subscription_of(plan)
+      return ops if AccountSubscription.live.exists?(stripe_subscription_id: id)
+      return ops if ResidentSubscription.live.exists?(stripe_subscription_id: id, rate: "included")
+
+      first = ResidentSubscription.live.where(stripe_subscription_id: id, rate: "standard").order(:created_at, :id).first
+      return ops unless first
+
+      ops + [ { "op" => "promote", "agent_id" => first.agent_id, "price" => first.offer.tier.offer("included").price_id } ]
+    end
+
+    # The plan line leaving a bill its included resident stays on: that
+    # resident goes back to its size (a demote op), since there is no plan
+    # left to include it.
+    def with_demotion(ops)
+      return ops unless ops.any? { |op| op["op"] == "plan" && op["price"].blank? }
+      return ops if ops.any? { |op| op["op"] == "demote" }
+
+      leaving = ops.select { |op| op["op"] == "end" }.map { |op| op["agent_id"] }
+      ResidentSubscription.live.where(account: @account, rate: "included").where.not(agent_id: leaving)
+        .order(:created_at, :id).each_with_object(ops.dup) do |row, all|
+          all << { "op" => "demote", "agent_id" => row.agent_id, "price" => row.offer.tier.offer("standard").price_id }
+        end
     end
 
     # The one subscription every op is about, brought in first.
@@ -191,7 +236,7 @@ module Billing
     end
 
     def subscription_of(op)
-      if op["op"].in?(%w[end resize promote end_bill keep_bill]) && op["agent_id"]
+      if op["op"].in?(%w[end resize promote demote end_bill keep_bill]) && op["agent_id"]
         return row!(op).stripe_subscription_id
       end
 
@@ -255,6 +300,24 @@ module Billing
           unless row.rate == "standard" && offer&.included? && offer.price_id == op["price"] && offer.tier.id == row.tier
             raise Refused, "That resident can't become the plan's included one."
           end
+          # Only in place of the included resident leaving, or with the
+          # bill's first plan line: never a second included resident.
+          replaces = ops.any? { |other| other["op"] == "end" && row!(other).rate == "included" }
+          first_plan = ops.any? { |other| other["op"] == "plan" && other["price"].present? } &&
+            !AccountSubscription.live.exists?(stripe_subscription_id: parent.id) &&
+            !ResidentSubscription.live.exists?(stripe_subscription_id: parent.id, rate: "included")
+          raise Refused, "That resident can't become the plan's included one." unless replaces || first_plan
+          lines[row.stripe_price_id] -= 1
+          lines[op["price"]] += 1
+        when "demote"
+          row = row!(op)
+          offer = Offer.for_price(op["price"])
+          unless row.rate == "included" && offer&.rate == "standard" && offer.price_id == op["price"] && offer.tier.id == row.tier
+            raise Refused, "That resident can't go back to its size."
+          end
+          unless ops.any? { |other| other["op"] == "plan" && other["price"].blank? }
+            raise Refused, "The included resident goes back to its size only when the plan leaves the bill."
+          end
           lines[row.stripe_price_id] -= 1
           lines[op["price"]] += 1
         when "plan"
@@ -271,13 +334,7 @@ module Billing
 
           lines[current.stripe_price_id] -= 1 if current
           lines[op["price"]] += 1 if plan
-          if plan && !current && ops.none? { |other| other["op"].in?(%w[add birth]) }
-            raise Refused, "A plan is bought with the resident it includes."
-          end
-          # The plan leaves a bill only with its included resident.
-          if !plan && current && ops.none? { |other| other["op"] == "end" && row!(other).rate == "included" }
-            raise Refused, "The plan stays while its included resident is on the bill."
-          end
+          raise Refused, "This bill has no plan to take off." if !plan && !current
         end
       end
       lines = lines.select { |_price, quantity| quantity.positive? }

@@ -2,11 +2,11 @@ require "test_helper"
 require "support/fake_stripe"
 
 # Lowering Partners or Colleagues is a move on the Billing tab
-# (Accounts::BillingsController#account_plan_change, a "plan" op): the bill
-# then asks for the smaller plan, its included resident unchanged. Ending a
-# plan altogether is ending its last resident, which ends the bill at the
-# period's end (plan_includes_resident_test). Build C slice 3 checks both
-# before changing any copy.
+# (Accounts::BillingsController#account_plan_checkout, a quoted "plan" op):
+# the bill then asks for the smaller plan, its included resident unchanged.
+# Ending a plan altogether is its own act (Reconcile#propose_end_plan): the
+# plan stands alone on a bill (jGgWgj) and stays when its last resident
+# leaves.
 class Billing::PlanDownTest < ActiveSupport::TestCase
 
   include FakeStripe::Helpers
@@ -64,12 +64,16 @@ class Billing::PlanDownTest < ActiveSupport::TestCase
     assert_equal 2999, monthly(sub)
   end
 
-  test "a plan can't be dropped from a bill while its included resident is on it: ending it is ending the resident" do
+  test "the plan outlives its last resident, and is ended from the plan: then the bill ends" do
     @account.update!(chosen_plan: "partners")
     sub = first_bill!("conversation")
-    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: nil } ]) }
-    assert_match(/plan stays while its included resident is on the bill/, error.message)
     change = reconcile.propose_end(@account.agents.find_by!(name: "Aria"))
+    reconcile.confirm(change, digest: change.digest)
+    assert_not @stripe.subscriptions.retrieve(sub).cancel_at_period_end
+    assert_equal 2999, monthly(sub)
+    assert_equal "partners", @account.reload.plan.id
+
+    change = reconcile.propose_end_plan
     reconcile.confirm(change, digest: change.digest)
     assert @stripe.subscriptions.retrieve(sub).cancel_at_period_end
   end

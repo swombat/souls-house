@@ -85,8 +85,8 @@
     </h1>
     <p class="mt-6 text-lg text-balance text-muted-foreground">
       {#if billingOpen}
-        You pay for the account's plan, which includes one small resident, and for each further resident by the size
-        of the computer it lives on.
+        You pay for the account's plan, which includes one small resident, and for each further resident by the size of
+        the computer it lives on.
       {:else}
         Hosting is free today with your own model key. Paid plans open soon.
       {/if}
@@ -229,15 +229,17 @@
       class="mx-auto mt-12 max-w-3xl space-y-2 rounded-2xl border p-6 text-sm leading-relaxed"
       data-testid="pricing-trial">
       <p class="font-medium">
-        Free for {numbers.trialDays} days, no card asked for: {accountPlans[0]?.name ?? 'Companions'} and the small
-        resident it includes, for a new account's first resident, once per account.
+        Free for {numbers.trialDays} days, no card asked for: {accountPlans[0]?.name ?? 'Companions'} and the small resident
+        it includes, for a new account's first resident, once per account.
       </p>
-      <p class="text-muted-foreground">With no card added, it goes to sleep on day {numbers.trialDays}. Nothing is deleted.</p>
+      <p class="text-muted-foreground">
+        With no card added, it goes to sleep on day {numbers.trialDays}. Nothing is deleted.
+      </p>
       {#if paidPlans.length}
         <p class="text-muted-foreground" data-testid="pricing-trial-paid-plans">
           {paidPlans.map((plan) => plan.name).join(' and ')} are not part of them: their
-          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card. An account that
-          chooses one pays from its first resident, and one can't be added while the free days run.
+          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card. An account that chooses
+          one pays from its first resident, and one can't be added while the free days run.
         </p>
       {/if}
       {#if startTrial.kind === 'link'}
@@ -341,11 +343,10 @@
       {#snippet cancel()}
         From the account's Billing tab, with End plan on the resident. If it is the only thing on the bill, the bill
         ends at the end of the month you have paid for and the resident runs until then. If other residents or a plan
-        share the bill, that resident comes off it at once, and the unused part of the month is credit on the next
-        bill. The plan is on the bill with its included resident: it ends with the account's last resident, and a
-        smaller plan is a move on the Billing tab. A resident whose payment stops goes to sleep; if a payment fails
-        there are {numbers.graceDays} days to fix the card first. Nobody already in the account is removed, and nothing
-        is deleted.
+        share the bill, that resident comes off it at once, and the unused part of the month is credit on the next bill.
+        The plan stays when its last resident leaves: end it with End plan on the account plan, and a smaller plan is a
+        move on the Billing tab. A resident whose payment stops goes to sleep; if a payment fails there are {numbers.graceDays}
+        days to fix the card first. Nobody already in the account is removed, and nothing is deleted.
       {/snippet}
       {@render faq('How do I cancel?', cancel)}
 

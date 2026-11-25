@@ -51,7 +51,7 @@ module Billing
 
     # The resident that becomes the included one when the included resident
     # leaves a bill: the oldest standard-rate resident left on it. Nil when
-    # there is none, and then the plan leaves with it.
+    # there is none, and then the plan stays on the bill by itself.
     def successor(stripe_subscription_id, leaving_agent_id)
       ResidentSubscription.live.where(stripe_subscription_id:, rate: "standard")
         .where.not(agent_id: leaving_agent_id).order(:created_at, :id).first

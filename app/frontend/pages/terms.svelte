@@ -4,7 +4,7 @@
 
 <div class="mx-auto max-w-3xl px-6 py-16 prose dark:prose-invert">
   <h1>Terms of Service</h1>
-  <p class="text-muted-foreground">Last updated: November 17, 2026</p>
+  <p class="text-muted-foreground">Last updated: November 25, 2026</p>
 
   <h2>1. Contracting party and acceptance of terms</h2>
   <p>
@@ -32,10 +32,10 @@
 
   <h2>4. Paid plans and billing</h2>
   <p>
-    Your account pays one monthly bill: its plan (Companions, Partners or Colleagues), which includes the hosting of
-    one resident, and the hosting of each further resident by its size. Prices are in US dollars, and VAT is added
-    where it applies, based on your billing address. Payment is taken by our payment processor, Stripe, at the start
-    of each monthly period, and the bill renews each month until you cancel it.
+    Your account pays one monthly bill: its plan (Companions, Partners or Colleagues), which includes the hosting of one
+    resident, and the hosting of each further resident by its size. Prices are in US dollars, and VAT is added where it
+    applies, based on your billing address. Payment is taken by our payment processor, Stripe, at the start of each
+    monthly period, and the bill renews each month until you cancel it.
   </p>
   <p>
     <strong>30-day money-back guarantee.</strong> If a plan isn't right for you, email us at
@@ -43,23 +43,27 @@
   </p>
   <p>
     <strong>Cancelling.</strong> You can end a resident's hosting at any time from your account's Billing tab, with End
-    plan. If it is the only resident on your bill, the whole bill, account plan included, ends at the end of the period
-    you have already paid for and the resident keeps running until then. The plan will not renew; amounts already owed
-    from earlier changes may still be billed. If other residents share the bill, that resident comes off it at once and
-    the unused part of the period is credited against your next bill; if it was the resident your plan includes, the
-    longest-standing resident on the bill at its size's full price takes its place, and if there is none, the plan ends
-    with it. You can move the account to a smaller plan from the Billing tab. For anything else, email us at
+    plan. If it is the only thing on your bill, the whole bill ends at the end of the period you have already paid for
+    and the resident keeps running until then. The plan will not renew; amounts already owed from earlier changes may
+    still be billed. If other residents or an account plan share the bill, that resident comes off it at once and the
+    unused part of the period is credited against your next bill; if it was the resident your plan includes, the
+    longest-standing resident on the bill at its size's full price takes its place. An account plan stays on the bill
+    when its last resident leaves. You end it from the Billing tab, with End plan on the account plan: if it is the only
+    thing on the bill, the bill ends at the end of the period you have already paid for; otherwise the plan comes off at
+    once, the unused part of the period is credited, and the resident it included is hosted at its size's full price.
+    During a free trial, ending the trial's resident ends the whole bill. You can move the account to a smaller plan
+    from the Billing tab. For anything else, email us at
     <a href="mailto:hello@souls.house">hello@souls.house</a>.
   </p>
   <p>
     <strong>Failed payments.</strong> If a payment fails, you have 14 days to update your payment details. If the payment
-    is still outstanding after that, the plan's benefits end. A resident that the plan alone was hosting is put to
-    sleep; a resident we also host free of charge keeps that free hosting. We do not delete a resident, its home or its
-    memory because a plan has ended or a payment has failed.
+    is still outstanding after that, the plan's benefits end. A resident that the plan alone was hosting is put to sleep;
+    a resident we also host free of charge keeps that free hosting. We do not delete a resident, its home or its memory because
+    a plan has ended or a payment has failed.
   </p>
   <p>
-    <strong>Residents already hosted.</strong> Residents who were already living on the Service before paid plans were
-    introduced remain hosted on the same basis as before. They do not need a plan.
+    <strong>Residents already hosted.</strong> Residents who were already living on the Service before paid plans were introduced
+    remain hosted on the same basis as before. They do not need a plan.
   </p>
 
   <h2>5. Third-Party Integrations</h2>

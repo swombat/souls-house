@@ -94,7 +94,7 @@ test('a subscription: says what it costs and when it renews, and moves by changi
   expect(screen.getByRole('button', { name: 'Move to Companions · $9.99 a month' })).toBeVisible();
   await fireEvent.click(screen.getByRole('button', { name: 'Move to Colleagues · $59.99 a month' }));
   expect(post).toHaveBeenCalledWith(
-    '/accounts/acc/billing/account_plan_change',
+    '/accounts/acc/billing/account_plan_checkout',
     { plan: 'colleagues' },
     expect.any(Object)
   );
@@ -123,7 +123,48 @@ test('during the free days the plan says when they end and offers no move', () =
   expect(screen.queryByTestId('account-plan-moves')).toBeNull();
 });
 
-test('a bill with no plan line offers no plan, and an account with an at-cost code is not told of an included resident', () => {
+test('a bill with no plan line offers every plan, added to the bill and quoted first', async () => {
+  show({ id: 'companions', source: 'default', subscription: null, chosen: null, bill: true, includes_resident: true });
+  expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("It goes on the account's bill from today");
+  expect(screen.getByTestId('account-plan-terms')).toHaveTextContent('You see what it costs before you confirm.');
+  expect(screen.queryByTestId('account-plan-end')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Add Partners · $29.99 a month' }));
+  expect(post).toHaveBeenCalledWith(
+    '/accounts/acc/billing/account_plan_checkout',
+    { plan: 'partners' },
+    expect.any(Object)
+  );
+});
+
+test('a paid plan is ended from the card, and an ending kept', async () => {
+  show({
+    id: 'partners',
+    source: 'subscription',
+    subscription: { status: 'active', current_period_end: '2026-12-10T00:00:00Z', cancel_at_period_end: false },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'End Partners' }));
+  expect(post).toHaveBeenCalledWith('/accounts/acc/billing/end_plan', {}, expect.any(Object));
+
+  show({
+    id: 'partners',
+    source: 'subscription',
+    subscription: { status: 'active', current_period_end: '2026-12-10T00:00:00Z', cancel_at_period_end: true },
+  });
+  expect(screen.getAllByTestId('account-plan').at(-1)).not.toHaveTextContent('Move to');
+  await fireEvent.click(screen.getByRole('button', { name: 'Keep Partners' }));
+  expect(post).toHaveBeenCalledWith('/accounts/acc/billing/keep_plan', {}, expect.any(Object));
+});
+
+test('during the free days there is no End or Keep on the plan: the trial resident carries it', () => {
+  show({
+    id: 'companions',
+    source: 'subscription',
+    subscription: { status: 'trialing', current_period_end: '2026-12-01T00:00:00Z', cancel_at_period_end: false },
+  });
+  expect(screen.queryByTestId('account-plan-end')).toBeNull();
+});
+
+test('a grant at the top on a bill offers no plan, and an account with an at-cost code is not told of an included resident', () => {
   show({ id: 'colleagues', source: 'grant', subscription: null, chosen: null, bill: true, includes_resident: false });
   expect(screen.queryByTestId('account-plan-moves')).toBeNull();
   expect(screen.getByTestId('account-plan')).not.toHaveTextContent('One small resident included');
