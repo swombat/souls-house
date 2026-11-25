@@ -2,14 +2,14 @@
   import { page } from '@inertiajs/svelte';
   import AccountApiKeysPage from '../app/frontend/pages/accounts/agent_api_keys.svelte';
 
-  let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false, subscription_agents = [] } = $props();
+  let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false, residents = [] } = $props();
 
   page.set({
     props: {
       account,
       ai_api_keys_configured,
       can_manage_ai_credentials,
-      subscription_agents,
+      residents,
       flash: {},
     },
     component: 'accounts/agent_api_keys',
@@ -19,4 +19,4 @@
 </script>
 
 <!-- Inertia passes page data as component props; the page store still supplies flash. -->
-<AccountApiKeysPage {account} {ai_api_keys_configured} {can_manage_ai_credentials} {subscription_agents} />
+<AccountApiKeysPage {account} {ai_api_keys_configured} {can_manage_ai_credentials} {residents} />

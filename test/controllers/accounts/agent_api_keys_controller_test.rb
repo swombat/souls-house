@@ -19,9 +19,10 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "secret-account-key"
   end
 
-  test "show includes subscription setup for eligible hosted agents" do
+  test "show lists only subscription-eligible active hosted residents without subscription details" do
     agent = agents(:other_account_agent)
     agent.update!(
+      active: true,
       model_id: "openai/gpt-5",
       runtime: "external",
       health_state: "healthy",
@@ -34,57 +35,33 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
         }
       }
     )
-
-    get account_agent_api_keys_path(@account)
-
-    subscription_agent = inertia_shared_props.fetch("subscription_agents").find { |item| item.fetch("id") == agent.to_param }
-    assert_equal "openai", subscription_agent.fetch("provider")
-    assert_equal "oauth_account", subscription_agent.fetch("auth_mode")
-    assert_equal "subscriber@example.com", subscription_agent.dig("connection", "email")
-  end
-
-  test "show includes Claude clamping setup for hosted Anthropic agents" do
-    agent = agents(:other_account_agent)
-    agent.update!(
-      model_id: "anthropic/claude-opus-4.7",
+    openrouter_only = @account.agents.create!(
+      name: "OpenRouter Resident",
+      active: true,
       runtime: "external",
-      health_state: "healthy"
+      model_id: "openrouter/auto"
     )
 
     get account_agent_api_keys_path(@account)
 
-    subscription_agent = inertia_shared_props.fetch("subscription_agents").find { |item| item.fetch("id") == agent.to_param }
-    assert_equal "anthropic", subscription_agent.fetch("provider")
-    assert_equal "Claude", subscription_agent.fetch("provider_name")
-    assert_equal "api_key", subscription_agent.fetch("auth_mode")
-    assert_equal true, subscription_agent.fetch("available")
+    residents = inertia_shared_props.fetch("residents")
+    entry = residents.find { |item| item.fetch("id") == agent.to_param }
+    assert_equal({ "id" => agent.to_param, "name" => agent.name }, entry)
+    assert_not_includes residents.pluck("id"), openrouter_only.to_param
+    assert_not inertia_shared_props.key?("subscription_agents")
+    assert_not_includes response.body, "subscriber@example.com"
   end
 
-  test "show includes Antigravity clamping setup for hosted Gemini agents" do
-    agent = agents(:other_account_agent)
-    agent.update!(
-      model_id: "google/gemini-3.7-flash",
-      runtime: "external",
-      health_state: "healthy"
-    )
+  test "show excludes inline and inactive agents from resident links" do
+    inline_agent = agents(:other_account_agent)
+    inline_agent.update!(active: true, model_id: "openai/gpt-5", runtime: "deprecated")
+    inactive_agent = @account.agents.create!(name: "Inactive Resident", runtime: "external", active: false)
 
     get account_agent_api_keys_path(@account)
 
-    subscription_agent = inertia_shared_props.fetch("subscription_agents").find { |item| item.fetch("id") == agent.to_param }
-    assert_equal "gemini", subscription_agent.fetch("provider")
-    assert_equal "Google AI", subscription_agent.fetch("provider_name")
-    assert_equal "api_key", subscription_agent.fetch("auth_mode")
-    assert_equal true, subscription_agent.fetch("available")
-  end
-
-  test "show excludes inline agents from subscription setup" do
-    agent = agents(:other_account_agent)
-    agent.update!(model_id: "openai/gpt-5", runtime: "deprecated")
-
-    get account_agent_api_keys_path(@account)
-
-    subscription_agent_ids = inertia_shared_props.fetch("subscription_agents").pluck("id")
-    assert_not_includes subscription_agent_ids, agent.to_param
+    resident_ids = inertia_shared_props.fetch("residents").pluck("id")
+    assert_not_includes resident_ids, inline_agent.to_param
+    assert_not_includes resident_ids, inactive_agent.to_param
   end
 
   test "updates per-account agent API keys" do

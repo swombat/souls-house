@@ -8,7 +8,7 @@ module Accounts
         account: current_account,
         ai_api_keys_configured: -> { current_account.ai_api_keys_configured },
         can_manage_ai_credentials: -> { current_account.ai_credentials_manageable_by?(Current.user) },
-        subscription_agents: -> { subscription_agents }
+        residents: -> { residents }
       }
     end
 
@@ -27,28 +27,14 @@ module Accounts
 
     private
 
-    def subscription_agents
-      current_account.agents.externally_hosted.by_name.filter_map do |agent|
-        provider = Agents::Sandbox.subscription_provider_for(agent)
-        next unless provider
+    def residents
+      current_account.agents.active.externally_hosted.by_name.filter_map do |agent|
+        next unless Agents::ProviderSubscriptionPresentation.call(agent)
 
         {
           id: agent.to_param,
-          name: agent.name,
-          provider: provider,
-          provider_name: {
-            "anthropic" => "Claude",
-            "gemini" => "Google AI",
-            "openai" => "ChatGPT",
-            "xai" => "xAI"
-          }.fetch(provider),
-          runtime: agent.runtime,
-          available: agent.external? && agent.health_state == "healthy",
-          auth_mode: agent.provider_auth_mode(provider),
-          connection: agent.provider_connection(provider)
+          name: agent.name
         }
-      rescue KeyError
-        nil
       end
     end
 

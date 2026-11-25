@@ -79,6 +79,22 @@ class Chat::QuietRhythmRunTest < ActiveSupport::TestCase
     assert_not chat.quiet_rhythm_run?
   end
 
+  test "a visible tag brings a solo run into the list" do
+    chat = fire(resident_rhythm)
+    tag = @account.visual_tags.create!(label: "Input Required", icon: "Warning", colour: "orange")
+    chat.update!(visual_tag: tag)
+    assert_not chat.quiet_rhythm_run?
+    assert_includes @account.chats.listed, chat
+  end
+
+  test "a tag that hides from the list keeps a solo run off it" do
+    chat = fire(resident_rhythm)
+    tag = @account.visual_tags.create!(label: "Done", icon: "Check", colour: "green", hides_from_list: true)
+    chat.update!(visual_tag: tag)
+    assert chat.quiet_rhythm_run?
+    assert_not_includes @account.chats.listed, chat
+  end
+
   test "an ordinary conversation is never quiet" do
     chat = @account.chats.create_with_message!({ title: "Plain", manual_responses: true },
       message_content: nil, agent_ids: [ @agent.id ], automatic_response: false)

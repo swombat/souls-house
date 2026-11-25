@@ -40,6 +40,14 @@ class ApiKeyTest < ActiveSupport::TestCase
     assert_nil ApiKey.authenticate("")
   end
 
+  test "pausing a hosted resident does not disable its key" do
+    agent = agents(:research_assistant)
+    agent.update_columns(active: true, paused: true)
+    key = ApiKey.generate_for(@user, name: "Paused resident", agent: agent)
+
+    assert_equal key, ApiKey.authenticate(key.raw_token)
+  end
+
   test "raw_token only available immediately after creation" do
     key = ApiKey.generate_for(@user, name: "Test Key")
     assert key.raw_token.present?

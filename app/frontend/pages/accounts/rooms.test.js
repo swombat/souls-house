@@ -62,10 +62,36 @@ test('Main can be renamed and described, but not moved or removed', async () => 
   );
 });
 
-test('the resident default is explained even before any room exists', () => {
-  render(Rooms, { ...props, rooms: [] });
-  expect(screen.getByRole('heading', { name: 'Default room for residents' })).toBeInTheDocument();
-  expect(screen.getByTestId('resident-room-empty')).toHaveTextContent('Resident-started conversations go to Main.');
+test('default room for residents is marked on the row and can be changed from another active room', async () => {
+  render(Rooms, {
+    ...props,
+    rooms: [{ id: 'buildRm', name: 'Build' }],
+  });
+  expect(screen.queryByRole('heading', { name: 'Default room for residents' })).not.toBeInTheDocument();
+  expect(screen.getByTestId('main-room-row')).toHaveTextContent('Default for residents');
+  expect(screen.queryByLabelText('Set Main as default room for residents')).not.toBeInTheDocument();
+
+  await fireEvent.click(screen.getByLabelText('Set Build as default room for residents'));
+  expect(router.patch).toHaveBeenLastCalledWith(
+    '/accounts/first/resident_room',
+    { room_id: 'buildRm' },
+    expect.objectContaining({ preserveScroll: true })
+  );
+});
+
+test('resident default can be switched back to Main from the Main row', async () => {
+  render(Rooms, {
+    ...props,
+    resident_room_id: 'buildRm',
+    rooms: [{ id: 'buildRm', name: 'Build' }],
+  });
+  expect(screen.getByTestId('room-row')).toHaveTextContent('Default for residents');
+  await fireEvent.click(screen.getByLabelText('Set Main as default room for residents'));
+  expect(router.patch).toHaveBeenLastCalledWith(
+    '/accounts/first/resident_room',
+    { room_id: null },
+    expect.objectContaining({ preserveScroll: true })
+  );
 });
 
 test('a new room is sent with what it is for, and rooms show it', async () => {
@@ -74,6 +100,7 @@ test('a new room is sent with what it is for, and rooms show it', async () => {
     rooms: [{ id: 'buildRm', name: 'Build', description: 'technical work, PRs and deploys' }],
   });
   expect(screen.getByTestId('room-description')).toHaveTextContent('technical work, PRs and deploys');
+  expect(screen.getByTestId('add-room-row').closest('ul')).toBe(screen.getByTestId('main-room-row').closest('ul'));
   await fireEvent.input(screen.getByLabelText('New room name'), { target: { value: 'Life' } });
   await fireEvent.input(screen.getByLabelText('New room: use this room when'), { target: { value: 'home things' } });
   await fireEvent.submit(screen.getByLabelText('New room name').closest('form'));
@@ -90,20 +117,31 @@ test('a description typed while the add is pending survives its success', async 
   expect(screen.getByLabelText('New room: use this room when')).toHaveValue('newer text');
 });
 
-test('models by room show each resident’s room model, its default, and a default that stopped working', () => {
+test('resident models render inline in each active room row, showing overrides, defaults, and stale problems', () => {
   const lume = {
     id: 'lumeId',
     name: 'Lume',
+    colour: 'orange',
     default_label: 'Claude Opus 5.5',
     choices: [
       { model_id: 'anthropic/opus', label: 'Claude Opus 5.5' },
       { model_id: 'anthropic/fable', label: 'Claude Fable 5.1' },
     ],
   };
+  const mira = {
+    id: 'miraId',
+    name: 'Mira',
+    colour: 'violet',
+    default_label: 'GPT-5.4',
+    choices: [
+      { model_id: 'openai/gpt-5.4', label: 'GPT-5.4' },
+      { model_id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    ],
+  };
   render(Rooms, {
     ...props,
     rooms: [{ id: 'buildRm', name: 'Build' }],
-    model_residents: [lume],
+    model_residents: [lume, mira],
     room_model_defaults: [
       { room_id: 'main', agent_id: 'lumeId', model_id: 'anthropic/fable', label: 'Claude Fable 5.1', problem: null },
       {
@@ -115,15 +153,12 @@ test('models by room show each resident’s room model, its default, and a defau
       },
     ],
   });
-  expect(screen.getByRole('heading', { name: 'Models by room' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Models by room' })).not.toBeInTheDocument();
   expect(screen.getByLabelText("Lume's model in Main")).toHaveTextContent('Claude Fable 5.1');
+  expect(screen.getByLabelText("Mira's model in Main")).toHaveTextContent('Default');
   expect(screen.getByLabelText("Lume's model in Build")).toHaveTextContent('Old');
-  expect(screen.getByTestId('room-models')).toHaveTextContent('new conversations use the default');
-  expect(screen.getByTestId('room-models').querySelector('table')).toBeNull();
-  expect(screen.getAllByTestId('room-models-room').map((room) => room.querySelector('h3').textContent)).toEqual([
-    'Main',
-    'Build',
-  ]);
+  expect(screen.getByTestId('room-row')).toHaveTextContent('new conversations use the default');
+  expect(screen.getAllByTestId('room-models')).toHaveLength(2);
 });
 
 test('models by room are hidden when no resident has a model list', () => {

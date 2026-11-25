@@ -305,6 +305,7 @@ module AgentRuntimeInteraction::LiveActivity
     helpers = RuntimeSubagents.new(helpers_shared ? stored_snapshot[RuntimeSubagents::KEY] : nil)
     helpers.gap! if !ongoing || health != "live" || stored_snapshot["fallback"]
     snapshot.merge!(helpers.public_snapshot)
+    out_of_memory = !ongoing && ran_out_of_memory?
     status_label = if waking
       "is waking up"
     elsif exit_unconfirmed
@@ -316,12 +317,17 @@ module AgentRuntimeInteraction::LiveActivity
         "failed" => "finished with an error", "timed_out" => "timed out",
         "cancelled" => "was cancelled", "busy" => "is already busy",
         "outcome_unknown" => "lost contact; outcome unconfirmed"
-      }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label }
+      }[state].then { |label| out_of_memory ? "ran out of memory" : label }
     end
+    stage = AgentRuntimeInteraction::StatusPresence.stage_for(
+      state: state, waking: waking, health: health, exit_unconfirmed: exit_unconfirmed,
+      out_of_memory: out_of_memory, fallback: stored_snapshot["fallback"].present?
+    )
     {
       run_id: run_id, revision: attempts.sum(&:revision) + (ongoing ? 0 : 1_000_000),
       status: state, active: ongoing,
       status_label: status_label,
+      **AgentRuntimeInteraction::StatusPresence.presentation(run_id: run_id, stage: stage, replied: replies.positive?),
       exit_unconfirmed: exit_unconfirmed,
       turn_ended_at: (turn_ended_at&.iso8601 if ongoing),
       reporter_health: health, snapshot: snapshot,
