@@ -2,6 +2,11 @@ require "test_helper"
 
 class ChangelogTest < ActiveSupport::TestCase
 
+  test "the legacy single-file config/changelog.yml does not exist" do
+    refute Rails.root.join("config/changelog.yml").exist?,
+      "config/changelog.yml was replaced by config/changelog/*.yml; move any new entries into config/changelog/"
+  end
+
   test "entries are complete and newest first" do
     entries = Changelog.entries
     assert entries.any?
@@ -50,6 +55,20 @@ class ChangelogTest < ActiveSupport::TestCase
     later = Changelog.recent(today: newest + 14)
     assert_empty later
     assert_includes Changelog.recent(today: newest + 13).map { |e| e[:date] }, newest.iso8601
+  end
+
+  test "clipped and recent stop reading older files once satisfied" do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "2026-11-25-1200-newest-clip.yml"), "date: 2026-11-25\ntitle: Newest\nbody: Newest.\nclip: one\n")
+      File.write(File.join(dir, "2026-11-25-1100-no-clip.yml"), "date: 2026-11-25\ntitle: Plain\nbody: No clip.\n")
+      File.write(File.join(dir, "2026-11-24-1000-second-clip.yml"), "date: 2026-11-24\ntitle: Second\nbody: Second.\nclip: two\n")
+      # Older unreadable/invalid YAML would raise if scanned past the stop condition.
+      File.write(File.join(dir, "2026-10-01-0001-unreached.yml"), ": [unclosed\n")
+
+      assert_equal %w[Newest Second], Changelog.clipped(2, dir:).map { |entry| entry[:title] }
+      assert_equal [], Changelog.clipped(0, dir:)
+      assert_equal %w[Newest Plain Second], Changelog.recent(today: Date.iso8601("2026-11-25"), dir:).map { |entry| entry[:title] }
+    end
   end
 
   test "clipped keeps only entries with a clip, newest first, up to the limit" do

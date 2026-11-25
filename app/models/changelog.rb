@@ -26,14 +26,32 @@ class Changelog
     row
   end
 
-  def self.recent(today: Date.current)
+  def self.recent(today: Date.current, dir: DIR)
     cutoff = today - RECENT_DAYS
-    entries.select { |entry| Date.iso8601(entry[:date]) > cutoff }
+    result = []
+    entry_files(dir:).each do |path|
+      match = FILENAME.match(File.basename(path))
+      break if match && Date.iso8601(match[:date]) <= cutoff
+
+      entry = parse_entry(path)
+      result << entry if Date.iso8601(entry[:date]) > cutoff
+    end
+    result
   end
 
   # The newest entries that carry a clip, for the home page: those are the changes worth showing.
-  def self.clipped(limit)
-    entries.select { |entry| entry[:clip] }.first(limit)
+  def self.clipped(limit, dir: DIR)
+    return [] if limit <= 0
+
+    result = []
+    entry_files(dir:).each do |path|
+      entry = parse_entry(path)
+      next unless entry[:clip]
+
+      result << entry
+      break if result.size >= limit
+    end
+    result
   end
 
 end
