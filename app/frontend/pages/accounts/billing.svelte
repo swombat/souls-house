@@ -90,7 +90,8 @@
     const amount = match?.monthly_usd ?? tier?.monthly_usd;
     if (amount === undefined) return null;
     // The plan's own resident: a Small is in the plan, a bigger one the difference.
-    if (rate === 'included') return Number(amount) > 0 ? `${usd(amount)} a month on top of the plan` : 'Included in the plan';
+    if (rate === 'included')
+      return Number(amount) > 0 ? `${usd(amount)} a month on top of the plan` : 'Included in the plan';
     return `${usd(amount)} a month`;
   }
 
@@ -212,25 +213,41 @@
         class="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm"
         data-testid="billing-add-confirm">
         <p class="font-medium">
-          {#if pendingAdd.kind === 'plan'}
-            Add {pendingAdd.resident_name} to the account's subscription?
+          {#if pendingAdd.kind === 'plan' && pendingAdd.move}
+            Move the account to {pendingAdd.resident_name}?
+          {:else if pendingAdd.kind === 'plan'}
+            Add {pendingAdd.resident_name} to the account's bill?
           {:else}
             Add {pendingAdd.resident_name} on {pendingAdd.plan} to the account's subscription?
           {/if}
         </p>
+        {#if pendingAdd.promoted_name}
+          <p data-testid="billing-add-promoted">
+            {pendingAdd.promoted_name} becomes the plan's included resident, at the included price, in the same change.
+          </p>
+        {/if}
         <p>
-          Nothing is charged today. Your next bill{pendingAdd.next_at ? `, on ${pendingAdd.next_at},` : ''} goes up by about
-          {cents(pendingAdd.added_cents, pendingAdd.currency)} for {pendingAdd.resident_name}: the rest of this period
-          and the next month. That bill comes to about {cents(pendingAdd.next_total_cents, pendingAdd.currency)} in all,
-          including anything else already due on it. After that, the account pays about
+          Nothing is charged today. Your next bill{pendingAdd.next_at ? `, on ${pendingAdd.next_at},` : ''}
+          {#if (pendingAdd.added_cents ?? 0) < 0}
+            goes down by about {cents(-pendingAdd.added_cents, pendingAdd.currency)}: the unused part of this period
+            comes off as credit, less the new price for the rest of it, and the next month is at the new price.
+          {:else}
+            goes up by about {cents(pendingAdd.added_cents, pendingAdd.currency)} for {pendingAdd.resident_name}: the
+            rest of this period and the next month.
+          {/if}
+          That bill comes to about {cents(pendingAdd.next_total_cents, pendingAdd.currency)} in all, including anything else
+          already due on it. After that, the account pays about
           {cents(pendingAdd.recurring_cents, pendingAdd.currency)} a month for {pendingAdd.kind === 'plan'
             ? 'its plan and residents'
-            : 'all its residents'} together. These are Stripe's
-          totals, with tax and discounts in.
+            : 'all its residents'} together. These are Stripe's totals, with tax and discounts in.
         </p>
         <div class="flex gap-2">
           <Button size="sm" onclick={confirmAdd} disabled={busy !== null}>
-            {busy === 'add' ? 'Adding…' : `Add ${pendingAdd.resident_name}`}
+            {busy === 'add'
+              ? 'Saving…'
+              : pendingAdd.kind === 'plan' && pendingAdd.move
+                ? `Move to ${pendingAdd.plan}`
+                : `Add ${pendingAdd.resident_name}`}
           </Button>
           <Button size="sm" variant="outline" onclick={cancelAdd} disabled={busy !== null}>Not now</Button>
         </div>
@@ -271,8 +288,8 @@
       </div>
       <p class="text-xs text-muted-foreground">
         Each size is hosting for one resident, in a container on the shared house server. The account gets
-        {billingNumbers($page.props).accountAllowance} a month of house-model use, shared by its residents at the standard price, and it resets on the 1st (UTC). Residents
-        hosted at cost don't draw on it.
+        {billingNumbers($page.props).accountAllowance} a month of house-model use, shared by its residents at the standard
+        price, and it resets on the 1st (UTC). Residents hosted at cost don't draw on it.
       </p>
     </section>
 
@@ -304,10 +321,10 @@
               {#if entitlement?.tier && entitlement.source === 'stripe'}
                 <Badge variant="outline"
                   >{tierName(entitlement.tier)}{entitlement.rate?.startsWith('at_cost')
-                      ? ' at cost'
-                      : entitlement.rate === 'included'
-                        ? ', the plan\'s own'
-                        : ''}</Badge>
+                    ? ' at cost'
+                    : entitlement.rate === 'included'
+                      ? ", the plan's own"
+                      : ''}</Badge>
               {/if}
               {#if residentPrice(entitlement) && !onTrial(resident)}
                 <span class="text-sm text-muted-foreground" data-testid="resident-price"

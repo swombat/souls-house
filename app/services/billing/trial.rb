@@ -40,7 +40,9 @@ module Billing
     def offer = Tier.find!(TIER).offer(RATE)
 
     # Whether the account would be offered the trial now.
-    def eligible?(account) = offered?(account) && unspent?(account)
+    # An account already paying a bill, a plan alone on it included, is past
+    # it: the trial opens a first bill.
+    def eligible?(account) = offered?(account) && unspent?(account) && !Reconcile.applies?(account)
 
     # Whether the house offers the trial to this kind of account at all.
     def offered?(account)
@@ -54,8 +56,11 @@ module Billing
         AccountPlan.default.purchasable?
     end
 
+    # Spent by a trial claimed, or by any bill the account has had: a resident
+    # on it, or a plan bought alone.
     def unspent?(account)
       account.trial_started_at.nil? && !ResidentSubscription.exists?(account_id: account.id) &&
+        !AccountSubscription.exists?(account_id: account.id) &&
         !ResidentBirthOrder.where(account_id: account.id, trial: true, state: HOLDING_STATES).exists?
     end
 

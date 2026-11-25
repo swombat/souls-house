@@ -39,7 +39,7 @@ class AccountPlanTest < ActiveSupport::TestCase
     subscription = subscribe!(@team, "partners")
     assert_equal "partners", @team.plan.id
     assert_equal "subscription", @team.plan_source
-    assert_equal({ status: "active", current_period_end: nil, cancel_at_period_end: false },
+    assert_equal({ plan: "partners", status: "active", current_period_end: nil, cancel_at_period_end: false },
       @team.account_plan_json[:subscription])
 
     @team.update!(granted_plan: "colleagues")

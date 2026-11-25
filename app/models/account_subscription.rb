@@ -33,7 +33,8 @@ class AccountSubscription < ApplicationRecord
   def plan_record = Billing::AccountPlan.find(plan)
 
   def as_json(*)
-    { status: stripe_status, current_period_end: current_period_end&.iso8601, cancel_at_period_end: cancel_at_period_end }
+    { plan: plan, status: stripe_status, current_period_end: current_period_end&.iso8601,
+      cancel_at_period_end: cancel_at_period_end }
   end
 
 end

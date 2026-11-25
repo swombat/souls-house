@@ -170,7 +170,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
       stripe_status: "active", current_period_end: Time.utc(2026, 12, 10), cancel_at_period_end: true)
     get account_billing_path(@account)
     assert_equal({ "id" => "colleagues", "source" => "subscription",
-      "subscription" => { "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true },
+      "subscription" => { "plan" => "colleagues", "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true },
       "chosen" => nil, "bill" => true, "includes_resident" => true },
       inertia_shared_props["account_plan"])
   end
@@ -194,23 +194,45 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "companions", @account.reload.chosen_plan, "only the owner chooses"
   end
 
-  test "the owner moves the account between Partners and Colleagues, audited" do
+  test "a plan alone on the bill: the owner ends it from the plan, sees what it does first, and keeps it again" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
-    @stripe.put_account_subscription(id: "sub_a", account: @account, customer: "cus_1", price: PARTNERS_PRICE, status: "active")
     @stripe.put_payment_method("pm_1")
     @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    @stripe.put_account_subscription(id: "sub_a", account: @account, customer: "cus_1", price: PARTNERS_PRICE, status: "active")
     with_stripe do
       Billing::BillSync.new("sub_a", client: @stripe).call
-      post account_plan_change_account_billing_path(@account), params: { plan: "colleagues" }
+      post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" }
     end
-    assert_redirected_to account_billing_path(@account)
-    assert_match(/now on Colleagues/, flash[:notice])
-    assert_equal "colleagues", @account.reload.plan.id
-    audit = AuditLog.find_by!(action: "change_account_plan", user: @user)
-    assert_equal "colleagues", audit.data["now"]
+    assert_match(/already on Partners/, flash[:alert])
 
-    with_stripe { post account_plan_change_account_billing_path(@account), params: { plan: "colleagues" } }
-    assert_match(/already on Colleagues/, flash[:alert])
+    # A plan with no price configured is never sold: a plan op with no price
+    # would read as taking the plan off.
+    unpriced = Class.new(Billing::AccountPlan) { def price_ids = [] }.new(id: "colleagues", name: "Colleagues",
+      monthly_usd: "59.99", members: "several", swarm_searches: 100, subagents: true, transcription_hours: 40)
+    Billing::AccountPlan.stub(:find, unpriced) do
+      with_stripe { post account_plan_checkout_account_billing_path(@account), params: { plan: "colleagues" } }
+    end
+    assert_match(/no Stripe price configured/, flash[:alert])
+    assert_empty BillChange.where(account: @account)
+
+    with_stripe { post end_plan_account_billing_path(@account) }
+    change = BillChange.unresolved.find_by!(account: @account)
+    assert_redirected_to account_billing_path(@account, end: change.id)
+    assert_empty @stripe.subscription_updates, "nothing changes before the owner confirms"
+
+    get account_billing_path(@account, end: change.id)
+    shown = inertia_shared_props["pending_end"]
+    assert_equal [ "plan", "Partners", "period_end" ], shown.values_at("kind", "plan", "operation")
+
+    with_stripe { post confirm_end_plan_account_billing_path(@account), params: { attempt_id: change.id, digest: shown["digest"] } }
+    assert_match(/plan won't renew/, flash[:notice])
+    assert @stripe.subscriptions.retrieve("sub_a").cancel_at_period_end
+    assert AuditLog.exists?(action: "end_account_plan", user: @user)
+
+    with_stripe { post keep_plan_account_billing_path(@account) }
+    assert_match(/plan will renew as usual/, flash[:notice])
+    assert_not @stripe.subscriptions.retrieve("sub_a").cancel_at_period_end
+    assert AuditLog.exists?(action: "keep_account_plan", user: @user)
   end
 
   test "disabled residents are left off the list and can't be checked out" do
@@ -366,7 +388,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
 
     get account_billing_path(@account, add: change.id)
     shown = inertia_shared_props["pending_add"]
-    assert_equal [ "plan", "the Partners plan", change.digest ], shown.values_at("kind", "resident_name", "digest")
+    assert_equal [ "plan", "the Partners plan", change.digest, true ], shown.values_at("kind", "resident_name", "digest", "move")
 
     with_stripe { post add_resident_account_billing_path(@account), params: { attempt_id: change.id, digest: shown["digest"] } }
     assert_match(/The Partners plan is on Partners now|next bill/, flash[:notice])

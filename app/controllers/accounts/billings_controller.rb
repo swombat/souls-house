@@ -7,7 +7,7 @@ class Accounts::BillingsController < ApplicationController
   require_feature_enabled :agents
   before_action :require_account_manager!
   before_action :require_account_owner!, only: [ :checkout, :add_resident, :plan_change, :portal, :account_plan_checkout,
-    :account_plan_change, :end_plan, :confirm_end_plan, :keep_plan ]
+    :end_plan, :confirm_end_plan, :keep_plan ]
 
   def show
     if params[:checkout] == "success"
@@ -98,11 +98,15 @@ class Accounts::BillingsController < ApplicationController
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
-  # Ending one resident's plan (Billing::Reconcile): the owner is shown what
-  # it does, and confirms it with confirm_end_plan.
+  # Ending one resident's plan, or with no agent_id the account's plan
+  # (Billing::Reconcile): the owner is shown what it does, and confirms it
+  # with confirm_end_plan.
   def end_plan
-    agent = billable_agents.find(params[:agent_id])
-    change = reconcile.propose_end(agent, by: Current.user)
+    change = if params[:agent_id].present?
+      reconcile.propose_end(billable_agents.find(params[:agent_id]), by: Current.user)
+    else
+      reconcile.propose_end_plan(by: Current.user)
+    end
     redirect_to account_billing_path(current_account, end: change.id)
   rescue *BILL_ERRORS => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
@@ -110,9 +114,15 @@ class Accounts::BillingsController < ApplicationController
 
   def confirm_end_plan
     change = proposed_change(params[:attempt_id])
-    agent = billable_agents.find(change.ops.first.fetch("agent_id"))
+    agent_id = change.ops.first["agent_id"]
+    agent = agent_id && billable_agents.find(agent_id)
     done!(reconcile.confirm(change, digest: params[:digest].to_s))
-    audit("end_resident_plan", agent, operation: end_operation(change), stripe_subscription_id: change.stripe_subscription_id)
+    if agent
+      audit("end_resident_plan", agent, operation: end_operation(change), stripe_subscription_id: change.stripe_subscription_id)
+    else
+      audit("end_account_plan", current_account, operation: end_operation(change), ops: change.ops,
+        stripe_subscription_id: change.stripe_subscription_id)
+    end
     redirect_to account_billing_path(current_account), notice: ended_notice(agent, change)
   rescue Billing::Reconcile::QuoteChanged => error
     requote(change, :end, error)
@@ -120,11 +130,19 @@ class Accounts::BillingsController < ApplicationController
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
+  # Undoes an ending made here: a resident's, or with no agent_id the
+  # account's plan-only bill.
   def keep_plan
-    agent = billable_agents.find(params[:agent_id])
-    change!([ { op: "keep_bill", agent_id: agent.id } ])
-    audit("keep_resident_plan", agent)
-    redirect_to account_billing_path(current_account), notice: "#{agent.name}'s plan will renew as usual."
+    if params[:agent_id].present?
+      agent = billable_agents.find(params[:agent_id])
+      change!([ { op: "keep_bill", agent_id: agent.id } ])
+      audit("keep_resident_plan", agent)
+      redirect_to account_billing_path(current_account), notice: "#{agent.name}'s plan will renew as usual."
+    else
+      change!([ { op: "keep_bill" } ])
+      audit("keep_account_plan", current_account)
+      redirect_to account_billing_path(current_account), notice: "The account's plan will renew as usual."
+    end
   rescue *BILL_ERRORS => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
@@ -143,11 +161,15 @@ class Accounts::BillingsController < ApplicationController
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
-  # A plan is bought with the resident it includes, never alone. An account
-  # that pays already changes its plan line, quoted first; one that doesn't
-  # yet chooses the plan its first bill carries, and nothing is charged now.
+  # An account that pays already puts the plan on its bill, or changes the
+  # plan line there, quoted first (a plan may stand alone on a bill). One
+  # that doesn't yet chooses the plan its first bill carries, and nothing
+  # is charged now.
   def account_plan_checkout
     plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
+    # A plan op with no price takes the plan off the bill: a plan with no
+    # price configured is never sold, not read as that.
+    raise Billing::NotConfigured, "The #{plan.name} plan has no Stripe price configured" unless plan.purchasable?
     if Billing::Reconcile.applies?(current_account)
       change = reconcile.propose([ { op: "plan", price: plan.price_id } ], by: Current.user)
       return redirect_to account_billing_path(current_account, add: change.id)
@@ -157,17 +179,6 @@ class Accounts::BillingsController < ApplicationController
     audit("choose_account_plan", current_account, plan: plan.id)
     redirect_to account_billing_path(current_account),
       notice: "#{plan.name} it is. It starts with your first resident, which it includes; nothing is charged until then."
-  rescue *BILL_ERRORS => error
-    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
-  end
-
-  def account_plan_change
-    plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
-    change = change!([ { op: "plan", price: plan.price_id } ])
-    audit("change_account_plan", current_account, plan: plan.id, now: current_account.reload.plan.id,
-      stripe_subscription_id: change.stripe_subscription_id)
-    redirect_to account_billing_path(current_account),
-      notice: "The account is now on #{plan.name}. Stripe puts the difference for the rest of this period on the next invoice."
   rescue *BILL_ERRORS => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
@@ -196,7 +207,7 @@ class Accounts::BillingsController < ApplicationController
 
   # The quote moved: the same change is proposed again and shown again.
   def requote(change, panel, error)
-    fresh = reconcile.propose(change.ops, by: Current.user)
+    fresh = reconcile.propose(Billing::Reconcile.intent(change.ops), by: Current.user)
     redirect_to account_billing_path(current_account, panel => fresh.id), alert: error.message
   rescue *BILL_ERRORS => again
     redirect_to account_billing_path(current_account), alert: billing_error_message(again)
@@ -219,7 +230,12 @@ class Accounts::BillingsController < ApplicationController
     quote = change.quote
     offer = Billing::Offer.for_price(change.ops.first["price"])
     plan = change.ops.first["op"] == "plan"
-    { attempt_id: change.id, digest: change.digest, kind: plan ? "plan" : "resident",
+    # move: the bill already carries a plan line, so this changes it.
+    # promoted: who becomes the plan's included resident with it.
+    move = plan && change.base.keys.any? { |price| Billing::AccountPlan.for_price(price) }
+    promoted = change.ops.find { |op| op["op"] == "promote" }
+    { attempt_id: change.id, digest: change.digest, kind: plan ? "plan" : "resident", move: move ? true : false,
+      promoted_name: promoted && current_account.agents.find(promoted["agent_id"]).name,
       resident_name: plan ? "the #{bought_in(change)} plan" : subject_of(change), plan: bought_in(change),
       rate: offer&.rate || "standard", currency: quote["currency"], added_cents: quote["added_next"],
       next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
@@ -232,7 +248,11 @@ class Accounts::BillingsController < ApplicationController
 
     quote = change.quote
     at = ->(key) { quote[key] && Time.zone.at(quote[key]).to_date.iso8601 }
-    { attempt_id: change.id, digest: change.digest, resident_name: subject_of(change), operation: end_operation(change),
+    plan = change.ops.first["agent_id"] ? nil : current_account.live_plan_subscription
+    demoted = change.ops.find { |op| op["op"] == "demote" }
+    { attempt_id: change.id, digest: change.digest, kind: plan ? "plan" : "resident", plan: plan&.plan_record&.name,
+      demoted_name: demoted && current_account.agents.find(demoted["agent_id"]).name,
+      resident_name: subject_of(change), operation: end_operation(change),
       currency: quote["currency"], ends_at: change.ends_bill? ? at.("next_at") : nil, next_at: at.("next_at"),
       next_change_cents: quote["added_next"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
       final_total_cents: quote["final_total"] }
@@ -246,12 +266,25 @@ class Accounts::BillingsController < ApplicationController
   def end_operation(change) = change.ends_bill? ? "period_end" : "delete"
 
   def ended_notice(agent, change)
+    return plan_ended_notice(change) unless agent
+
     if change.ends_bill?
       ends = change.quote["next_at"]
       date = ends ? I18n.l(Time.zone.at(ends).to_date, format: :long) : "the end of this period"
       "#{agent.name}'s plan won't renew. #{agent.name} keeps running until #{date}."
     else
       "#{agent.name}'s plan has ended. The unused part of this period comes off the next bill as credit."
+    end
+  end
+
+  def plan_ended_notice(change)
+    if change.ends_bill?
+      ends = change.quote["next_at"]
+      date = ends ? I18n.l(Time.zone.at(ends).to_date, format: :long) : "the end of this period"
+      "The account's plan won't renew. It stays on it until #{date}."
+    else
+      "The account's plan has ended. Its residents stay, each at its size; the unused part of this period " \
+        "comes off the next bill as credit."
     end
   end
 

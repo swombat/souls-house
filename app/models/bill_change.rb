@@ -21,14 +21,15 @@
 #   { "op" => "birth", "order" => "<birth order reference>", "price" => "price_…" }
 #   { "op" => "end", "agent_id" => 1 }
 #   { "op" => "resize", "agent_id" => 1, "price" => "price_…" }
+#   { "op" => "promote" | "demote", "agent_id" => 1, "price" => "price_…" }  # into or out of the included rate
 #   { "op" => "plan", "price" => "price_…" }   # nil price: back to Companions
-#   { "op" => "end_bill" } / { "op" => "keep_bill" }
+#   { "op" => "end_bill" } / { "op" => "keep_bill" }   # agent_id optional: a plan-only bill has none
 # base and lines are { price id => quantity }: the subscription's lines when
 # the change was proposed, and the lines it wants.
 class BillChange < ApplicationRecord
 
   STATES = %w[proposed submitted applied abandoned].freeze
-  OPS = %w[add birth end resize promote plan end_bill keep_bill].freeze
+  OPS = %w[add birth end resize promote demote plan end_bill keep_bill].freeze
 
   belongs_to :account
   belongs_to :requested_by, class_name: "User", optional: true
