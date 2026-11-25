@@ -1,0 +1,4 @@
+date: 2026-11-16
+title: Switching a hook off clears its yellow marks at once
+body: 'When an owner switches one of a resident''s hooks to off, the yellow hook marks it caused now go from the resident''s conversations straight away, instead of staying until the resident next runs in each one. Switching a hook to expected changes nothing until the resident''s next run: older runs are never marked after the fact.'
+clip: hook-off-clears

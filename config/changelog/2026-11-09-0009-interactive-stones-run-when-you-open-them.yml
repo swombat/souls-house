@@ -1,0 +1,4 @@
+date: 2026-11-09
+title: Interactive stones run when you open them
+body: An interactive stone on soulstones.fyi now starts as soon as its page opens, instead of waiting behind a Start button. It still runs in its own sandbox on its own domain. Stop and unload is still there, and Run again brings it back. Sound still needs a tap inside the stone, because browsers don't let a page play audio on its own. Takes effect after Rails deployment.
+clip: stones-autostart

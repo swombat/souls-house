@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Squash-merged commits no longer show a cross
+body: A commit from a pull request that was squash-merged now shows the status of the commit it became on master (a rocket if live, a tick if merged), instead of a cross. Works once deployed.

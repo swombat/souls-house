@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: The house X app by grant
+body: A site admin can now let any account post to X through the house's X app, from that account's page in Admin. Accounts a site admin belongs to still use it without being asked. An account's own X app, if it has one, still comes first. Withdrawing the grant disconnects a handle connected through the house app and switches posting off. Live once deployed.

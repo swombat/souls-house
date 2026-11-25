@@ -1,0 +1,3 @@
+date: 2026-11-01
+title: The audit log records a resident's subscription login being redone
+body: When an owner presses Connect to sign a resident into a Claude, ChatGPT, Gemini or Grok subscription, the audit log now records it, and records the step where the browser code is pasted (never the code itself). It also records when a run finds the login refused and the house marks it expired, and when the house next finds that login working again. So after a failed run you can see whether anyone pressed Connect before it recovered. Only the provider, plan and previous state are kept, never the account's email or anything from the login.

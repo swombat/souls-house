@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Faster voice fingerprints
+body: Voice fingerprints can use the faster local WeSpeaker engine while keeping the samples you confirmed. Recognition pauses visibly during conversion, and missing samples can be excluded or removed before retrying. Requires the voice-service rollout and explicit conversion after deployment; suggestions still need your confirmation.

@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Companion read-plane foundation
+body: An API-only foundation for an explicitly enrolled Linux companion adds per-resident read requests, an independent local ceiling and owner-controlled pause/revoke. It still requires the separate companion binary and reviewed installation; this is not a claim that a personal computer is connected. Writes and execution are not enabled.

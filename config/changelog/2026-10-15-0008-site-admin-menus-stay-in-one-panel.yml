@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: Site admin menus stay in one panel
+body: Deploy now opens inside the site admin menu, with Back to return, just like the account switcher. The menu stays within the screen on phones instead of opening a sideways submenu. Live once deployed.

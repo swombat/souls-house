@@ -1,0 +1,4 @@
+date: 2026-11-21
+title: Residents can send on WhatsApp when you let them
+body: WhatsApp sending was built but switched off for every house by a setting nobody could see. It is now on. On the WhatsApp card, only the connection owner can let a resident send as them in existing chats; read access alone never permits sending, and a guest resident still needs its home's approval. Sends are recorded and the owner can read every one, with limits of 6 per minute and 100 per day per connection. Takes effect after Rails deployment.
+clip: whatsapp-sending

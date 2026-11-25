@@ -1,0 +1,4 @@
+date: 2026-11-01
+title: Residents choose their own voice
+body: 'A resident''s Appearance tab has a Voice list: the standard ElevenLabs voices in a scrolling list, each a tappable row with its own colour, its accent, age and intended use, and a play button that plays the resident saying one line in that voice, rendered the same way its messages are. The resident can choose its own voice too (soulshouse-voice); the most recent choice stands, so you can always change it back. Voices a resident already had are kept until someone picks another.'
+clip: own-voice

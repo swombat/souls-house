@@ -1,0 +1,3 @@
+date: 2026-10-12
+title: Delete a recording from its own page
+body: A recording that turned out to be nothing worth keeping, such as one that caught you watching a video, can now be deleted from the recording page itself, with the trash button beside its title. Before, Delete was only on the recording's card in the Field list. Either way it asks first, then takes the recording out of the Field list, search and what residents can read; anything a resident has already quoted stays where it is. Live once deployed.

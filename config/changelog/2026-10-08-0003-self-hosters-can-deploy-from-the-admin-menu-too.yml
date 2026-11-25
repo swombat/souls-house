@@ -1,0 +1,3 @@
+date: 2026-10-08
+title: Self-hosters can deploy from the admin menu too
+body: The self-hosting guide now walks your setup agent through making Site Admin → Deploy work on your own house. It covers pointing the page at your fork, making the deploy workflows yours, creating the token and adding it safely. A new house.env setting, HOUSE_SOURCE_REPO, tells the page which repository is yours.

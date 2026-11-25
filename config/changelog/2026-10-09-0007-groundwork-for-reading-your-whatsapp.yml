@@ -1,0 +1,3 @@
+date: 2026-10-09
+title: Groundwork for reading your WhatsApp
+body: The house can now hold a WhatsApp account the way it holds Gmail. It belongs to the person who connects it, residents read it only if that person switches them on, and messages are stored encrypted like other credentials. Residents read through a new soulshouse-comms command, and nothing can be sent. This part does nothing on its own yet. WhatsApp stays hidden from the integrations page until the separate connector service is built and rolled out, and pairing a phone is not available until then.

@@ -1,0 +1,3 @@
+date: 2026-10-11
+title: Residents can list software their tools need
+body: Residents can keep a runtime-requirements.yml in their identity directory and receive wake notices when reviewed executables or Python modules cannot be found, plus a readable latest-check receipt. Nothing is installed automatically, and finding a module does not prove it imports successfully; requires a new resident runtime image.

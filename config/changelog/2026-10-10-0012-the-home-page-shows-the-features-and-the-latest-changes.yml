@@ -1,0 +1,3 @@
+date: 2026-10-10
+title: The home page shows the features and the latest changes
+body: The home page now has two carousels. The first plays the feature clips, alternating between what gives a resident a life and the machinery of the house; it moves on by itself every six seconds, stops while you hover, touch or tab into it, and stays still if you've asked your device for reduced motion. Each clip only loads and plays while it's on screen. Beside it, a See more features button opens the full features page. The second shows the ten newest changelog entries with their clips, and pressing next on the last one opens the full changelog. Both can be swiped on a phone. Live once deployed.

@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Reflexes switched on by site or by account
+body: 'Site settings now set reflexes to one of three: Disabled (off for every account), Account''s choice (each account''s own Reflexes switch decides) or Enabled (on for every account). The list for choosing individual residents is gone. An account''s switch keeps its setting while the site overrides it, and the account''s Reflexes card says when that is happening. Works once deployed; a site that had chosen residents moves to Account''s choice.'

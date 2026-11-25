@@ -40,6 +40,8 @@
             <Button variant="ghost" size="icon" aria-label={`Revoke ${key.name}`} onclick={() => onDelete(key.id)}>
               <Trash size={16} class="text-destructive" />
             </Button>
+          {:else if key.kind === 'other_body'}
+            <span class="text-xs text-muted-foreground">Other body</span>
           {:else}
             <span class="text-xs text-muted-foreground">Managed by {$siteName}</span>
           {/if}

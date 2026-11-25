@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: Residents say when they are waking up
+body: While a resident is loading its memory at the start of a turn, the house now says it is waking up instead of working, and switches to working as soon as that finishes. Residents without startup hooks keep saying is working. Takes effect after Rails deployment and the resident image rebuild.
+clip: waking-up

@@ -84,22 +84,22 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "the resident handoff cap is shown and can be changed, within range" do
-    get account_path(@team_account)
+    get account_features_path(@team_account)
     assert_response :success
 
     patch account_path(@team_account), params: { account: { resident_handoff_cap: "3" } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert_equal 3, @team_account.reload.resident_handoff_cap
 
     patch account_path(@team_account), params: { account: { resident_handoff_cap: "500" } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert_equal 3, @team_account.reload.resident_handoff_cap
   end
 
   test "the Telegram bot answer limit defaults to three and can be changed, within range" do
     assert_equal 3, @team_account.telegram_bot_wake_limit
     patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: "20" } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert_equal 20, @team_account.reload.telegram_bot_wake_limit
 
     patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: "0" } }
@@ -107,7 +107,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
 
     [ "51", "-1", "lots" ].each do |value|
       patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: value } }
-      assert_redirected_to @team_account
+      assert_redirected_to account_features_path(@team_account)
       assert_equal 0, @team_account.reload.telegram_bot_wake_limit, value
     end
   end
@@ -115,14 +115,14 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
   test "the reflexes switch saves under any site scope and the page carries the site scope" do
     %w[disabled enabled account_choice].each do |scope|
       Setting.instance.update!(reflexes_scope: scope)
-      get account_path(@team_account)
+      get account_features_path(@team_account)
       @inertia_props = nil
       assert_equal scope, inertia_props.dig("props", "reflexes_site_scope")
     end
 
     Setting.instance.update!(reflexes_scope: "disabled")
     patch account_path(@team_account), params: { account: { reflexes_enabled: true } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert @team_account.reload.reflexes_enabled?
 
     Setting.instance.update!(reflexes_scope: "enabled")
@@ -132,26 +132,26 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
 
   test "showing conversation codes is off by default and a manager switches it per account" do
     assert_not @team_account.show_chat_codes?
-    get account_path(@team_account)
+    get account_features_path(@team_account)
     assert_equal false, inertia_props.dig("props", "show_chat_codes")
 
     patch account_path(@team_account), params: { account: { show_chat_codes: true } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert @team_account.reload.show_chat_codes?
     assert_equal true, @team_account.as_json["show_chat_codes"]
   end
 
   test "conversations per room is off by default, a manager switches it on, and only then the menus get totals" do
     assert_not @team_account.show_room_chat_counts?
-    get account_path(@team_account)
+    get account_features_path(@team_account)
     assert_equal false, inertia_props.dig("props", "show_room_chat_counts")
     assert_nil inertia_props.dig("props", "room_chat_counts")
 
     patch account_path(@team_account), params: { account: { show_room_chat_counts: true } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert @team_account.reload.show_room_chat_counts?
 
-    get account_path(@team_account)
+    get account_features_path(@team_account)
     totals = inertia_props.dig("props", "room_chat_counts")
     assert_equal @team_account.chats.kept.listed.active.not_hidden_from_list.count, totals["all"]
   end
@@ -160,20 +160,20 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     @team_account.update!(use_system_ai_credentials: false, openai_api_key: nil)
     %w[disabled enabled account_choice].each do |scope|
       Setting.instance.update!(voice_mode_scope: scope)
-      get account_path(@team_account)
+      get account_features_path(@team_account)
       @inertia_props = nil
       assert_equal scope, inertia_props.dig("props", "voice_mode_site_scope")
       assert_equal false, inertia_props.dig("props", "voice_mode_transcription_key")
     end
 
     @team_account.update!(openai_api_key: "sk-account")
-    get account_path(@team_account)
+    get account_features_path(@team_account)
     @inertia_props = nil
     assert_equal true, inertia_props.dig("props", "voice_mode_transcription_key")
 
     Setting.instance.update!(voice_mode_scope: "disabled")
     patch account_path(@team_account), params: { account: { voice_mode_enabled: true } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert @team_account.reload.voice_mode_enabled?
 
     Setting.instance.update!(voice_mode_scope: "enabled")
@@ -319,7 +319,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
   test "an account chooses ElevenLabs only while the site offers it, and can always go back to Phonon" do
     Setting.instance.update!(speech_engine_scope: "disabled")
     patch account_path(@team_account), params: { account: { speech_engine: "elevenlabs" } }
-    assert_redirected_to @team_account
+    assert_redirected_to account_features_path(@team_account)
     assert_equal "phonon", @team_account.reload.speech_engine
     assert_match(/isn't offered/, flash[:alert])
 
@@ -346,7 +346,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     log = AuditLog.where(action: "update_account_settings", auditable: @team_account).last
     assert_not_includes log.data.to_json, "xi-secret-123"
 
-    get account_path(@team_account)
+    get account_features_path(@team_account)
     props = inertia_props["props"]
     assert_equal true, props["eleven_labs_key_present"]
     assert_equal "account_choice", props["speech_engine_site_scope"]

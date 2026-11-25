@@ -1,0 +1,4 @@
+date: 2026-11-06
+title: Voice mode reopens the microphone when headphones connect mid-conversation
+body: 'On Android, Bluetooth headphones that connected while voice mode was open were ignored: the voice kept coming out of the phone speaker. Voice mode now reopens the microphone when the audio devices change, between sentences, never mid-sentence. We expect that to make the phone switch to the headphones, but that still has to be confirmed on a Pixel. It also writes down what the phone does to the microphone when the screen goes off (paused, muted, stopped), so the next screen-off failure can be told apart from the others. Takes effect after Rails deployment.'
+clip: voice-headphones

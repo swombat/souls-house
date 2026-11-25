@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Human API mentions reach residents
+body: A person's explicit @mention in a multi-resident room now requests a wake through the general API just as it does on web and phone, with per-resident acceptance receipts. If mention dispatch is unavailable, the API refuses the send with 503 without saving the message or clearing its draft.

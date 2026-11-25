@@ -34,7 +34,7 @@ test('hide from the list, the Filter menu, and a tag filter', async ({ page, req
     await page.reload();
     await expect.poll(rows).toEqual(['Help', 'No tag']);
 
-    await page.goto(`${base}/interface`);
+    await page.goto(`${base}/tags`);
     await page.getByRole('button', { name: /^Edit Help/ }).click();
     const form = page.getByRole('form', { name: 'Edit Help', exact: true });
     await form.getByRole('switch', { name: 'Hide conversations with this tag from the list' }).click();

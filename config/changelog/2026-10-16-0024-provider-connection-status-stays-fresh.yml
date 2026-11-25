@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Provider connection status stays fresh
+body: Persisted provider connection changes now update open resident and model-key panels without losing unfinished credentials or interrupting an active sign-in. Status-only reloads no longer regenerate unrelated Telegram links.

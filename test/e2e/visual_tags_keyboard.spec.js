@@ -14,7 +14,7 @@ test('tag editor icon search stays usable with the phone keyboard open', async (
     await page.getByLabel(/password/i).fill(setup.password);
     await page.getByRole('button', { name: /log in/i }).click();
     await expect(page).not.toHaveURL(/\/login/);
-    await page.goto(`/accounts/${setup.account_param}/interface`);
+    await page.goto(`/accounts/${setup.account_param}/tags`);
     await page.getByRole('button', { name: 'Add tag', exact: true }).click();
     const form = page.getByRole('form', { name: 'Add visual tag', exact: true });
 

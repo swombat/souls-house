@@ -1,0 +1,4 @@
+date: 2026-11-09
+title: Tag a conversation from its header; costs move into View costs
+body: A conversation's header now has its tag button on the title's row, just above the ⋯ menu, on the phone and on the desktop, so you can change the tag without opening the sidebar. The line of context and cost figures under the title is gone. Those numbers (context size, the estimated cost, and the subscription estimate that doesn't apply) now open at the top of View costs in the ⋯ menu, above the per-model table. A long title is cut short with an ellipsis instead of running under the tag button. Takes effect after Rails deployment.
+clip: header-tag

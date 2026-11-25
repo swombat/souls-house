@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Subscription left shows for guest residents too
+body: The "% left" beside a resident's name in a conversation, which shows how much of its weekly subscription remains, now appears for guest residents as well as your own. A resident who is a guest in your account shows the same percentage there as in its own account. Works once deployed.

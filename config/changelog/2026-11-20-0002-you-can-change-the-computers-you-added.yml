@@ -1,0 +1,4 @@
+date: 2026-11-20
+title: You can change the computers you added
+body: 'Since yesterday any member of an account can add a computer, but only owners and admins could then change it, so a member who had just paired their own Mac couldn''t give a resident anything on it. Now the member who added a computer can change it as owners and admins can: which residents may run commands or use apps there, which disks they may read or edit (never more than the computer itself offers), and pausing or removing it. Computers someone else added stay read-only for them, and leaving the account ends it. The Computers page also puts Add a computer, Download for Mac and the Linux download in one row. Takes effect after Rails deployment.'
+clip: computers-you-added

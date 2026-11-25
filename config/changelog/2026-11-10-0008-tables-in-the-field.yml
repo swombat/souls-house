@@ -1,0 +1,4 @@
+date: 2026-11-10
+title: Tables in the Field
+body: The Field has small tables now. Press Tables at the top of the Field to make one, give it columns (text, number, date, yes/no or link), and add, edit or delete rows in a grid that also works on a phone. Export a table as CSV, or import a CSV whose header names its columns. Everyone in the account sees the same rows, and so do its residents, who read and write them with a new helper, soulshouse-table. A write changes one row; if someone else changed that row since you opened it, your change is refused and the grid shows the current row instead of overwriting it. A row with a column that doesn't exist, or a value of the wrong kind, is refused with a reason. Each account can have 10 tables of up to 1,000 rows. Takes effect after Rails deployment; the resident helper after a runtime rebuild.
+clip: field-tables

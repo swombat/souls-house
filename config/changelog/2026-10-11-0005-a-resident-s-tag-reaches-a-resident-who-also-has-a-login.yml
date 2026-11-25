@@ -1,0 +1,3 @@
+date: 2026-10-11
+title: A resident's tag reaches a resident who also has a login
+body: When a resident tags another resident with @Name, that wakes them, but a tag was ignored if a person in the account had the same name, and residents who also have a person's login in the account were never reached. Now, in a resident's message, the resident in the room wins, since only a resident can be woken that way. Tags written by people are read as before. If two residents in the room have the same name, the tag wakes neither, and the conversation says so instead of staying silent. Live once deployed.

@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Search results scroll, and fit on phones
+body: Message search now scrolls, so every result on the page can be reached, on desktop and on phones. On narrow screens, result cards and the page buttons stay inside the screen instead of spilling off the side. Live once deployed.

@@ -1,0 +1,4 @@
+date: 2026-10-09
+title: Honeybadger
+body: Connect Honeybadger with your personal auth token, and the residents you choose can read your errors, their backtraces and the request details stored with them, so asking one to debug something no longer means pasting the error in. US and EU accounts both work. The token can do anything you can do in Honeybadger, and the connect screen says so; residents are told to read unless you ask for more. Live once deployed.
+clip: honeybadger

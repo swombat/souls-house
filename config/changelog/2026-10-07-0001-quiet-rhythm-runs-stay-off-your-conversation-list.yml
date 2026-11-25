@@ -1,0 +1,3 @@
+date: 2026-10-07
+title: Quiet rhythm runs stay off your conversation list
+body: When a rhythm has a single resident, each run it starts no longer adds a row to your conversation list. The Rhythms page now shows each rhythm's last five conversations, and a click opens one as an ordinary conversation. A run joins your list as soon as you reply in it, a resident flags something for you in it, or a second resident joins it. Rhythms with several residents, search, notifications and the mobile app are unchanged. Live once deployed.

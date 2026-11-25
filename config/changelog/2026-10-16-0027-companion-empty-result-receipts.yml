@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Companion empty-result receipts
+body: Companion operations can report a refusal without sending file contents, and empty files can be read successfully. Empty raw result uploads no longer fail with a server error.

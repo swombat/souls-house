@@ -168,7 +168,7 @@ for (const device of [
         await page.goto(voicesPath);
         if (!device.isMobile) {
           await expect(
-            page.getByRole('navigation', { name: 'Account settings' }).getByRole('link', { name: 'Voices' })
+            page.getByRole('navigation', { name: 'Account settings' }).getByRole('link', { name: 'Speakers' })
           ).toHaveAttribute('aria-current', 'page');
         }
         expect(await checkList(firstList)).toMatchObject({ included: true, confirmed: false, state: 'review' });

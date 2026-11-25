@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Record a review, or arm auto-merge, for a pull request on this repository.
+
+Every contributor pushes as the same GitHub user, so GitHub's own Approve is
+impossible. A review is a commit status instead: `review/<who>` on the exact
+head the reviewer read. The "Protect Main" ruleset requires `CI result` and
+one `review/<who>` per resident by name, so GitHub itself merges only when
+every slot is green: the builder's own slot plus two approvals. A block in
+any slot holds the merge, and nothing here works out a combined status that
+could flash green.
+
+    scripts/review-status <pr> <sha> auto-merge "Lume: builder"
+    scripts/review-status <pr> <sha> approve "Mira: read the whole diff"
+    scripts/review-status <pr> <sha> block "Mira: the lock is taken too late"
+
+<sha> is the head you read (seven characters or more). The script reads the
+PR's current head and refuses if they differ, so a push nobody read can't be
+approved by mistake. A new head starts with every slot empty, so the builder
+runs auto-merge again after each push.
+
+The token comes from GITHUB_TOKEN or GH_TOKEN, else from `git credential fill`.
+"""
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+REPO = os.environ.get("REVIEW_STATUS_REPO", "swombat/souls-house")
+API = "https://api.github.com"
+CONTEXT = "review"
+STATES = {"approve": "success", "block": "failure", "auto-merge": "success"}
+# Each is a required check in "Protect Main"; a new resident needs adding there too.
+RESIDENTS = ("lume", "mira", "reed")
+MIN_SHA = 7
+MAX_DESCRIPTION = 140
+
+
+class Refused(Exception):
+    pass
+
+
+def token():
+    for name in ("GITHUB_TOKEN", "GH_TOKEN"):
+        if os.environ.get(name):
+            return os.environ[name]
+    filled = subprocess.run(
+        ["git", "credential", "fill"],
+        # usehttppath helpers only answer when the repository path is given.
+        input=f"protocol=https\nhost=github.com\npath={REPO}.git\n\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    for line in filled.splitlines():
+        if line.startswith("password="):
+            return line.split("=", 1)[1]
+    raise Refused("no GitHub token: set GITHUB_TOKEN or configure a git credential for github.com")
+
+
+def request(method, url, auth, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"Bearer {auth}")
+    req.add_header("Accept", "application/vnd.github+json")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as error:
+        raise Refused(f"{method} {url} failed: {error.code} {error.read().decode(errors='replace')[:300]}")
+
+
+def check_head(pull, reviewed_sha):
+    if pull.get("state") != "open":
+        raise Refused(f"PR #{pull['number']} is {pull.get('state')}, not open")
+    head = pull["head"]["sha"]
+    reviewed = reviewed_sha.lower()
+    if len(reviewed) < MIN_SHA:
+        raise Refused(f"give at least {MIN_SHA} characters of the head you reviewed")
+    if not head.startswith(reviewed):
+        raise Refused(f"PR #{pull['number']} head is now {head[:12]}, not {reviewed}: read the new head first")
+    return head
+
+
+def reviewer_slug(note):
+    who = note.split(":", 1)[0].strip().lower() if ":" in note else ""
+    if who not in RESIDENTS:
+        raise Refused(f'say who you are: "<who>: <why>", with <who> one of {", ".join(RESIDENTS)}')
+    return who
+
+
+def clip(text):
+    text = " ".join(text.split())
+    return text if len(text) <= MAX_DESCRIPTION else text[: MAX_DESCRIPTION - 1] + "…"
+
+
+def status_body(verdict, note):
+    if verdict not in STATES:
+        raise Refused(f"verdict must be one of {', '.join(STATES)}")
+    note = " ".join(note.split())
+    return {"state": STATES[verdict], "context": f"{CONTEXT}/{reviewer_slug(note)}", "description": clip(note)}
+
+
+def enable_auto_merge(pull, auth):
+    mutation = (
+        "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH})"
+        " { pullRequest { number autoMergeRequest { mergeMethod } } } }"
+    )
+    result = request("POST", f"{API}/graphql", auth, {"query": mutation, "variables": {"id": pull["node_id"]}})
+    if result.get("errors"):
+        raise Refused(f"auto-merge not enabled on #{pull['number']}: {result['errors'][0].get('message')}")
+
+
+def review(number, reviewed_sha, verdict, note, auth):
+    body = status_body(verdict, note)
+    pull = request("GET", f"{API}/repos/{REPO}/pulls/{number}", auth)
+    head = check_head(pull, reviewed_sha)
+    request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, body)
+    print(f"#{number} {head[:12]}: {body['context']} {body['state']} ({body['description']})")
+    if verdict == "auto-merge":
+        enable_auto_merge(pull, auth)
+        print(f"#{number}: auto-merge (squash) on; GitHub merges when CI result and every review/<who> are green")
+
+
+def main(argv):
+    try:
+        if len(argv) == 4:
+            review(int(argv[0]), argv[1], argv[2], argv[3], token())
+        else:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+    except Refused as refusal:
+        print(f"review-status: {refusal}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

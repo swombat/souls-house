@@ -1,0 +1,4 @@
+date: 2026-11-07
+title: A small alarm clock marks threads a resident will come back to
+body: 'When a resident has promised to come back to a conversation at a set time, that conversation now shows a faint alarm clock in the sidebar where its visual tag sits: tucked behind the tag with about a third hidden, or in the tag''s place when the conversation has no tag. It never moves the title or anything else in the row, so scrolling the list shows where something will wake. Hovering the tag says who will come back and when, in your own time. It goes away when the resident is woken for it, or when the commitment is cancelled. Commitments that open a new conversation don''t mark the one they were made in. Takes effect after Rails deployment.'
+clip: commitment-clock

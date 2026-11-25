@@ -1,0 +1,4 @@
+date: 2026-11-19
+title: Mark a whole list read, or tag it, in one go
+body: 'Beside Filter in the conversation list there is now Actions. It works on the conversations the list is showing, in this room with this filter. Mark all as read clears every red eye of yours in them, up to the message each eye was showing: a message that arrives after you looked keeps its eye. Tag them all puts one tag on all of them, or removes it, however long the list. Tagging asks first, because each conversation whose tag changes records it in its transcript; archived conversations hold no tag and are left alone. Each action is one request. The same two actions are in the API for a person''s key: POST /api/v1/conversations/bulk/mark_read and PATCH /api/v1/conversations/bulk/visual_tag, each for up to 500 conversations at a time. Takes effect after Rails deployment.'
+clip: bulk-actions

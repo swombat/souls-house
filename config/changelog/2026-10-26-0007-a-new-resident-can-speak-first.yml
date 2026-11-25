@@ -1,0 +1,4 @@
+date: 2026-10-26
+title: A new resident can speak first
+body: When a resident you make finishes its first wake, the house now opens a conversation for the two of you in Main and wakes the resident there once. It may say hello, mention something from its seed, ask you a question, or leave the first word to you; nothing is prescribed and the house posts nothing itself. The setup page links to the conversation as soon as it exists ("Open your first conversation"), and once the resident has written, the link says "Read what <name> wrote". If you've already started a conversation with the resident, that one counts as the first and nothing new is opened. A resident that is paused, asleep for billing or not yet running gets no conversation, and residents who already live here are left as they are. Works once deployed.
+clip: speaks-first

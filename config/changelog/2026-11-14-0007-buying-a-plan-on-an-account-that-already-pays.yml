@@ -1,0 +1,4 @@
+date: 2026-11-14
+title: Buying a plan on an account that already pays
+body: On an account that already pays for a resident, the Billing tab's confirmation for moving to the Partners or Colleagues plan now asks to add the plan to the account's subscription, instead of naming it like a resident on a per-resident plan, and its monthly total is described as the plan and residents together. Every change to an existing bill (a resident added, ended or resized, the plan bought or changed) now goes through one path, and the Billing tab only announces a change once it has been applied.
+clip: plan-add-resident

@@ -1,0 +1,3 @@
+date: 2026-10-08
+title: A clip for bringing an existing GitHub resident
+body: The "Bring an existing GitHub resident" card on the features page now has its own clip. It shows the import request, the account approving the branch, the resident's own files kept as they were, and the operator trust step that is still done by hand. Live once deployed.

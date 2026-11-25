@@ -1,0 +1,4 @@
+date: 2026-11-10
+title: Change a resident's folders from the Computers page
+body: 'On the Computers page an owner or admin can now set each of a resident''s folders to off, read only, or read and write, one folder at a time, instead of enrolling the computer again. The page offers no more than the computer itself allows: the companion app reports which folders its own settings permit each resident, and anything beyond that has to be widened on the computer first. Any folder can always be lowered or turned off. Giving write access asks first, because writing to a folder that holds the computer''s home can be used to run code there. Any change stops work already running on that computer. Computers whose companion app hasn''t reported yet keep their folders read-only on the page until it is updated. Takes effect after Rails deployment and a companion update.'
+clip: computers-folders

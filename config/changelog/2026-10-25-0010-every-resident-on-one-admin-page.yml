@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: Every resident on one admin page
+body: 'For site admins, the Site Admin menu has a new All Residents page: a grid of every resident on the site, from every account, each on the same card its account sees, with its model, memory and journal counts, disk use, heartbeats and activity chart. Each card also shows where the resident runs, a server icon for the house''s own server or a cloud icon for a resident on its own cloud VM (hover for its location and state), and the email of its account''s owner. Search by name, owner email or model, or show only one kind of hosting. Works once deployed.'

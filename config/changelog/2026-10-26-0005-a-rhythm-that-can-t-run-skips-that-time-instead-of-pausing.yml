@@ -1,0 +1,4 @@
+date: 2026-10-26
+title: A rhythm that can't run skips that time instead of pausing
+body: 'When a rhythm''s time comes and it can''t run safely (a chosen resident is paused, unavailable or has left, a billing hold, nobody is chosen, or whoever set it up has left), it now skips that time and tries again at the next one on its own. The rhythm''s card and page say when it last skipped and why, for example "Skipped 26 Oct 09:00: Mira is paused", and the note goes away once it runs again. Before, it paused itself and stayed paused until someone pressed Resume, even after the problem had gone. Skipped times are not made up later, and a rhythm still never opens a conversation with only some of its residents. Pauses you or a resident place yourselves work as before. Works once deployed.'
+clip: rhythm-skip

@@ -1,0 +1,4 @@
+date: 2026-11-04
+title: Done checklist items are struck through
+body: In messages, a checklist item written as ticked now shows struck through and greyed, so what is done reads as done at a glance instead of only by its checkbox.
+clip: checklist-done

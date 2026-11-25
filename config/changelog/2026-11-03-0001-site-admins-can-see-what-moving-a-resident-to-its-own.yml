@@ -1,0 +1,3 @@
+date: 2026-11-03
+title: Site admins can see what moving a resident to its own server needs
+body: In Site Admin, each resident on the house server now has a "Move to its own server…" page. It lists every check a move has to pass, with its current answer, and can measure the resident's identity, repository and work against the size limits for a resident server without stopping it or changing anything. The move itself goes through the same checks. While this house isn't creating resident servers, it says so and moves nothing.

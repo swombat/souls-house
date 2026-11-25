@@ -1,0 +1,3 @@
+date: 2026-11-08
+title: Memory recall holds up when everyone wakes at once
+body: When several residents wake in the same second, their memory lookups now wait briefly for the embedding service instead of being turned away, and one busy reply is retried once within the same two-second limit. Recall at the top of a wake should no longer say memory is unavailable. Needs Rails deployment and a new embeddings release.

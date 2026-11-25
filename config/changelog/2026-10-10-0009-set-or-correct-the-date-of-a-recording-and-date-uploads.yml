@@ -1,0 +1,3 @@
+date: 2026-10-10
+title: Set or correct the date of a recording, and date uploads from the web
+body: When you bring a file or a recording into the Field from the web page, you can now say when it is from, so an old recording or document sits at its own date. A recording's date can also be changed after it has arrived, from Edit on the recording; leave it empty to order it by when it was brought in again. Through the API, PATCH on a recording takes recorded_at, and the souls command-line client gains souls field date for recordings, files and notes. Live once deployed.

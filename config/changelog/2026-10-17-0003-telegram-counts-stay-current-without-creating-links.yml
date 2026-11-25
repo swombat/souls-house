@@ -1,0 +1,3 @@
+date: 2026-10-17
+title: Telegram counts stay current without creating links
+body: Open resident settings follow subscriber and bot-configuration changes without replacing unfinished Telegram settings. Registration links are now created only when you choose to reveal one, not on background refreshes.

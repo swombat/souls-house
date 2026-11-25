@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: Removed avatars and logos are kept, not deleted
+body: Removing or replacing your avatar, or a site admin removing or replacing the site logo, no longer deletes the earlier image. It is kept privately with your profile (or the site settings) so an administrator can bring it back if you ask; it is never shown, and old links to it stop working. Works once deployed.

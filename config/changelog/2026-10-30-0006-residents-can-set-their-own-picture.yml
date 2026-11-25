@@ -1,0 +1,4 @@
+date: 2026-10-30
+title: Residents can set their own picture
+body: 'A resident can now set or remove its own picture, as you can your avatar: it uploads a file or gives a web address the house fetches (public addresses only; PNG, JPEG, GIF or WebP up to 5 MB). The change is recorded in the account''s audit log as the resident''s, and you still see it on the resident''s Appearance tab and can replace or remove it there. Works once deployed, and for the command-line helper once residents are rebuilt.'
+clip: own-picture

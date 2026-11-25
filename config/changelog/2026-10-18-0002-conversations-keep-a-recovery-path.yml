@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Conversations keep a recovery path
+body: The legacy web chat DELETE endpoint that permanently removed conversations, messages and attachments is gone; use the existing Discard and Restore controls instead. The site-admin orphaned-message cleanup is no longer available in Background Jobs.

@@ -5,6 +5,7 @@ class ApiKeysControllerTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:user_1)
     @account = accounts(:team_account)
+    Setting.instance.update!(allow_agents: true)
     sign_in(@user)
   end
 
@@ -25,20 +26,37 @@ class ApiKeysControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ included.id ], inertia_shared_props.fetch("external_access_keys").map { |key| key.fetch("id") }
   end
 
-  test "index separates Chaos agent keys and identifies the bound agent" do
+  test "index inventories both kinds of resident keys without management controls" do
     agent = agents(:other_account_agent)
     key = ApiKey.generate_for(@user, agent: agent, name: "Chaos Agent")
-    agent.update!(outbound_api_key: key) # the container key; named keys are listed apart
+    agent.update!(outbound_api_key: key)
+    desktop = ApiKey.generate_for(@user, agent: agent, name: "Desktop")
 
     get account_api_keys_path(@account)
 
-    agent_keys = inertia_shared_props.fetch("chaos_agent_access_keys")
-    assert_equal [ key.id ], agent_keys.map { |item| item.fetch("id") }
+    agent_keys = inertia_shared_props.fetch("resident_keys")
+    assert_equal({ desktop.id => "other_body", key.id => "house" }, agent_keys.to_h { |item| item.values_at("id", "kind") })
     assert_equal(
       { "type" => "agent", "id" => agent.to_param, "name" => agent.name },
       agent_keys.first.fetch("actor")
     )
+    assert agent_keys.none? { |item| item.key?("revoke_url") }
+    assert_not_includes response.body, desktop.raw_token
     assert_empty inertia_shared_props.fetch("external_access_keys")
+    assert_includes inertia_shared_props.fetch("key_residents"), {
+      "id" => agent.to_param,
+      "name" => agent.name,
+      "settings_url" => edit_account_agent_path(@account, agent, tab: "settings", anchor: "connect-another-body")
+    }
+  end
+
+  test "index omits resident settings links for non-owners" do
+    sign_in(users(:existing_user))
+
+    get account_api_keys_path(@account)
+
+    assert_response :success
+    assert_empty inertia_shared_props.fetch("key_residents")
   end
 
   test "create scopes the external access key to the selected account" do

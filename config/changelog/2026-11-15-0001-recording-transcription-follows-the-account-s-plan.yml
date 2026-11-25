@@ -1,0 +1,4 @@
+date: 2026-11-15
+title: Recording transcription follows the account's plan
+body: 'The Field''s transcription allowance for recordings now comes from the account''s plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, the Field''s gauge shows how much of it is used, and the message on a refused recording says how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment.'
+clip: transcription-plan

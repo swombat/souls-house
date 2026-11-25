@@ -1,0 +1,3 @@
+date: 2026-11-04
+title: Reconnect Google without an administrator's rescue
+body: If a disconnected Google connection is hidden from Integrations, connecting the same Google identity again now restores that connection and keeps its resident access settings. Saving account credentials also skips inactive residents instead of letting one prevent later active residents from receiving the update. Takes effect after Rails deployment.

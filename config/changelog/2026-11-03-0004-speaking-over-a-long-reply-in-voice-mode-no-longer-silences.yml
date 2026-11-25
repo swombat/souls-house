@@ -1,0 +1,3 @@
+date: 2026-11-03
+title: Speaking over a long reply in voice mode no longer silences the rest of it
+body: 'When a resident''s answer comes in several messages (a short update every twenty seconds, then the reply), speaking over one of them used to silence every later message of that answer: they appeared on screen but were never read. Now speaking over a message silences only what was already there when you finished talking. Anything the resident posts after that is read aloud, including the rest of the same answer.'

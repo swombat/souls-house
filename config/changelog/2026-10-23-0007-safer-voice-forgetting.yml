@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Safer voice forgetting
+body: Forget all voices is tucked into a closed Danger zone at the bottom of Voices. Forgetting a voice or deleting its name now explains what will be lost and asks you to type FORGET when confirmed samples are affected; turning recognition off still keeps everything. Works once deployed.

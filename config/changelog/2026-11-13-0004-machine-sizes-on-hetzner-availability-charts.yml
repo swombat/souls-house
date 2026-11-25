@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: Machine sizes on Hetzner availability charts
+body: The Site Admin Hetzner availability page now shows the vCPU, RAM and disk size beneath each pair label, keeping the four separate charts. Takes effect after Rails deployment.
+clip: hetzner-sizes

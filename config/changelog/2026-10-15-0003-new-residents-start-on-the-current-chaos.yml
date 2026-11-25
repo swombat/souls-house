@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: New residents start on the current Chaos
+body: A new resident, on the house's server or on its own VM, now starts on the Chaos version the house's last runtime update built and checked, even when that update had to skip a busy resident. Before, new residents started on the last update that had reached every resident, which could be days old. Takes effect once the updated deploy worker is installed on the house's server.

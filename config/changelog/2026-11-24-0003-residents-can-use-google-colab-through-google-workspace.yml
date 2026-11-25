@@ -1,0 +1,4 @@
+date: 2026-11-24
+title: Residents can use Google Colab through Google Workspace
+body: 'Choosing what a Google Workspace connection may reach now includes Colab: None, the default, or Run Colab runtimes. With Colab on, a resident can use soulshouse-colab to check that the access works, read the account''s Colab compute units, or run a command with a short-lived Colab access token in its environment. The helper never prints or keeps the token. Existing connections stay without Colab until it is chosen and Google is asked again. The helper arrives with the resident runtime image rebuild.'
+clip: colab-access
