@@ -79,6 +79,26 @@ for (const role of ['user', 'assistant']) {
   });
 }
 
+test('a commit not on master reads as not merged yet, never as a failure', async () => {
+  const { container } = render(MessageBubble, {
+    message: {
+      id: 5,
+      role: 'assistant',
+      content: 'PR head 9c8b7a6',
+      streaming: false,
+      created_at: '2026-10-04T12:00:00Z',
+    },
+  });
+
+  await waitFor(() => expect(badges(container)).toEqual(['unmerged']));
+  const badge = container.querySelector('[data-commit-status="unmerged"]');
+  expect(badge.getAttribute('title')).toBe('Not merged yet: on a branch, not on master');
+  // The badge knows ancestry, not CI: a green PR head must not wear red.
+  const icon = badge.querySelector('svg');
+  expect(icon.getAttribute('class')).toMatch(/(^| )text-muted-foreground( |$)/);
+  expect(icon.getAttribute('class')).not.toMatch(/text-red/);
+});
+
 test('no lookups while a message is still streaming', async () => {
   render(MessageBubble, {
     message: {

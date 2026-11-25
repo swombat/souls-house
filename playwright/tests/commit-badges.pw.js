@@ -52,6 +52,12 @@ test('site admins see deploy status badges on commit ids', async ({ mount, page 
   );
   await expect(component.locator('pre [data-commit-status]')).toHaveCount(0);
   await expect(component.locator('[data-commit-status="deployed"]').first()).toHaveAttribute('title', /running build/);
+  // A branch commit reads as not merged yet, in a neutral colour: the badge
+  // knows ancestry, not CI, so it must not look like a failure.
+  const unmerged = component.locator('[data-commit-status="unmerged"]').first();
+  await expect(unmerged).toHaveAttribute('title', /^Not merged yet/);
+  await expect(unmerged.locator('svg')).toHaveClass(/(^| )text-muted-foreground( |$)/);
+  await expect(component.locator('[data-commit-status] svg[class*="text-red"]')).toHaveCount(0);
   await page.screenshot({ path: 'tmp/commit-badges.png' });
 });
 
@@ -101,7 +107,10 @@ test("an account's connected repository badges its own commits, never as deploye
   );
   await expect(component.locator('[data-commit-status="off_default"]')).toHaveAttribute(
     'aria-label',
-    'Not on the default branch'
+    'Not merged yet: not on the default branch'
+  );
+  await expect(component.locator('[data-commit-status="off_default"] svg')).toHaveClass(
+    /(^| )text-muted-foreground( |$)/
   );
   await expect(component.locator('[data-commit-status*="deployed"], [title*="master"]')).toHaveCount(0);
   expect(requests[0].sort()).toEqual(['51625a7', 'acme/web@783ab2e']);

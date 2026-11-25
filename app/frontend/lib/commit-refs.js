@@ -84,12 +84,14 @@ export function commitRefLookupable(token, settings) {
 // deployed/merged/unmerged are the house repository's, measured against its
 // running build and master. An account's repository is only ever measured
 // against its own default branch (whatever it is called), never deployment.
+// unmerged/off_default say "not merged yet", never failure: nothing here
+// knows whether the commit's checks passed.
 export const STATUS_LABELS = {
   deployed: 'Deployed: included in the running build',
   merged: 'On master, not yet deployed',
-  unmerged: 'Not on master',
+  unmerged: 'Not merged yet: on a branch, not on master',
   on_default: 'On the default branch',
-  off_default: 'Not on the default branch',
+  off_default: 'Not merged yet: not on the default branch',
 };
 
 // One stable array, so Streamdown is not handed a new extensions list per render.
