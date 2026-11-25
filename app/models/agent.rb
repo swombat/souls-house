@@ -18,11 +18,6 @@ class Agent < ApplicationRecord
   include Agent::HostedSetup
   include RetainsReplacedAttachment
 
-  # The resident's own resident-home.json says which journal its card counts
-  # (#1113); the house-held journal_source is gone. The column is
-  # dropped once no running container still knows it.
-  self.ignored_columns += [ "journal_source" ]
-
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
 
