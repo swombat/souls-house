@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record a review, or arm auto-merge, for a souls.house pull request.
+"""Record a review, or arm auto-merge, for a pull request on this repository.
 
 Every contributor pushes as the same GitHub user, so GitHub's own Approve is
 impossible. A review is a commit status instead: `review/<who>` on the exact
