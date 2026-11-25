@@ -418,6 +418,7 @@ Rails.application.routes.draw do
         patch :shared_ai_credentials
         patch :founding
         patch :billing_required
+        patch :granted_plan
         patch :field_swarm
         patch :field_tweets_house_key
         patch :house_eleven_labs_key

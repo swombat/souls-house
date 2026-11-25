@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding billing_required field_swarm field_tweets_house_key house_eleven_labs_key x_posting_house_app refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding billing_required granted_plan field_swarm field_tweets_house_key house_eleven_labs_key x_posting_house_app refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -77,6 +77,25 @@ class Admin::AccountsController < ApplicationController
       notice: required ? "New residents in this account now need a plan" : "New residents in this account are on the house"
   end
 
+  # A plan given by the house, with nothing to pay (Account#given_plan).
+  # Blank removes the grant. Everything the plan decides (members, sub-agents,
+  # the plan offer, ElevenLabs, swarm searches, transcription hours) reads
+  # Account#plan when it is needed, so nothing else has to follow. A paid plan
+  # line stays on the account's bill either way; this never touches Stripe.
+  # The value must be sent: a plan id, or an empty string to clear. A missing
+  # or malformed value is refused, never read as "remove the grant".
+  def granted_plan
+    value = requested_granted_plan
+
+    @account.with_lock do
+      before = @account.granted_plan
+      @account.update!(granted_plan: value)
+      audit(:admin_update_account_granted_plan, @account, account_id: @account.id, granted_plan_before: before,
+        granted_plan: value, plan_now: @account.plan.id)
+    end
+    redirect_back_or_to admin_accounts_path(account_id: @account), notice: granted_plan_notice(value)
+  end
+
   def refresh_storage
     @account.agents.hosted.find_each do |agent|
       AgentStorageUsageJob.perform_later(agent.id)
@@ -133,6 +152,20 @@ class Admin::AccountsController < ApplicationController
 
   private
 
+  def requested_granted_plan
+    fields = params[:account]
+    unless fields.is_a?(ActionController::Parameters) && fields.key?(:granted_plan)
+      raise ActionController::BadRequest, "account[granted_plan] is required (an empty string clears it)"
+    end
+
+    raw = fields[:granted_plan]
+    raise ActionController::BadRequest, "account[granted_plan] must be a string" unless raw.is_a?(String)
+    return nil if raw.empty?
+    return raw if raw.in?(Billing::AccountPlan::IDS)
+
+    raise ActionController::BadRequest, "Unknown plan #{raw.truncate(40).inspect}"
+  end
+
   def accounts_json
     @accounts.as_json(
       include: [ :owner ],
@@ -156,6 +189,7 @@ class Admin::AccountsController < ApplicationController
       "x_posting_site_admin_member" => account.includes_site_admin?,
       "x_posting_own_app" => account.x_integration&.own_app? || false,
       "field_swarm" => field_swarm_costs(account),
+      "plan" => plan_json(account),
       "usage" => Admin::AccountUsageReport.new(account).call,
       "memberships" => account.memberships.map { |membership| membership_json(membership) }
     )
@@ -172,6 +206,50 @@ class Admin::AccountsController < ApplicationController
       house_all_time: FieldSwarmSearch.totals,
       enabled_accounts: Account.where(field_swarm_enabled: true).count
     }
+  end
+
+  # Why the account's plan is what it is: the grant, plan codes and a paid
+  # plan line, each as the account has it now.
+  def plan_json(account)
+    subscription = account.live_plan_subscription
+    codes = account.billing_code_redemptions.live.includes(:billing_code).where("effect LIKE 'plan:%'").order(:id)
+    source = account.plan_source
+    {
+      "id" => account.plan.id,
+      "name" => account.plan.name,
+      "source" => source,
+      # Which kind of gift wins when the source is "grant": the house's grant
+      # or a plan code (the house's grant when they give the same plan).
+      "given_by" => (given_by(account) if source == "grant"),
+      "granted_plan" => account.granted_plan,
+      # Whether the account already pays a bill, with or without a plan line
+      # (Billing::Reconcile.applies?, read only). Without one, plan_to_pay_for
+      # is what the first purchase that includes the plan's resident carries.
+      "bill" => Billing::Reconcile.applies?(account),
+      "plans" => Billing::AccountPlan.all.map { |plan| { "id" => plan.id, "name" => plan.name } },
+      "subscription" => subscription && {
+        "plan" => subscription.plan,
+        "plan_name" => subscription.plan_record&.name,
+        "status" => subscription.stripe_status,
+        "in_force" => subscription.in_force?
+      },
+      "plan_codes" => codes.map do |redemption|
+        { "code" => redemption.billing_code.code, "plan" => BillingCode.plan_of(redemption.effect)&.id,
+          "plan_name" => BillingCode.plan_of(redemption.effect)&.name }
+      end,
+      "plan_to_pay_for" => account.plan_to_pay_for&.id
+    }
+  end
+
+  def given_by(account)
+    granted = Billing::AccountPlan.find(account.granted_plan)
+    granted && granted >= account.given_plan ? "house" : "code"
+  end
+
+  def granted_plan_notice(value)
+    return "#{@account.name} no longer has a plan from the house. Its plan is now #{@account.plan.name}." if value.nil?
+
+    "#{@account.name} now has #{Billing::AccountPlan.find(value).name} from the house. Its plan is #{@account.plan.name}."
   end
 
   def membership_json(membership)

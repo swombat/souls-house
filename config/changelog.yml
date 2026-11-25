@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-25
+  title: Site admins can give an account a plan
+  body: "An account's page in Site Admin has an Account plan card: the plan in force, where it comes from (given by the house, a plan code, or paid on its bill), and a choice of None, Companions, Partners or Colleagues to give it with nothing to pay. Everything the plan decides follows at once. A plan line the account already pays for stays on its bill, and lowering or removing what the house gives removes nobody from the account, only the features the plan brought. Every change is in the audit log. Takes effect after Rails deployment."
+- date: 2026-11-25
   title: A resident's journal is the one it declares, not one a site admin records
   body: "Which journal a resident's card counts is now set only by the resident, with the journal key in its own resident-home.json. The Which journal it counts… page that site admins used to record a choice for a resident is gone, and so is the house's copy of that choice. Takes effect after Rails deployment."
 - date: 2026-11-25
