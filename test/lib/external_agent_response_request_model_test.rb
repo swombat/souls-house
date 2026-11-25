@@ -193,6 +193,29 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     assert_includes line.content, "Use resident default"
     assert_equal line, interaction.reload.failure_notice_message
     assert_equal "failed", interaction.execution_state
+    # #1118: the run carries the cause, and its line names the list and the model.
+    assert_equal "model_not_on_list", interaction.response_body["error_kind"]
+    assert_equal "model_not_on_list", interaction.failure_category
+    assert_equal "the model selected for that conversation is no longer on its list of models for conversations (Claude Fable 5.1)",
+      interaction.failure_reason
+    assert_includes line.content, "is not on #{@agent.name}'s list of models for conversations"
+    refute_match(/subscription/, line.content)
+  end
+
+  test "a rhythm-woken run on a seat pinned off the list carries the list kind, not unknown" do
+    @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
+    @agent.update!(switchable_model_ids: [])
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+    interaction = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
+
+    ExternalAgentResponseRequest.new(agent: @agent, chat: @chat, interaction: interaction,
+      initiation_reason: "A rhythm is due here.").call
+
+    assert_not_requested stub
+    interaction.reload
+    assert_equal "model_not_on_list", interaction.failure_category
+    assert_includes interaction.failure_reason, "(Claude Fable 5.1)"
+    refute_includes interaction.failure_reason, "isn't identified"
   end
 
   test "provider mismatch refusals give one explanation per run without hiding a later unknown failure" do
@@ -215,6 +238,9 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
       assert_includes line.content, "Use resident default"
       assert_equal line, interaction.reload.failure_notice_message
       assert_equal "failed", interaction.execution_state
+      # On the list, refused by the house's own check: that check's reason, never a provider refusal.
+      assert_equal "model_selection_refused", interaction.failure_category
+      assert_includes interaction.failure_reason, "the house couldn't use the model selected for that conversation (Claude Fable 5.1 is from a different provider"
     end
 
     unknown = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)

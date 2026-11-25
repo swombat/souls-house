@@ -36,6 +36,8 @@ class ResidentHealthMailer < ApplicationMailer
     "authentication_error" => [ "Check the key, or reconnect the subscription, in %{name}'s Settings tab.", :settings ],
     "subscription_limit" => [ "Runs should complete again when the subscription's limit resets. To use a different subscription or a key, open %{name}'s Settings tab.", :settings ],
     "model_unavailable" => [ "Choose a model their subscription includes in %{name}'s Settings tab.", :settings ],
+    "model_not_on_list" => [ "Add the model back to %{name}'s list of models for conversations in their Settings tab, or choose another from %{name}'s button in that conversation.", :settings ],
+    "model_selection_refused" => [ "Choose another model from %{name}'s button in that conversation, or change %{name}'s default model or list of models in their Settings tab.", :settings ],
     "fallback_cap_reached" => [ "Raise the paid fallback's cap in %{name}'s Settings tab, or wait for the next period.", :settings ],
     "fallback_payer_key_missing" => [ "Add the account's own OpenRouter key, or turn the paid fallback off, in %{name}'s Settings tab.", :settings ],
     "fallback_model_unavailable" => [ "Choose another paid fallback model in %{name}'s Settings tab.", :settings ]

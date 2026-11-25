@@ -92,12 +92,12 @@ class ExternalAgentTelegramRequest
   def surface_runtime_failure!(result)
     return if subscription.group?
     if provider == "kimi"
-      text = KimiCodeNotice.text(result.dig(:body, "error_kind"))
+      text = KimiCodeNotice.text(ModelRefusal.error_kind(result[:body]))
       send_notice(text) if text
       return
     end
 
-    case result.dig(:body, "error_kind")
+    case ModelRefusal.error_kind(result[:body])
     when "auth_expired"
       agent.mark_provider_connection_status!(provider, "expired")
       send_notice("Provider connection expired. Reconnect it in the resident's settings.")

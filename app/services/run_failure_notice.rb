@@ -18,6 +18,8 @@ class RunFailureNotice
     "fallback_provider_refused" => "its paid fallback's provider refused a request it made",
     "runtime_unavailable" => "its runtime couldn't be reached",
     "container_paused" => "its container is paused, and what paused it isn't confirmed",
+    "model_not_on_list" => "the model selected for that conversation is no longer on its list of models for conversations",
+    "model_selection_refused" => "the house couldn't use the model selected for that conversation",
     "model_unavailable" => "its model isn't available on its subscription",
     "provider_challenge" => "its model provider's edge answered with HTTP 403, a Cloudflare challenge page",
     "provider_transient" => "its model provider answered with a server error or an overload",
