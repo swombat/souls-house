@@ -1,0 +1,3 @@
+date: 2026-11-03
+title: In voice mode, a reply you talk over comes back when you stop
+body: 'Speaking over a resident''s reply in voice mode still stops it at once, but it is no longer lost. When you finish speaking, the reply you interrupted plays again: from the beginning if you cut in within its first five seconds, otherwise from where it stopped. Then anything queued behind it, then whatever arrived while you were talking, in order. Only ending voice mode drops it.'

@@ -1,0 +1,4 @@
+date: 2026-11-06
+title: A new integration asks which residents can use it
+body: Connecting a service used to drop you back on the Integrations list with nobody able to use it, which looked like the integration wasn't working. Now a new connection lands on a step that asks which residents can use it, with the same switches as its card and a way to skip; Telegram and WhatsApp offer the same step once they are signed in. Any integration that no resident can use is shown in red on the Integrations page. Takes effect after Rails deployment.
+clip: integration-residents-step

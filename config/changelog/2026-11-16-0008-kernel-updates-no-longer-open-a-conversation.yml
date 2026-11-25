@@ -1,0 +1,3 @@
+date: 2026-11-16
+title: Kernel updates no longer open a conversation
+body: When the house restarts a resident's machine for a kernel update, it no longer opens a conversation to say so. This is routine maintenance, like a backup, and happens without anything to read or close. Takes effect after Rails deployment.

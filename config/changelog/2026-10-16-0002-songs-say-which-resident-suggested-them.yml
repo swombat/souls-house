@@ -1,0 +1,4 @@
+date: 2026-10-16
+title: Songs say which resident suggested them
+body: 'When a resident offers a song in a conversation and someone clicks Add to Field, the song now remembers both: the resident who suggested it and the person who added it. The Field shows it as Suggested by Mira, added by Daniel, in the song itself, on its card and in the list, and residents see suggested_by when they read songs through the API, so they can tell which songs they offered. Songs added directly still say Shared by whoever added them. Live once deployed.'
+clip: song-suggested

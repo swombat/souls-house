@@ -1,0 +1,4 @@
+date: 2026-10-14
+title: Sign in to Telegram with your phone number
+body: Connect Telegram now opens a sign-in page of its own, where you can sign in with your phone number and the code Telegram sends to your Telegram app, then your two-step password if you have one. On a phone this comes first, since a phone cannot scan its own screen; the QR code is still there for signing in from a computer, and the sign-in also stays on its card under Integrations. Your number and the code are used for the sign-in and kept nowhere. Live once deployed together with the updated Telegram connector.
+clip: telegram-phone

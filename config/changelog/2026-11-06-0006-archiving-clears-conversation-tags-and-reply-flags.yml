@@ -1,0 +1,4 @@
+date: 2026-11-06
+title: Archiving clears conversation tags and reply flags
+body: Archived conversations no longer keep their visual tag or count towards the red-eye reply badges. Restoring a conversation does not restore its old tags or flags. Existing archived conversations are cleared after Rails deployment.
+clip: archive-clears-tags

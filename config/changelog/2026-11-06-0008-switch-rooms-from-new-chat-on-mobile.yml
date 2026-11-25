@@ -1,0 +1,4 @@
+date: 2026-11-06
+title: Switch rooms from New Chat on mobile
+body: The room dropdown on mobile now switches the active room and its conversation shortcuts instead of only choosing where the next chat will go. New chats on both mobile and desktop start in the active room (Main when viewing All chats); the dropdown is hidden on desktop.
+clip: switch-rooms-mobile

@@ -1,0 +1,3 @@
+date: 2026-10-20
+title: Long transcripts stay responsive, and Look again says what it can find
+body: 'A recording''s transcript page no longer downloads its whole transcript again each time something else updates it, such as a reconnection, a speaker being named or a summary arriving. On a 50-minute meeting that was over 2 MB each time, and while the server was busy with new uploads the page could freeze. The words now load once, and again only when the transcript itself changes. Look for known voices again now says which voices are checked enough to guess (or that none are yet), so a press that finds nothing isn''t a mystery: speakers someone has named keep their names, and an unconfirmed guess can change. Works once deployed.'

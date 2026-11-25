@@ -1,0 +1,4 @@
+date: 2026-10-20
+title: '"Maybe Anna?" hints from voices not checked yet'
+body: 'A voice the Field has learned but not yet checked against recordings it wasn''t learned from can now suggest too, as a weaker hint: an unnamed speaker''s card says "Maybe Anna?" and that this voice hasn''t been checked yet. A checked voice''s guess always comes first, and a hint has to pass the same match score and lead over every other voice. Confirming a hint names the speaker and teaches that voice, which is how it gets the second recording its check needs. Look for known voices again says which voices guess with confidence and that others can hint. Works once deployed.'
+clip: field-hint

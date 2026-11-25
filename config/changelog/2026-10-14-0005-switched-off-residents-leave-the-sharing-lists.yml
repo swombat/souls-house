@@ -1,0 +1,3 @@
+date: 2026-10-14
+title: Switched-off residents leave the sharing lists
+body: The resident access lists under Integrations (Telegram, GitHub and the rest) and the reader list on a device stream now show only residents that are switched on. Discarded test VMs and other residents that are switched off no longer fill them. One that is switched off but still has access keeps its row, so you can take the access away. Live once deployed.

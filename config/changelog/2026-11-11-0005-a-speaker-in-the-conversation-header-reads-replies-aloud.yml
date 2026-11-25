@@ -1,0 +1,4 @@
+date: 2026-11-11
+title: A speaker in the conversation header reads replies aloud
+body: Each conversation's header now has a speaker. Tap it and every resident reply that arrives from then on is read aloud once, in order, with your account's voice; earlier messages are never read. It doesn't use the microphone, so it works where voice mode struggles, outdoors or in a noisy street. On a phone the tap that turns it on is also what lets the browser play the replies; if the browser refuses one anyway, a small Tap to play appears beside the speaker and plays it. Tap the speaker again to stop, even in the middle of a reply. The choice is kept for that conversation on that device, so it is still on after a reload. While voice mode is open it reads the replies itself and the speaker shows as paused. Takes effect after Rails deployment.
+clip: header-speaker

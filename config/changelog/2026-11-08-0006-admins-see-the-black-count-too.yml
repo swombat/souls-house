@@ -1,0 +1,4 @@
+date: 2026-11-08
+title: Admins see the black count too
+body: Account admins now see the black count for an expired subscription login or a resident whose scheduled runs are failing, not only owners. Plain members still don't, and approving another house's shared integration stays with owners.
+clip: admin-black-count

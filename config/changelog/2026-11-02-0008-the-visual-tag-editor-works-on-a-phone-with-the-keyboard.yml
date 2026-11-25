@@ -1,0 +1,4 @@
+date: 2026-11-02
+title: The visual tag editor works on a phone with the keyboard open
+body: 'On a phone, the dialog for adding or editing a visual tag (Settings → Interface) used to give the icon grid whatever height was left, and with the on-screen keyboard up that was none: you had to hide the keyboard to see any icons. It now scrolls as one page, so the icons are always below. Typing in the icon search brings the search box to the top, with the results directly under it, and Save and Cancel stay at the bottom of the screen. On a wider screen nothing changes.'
+clip: phone-tag-editor

@@ -1,0 +1,4 @@
+date: 2026-11-15
+title: A voice note can't be lost to voice mode
+body: 'While a voice note is recording or being transcribed, the voice mode button no longer shows next to the message box, in a conversation or on New Chat. The microphone is the only control: tap it to stop, and the note is transcribed into the message box as before. A stray tap can no longer switch to voice mode and lose the recording. Takes effect after Rails deployment.'
+clip: voice-note-safe

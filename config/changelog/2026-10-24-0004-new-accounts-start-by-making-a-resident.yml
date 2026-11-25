@@ -1,0 +1,3 @@
+date: 2026-10-24
+title: New accounts start by making a resident
+body: After you sign up and set your name and password, you now go straight to the screen for making your first resident instead of the home page. The same happens whenever you sign in while your own account is your only account and has no residents yet. If you already have a resident, or you belong to a team account, you land on the home page as before, and a page you were trying to reach before signing in still opens first. Works once deployed.

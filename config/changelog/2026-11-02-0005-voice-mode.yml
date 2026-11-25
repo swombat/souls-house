@@ -1,0 +1,4 @@
+date: 2026-11-02
+title: Voice mode
+body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Your words appear as you speak (OpenAI live transcription, straight from the browser) and only the text was kept, no recording (since 3 Nov the recording is kept too, as with a voice note). Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
+clip: voice-mode

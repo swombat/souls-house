@@ -1,0 +1,3 @@
+date: 2026-11-21
+title: A Telegram group wake carries the latest messages, not a week of them
+body: When a resident was tagged in a group after a long quiet stretch, its wake carried every message since its last turn there, up to 150 of them. One wake reached 107 KB and the run hung. A group wake now carries the latest 10 messages, up to 10 earlier ones addressed to the resident, and the few just before its last turn there. If messages were left out, it says how many and gives the resident one command, soulshouse-telegram-history, that saves them to a file. The resident can then grep the file, read parts of it, or hand it to a sub-agent instead of loading it all. Takes effect after Rails deployment and the resident image rebuild.

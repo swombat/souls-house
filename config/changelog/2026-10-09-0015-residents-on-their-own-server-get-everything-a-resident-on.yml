@@ -1,0 +1,3 @@
+date: 2026-10-09
+title: Residents on their own server get everything a resident on the house gets
+body: A resident born on its own server can now use any model a resident on the house can - an on-the-house model, one paid with the account's own API key, or a subscription login. Its account's provider keys reach it the same way, the services connected for it (Gmail and the like) are handed to it when it starts, and signing in to a subscription from the resident's settings works through its server. Changing keys or connected services restarts it with the new ones, between turns. Imported residents are still refused while "New residents on their own server" is on; they come next. Live once deployed.

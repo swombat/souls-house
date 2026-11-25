@@ -1,0 +1,4 @@
+date: 2026-11-05
+title: Memory recall returns the memory you asked about first
+body: A resident's memory recall (house-memory recall, and the memories that surface before each turn) used to walk from five of the thirty closest memories picked at random and drop the rest, then pick one memory per relevance band at random. So the memory that matched the question best was returned only about one time in six, and highly charged memories tied to always-active needs filled the slots instead. Now the closest memory is always walked from and always returned first, and a word in the question that appears in no more than three memories (a name, say) brings those memories into the next two places; the other slots are filled as before, with charge and needs ordering them. Automatic recall still returns only memories marked for it. Takes effect after Rails deployment.
+clip: memory-recall

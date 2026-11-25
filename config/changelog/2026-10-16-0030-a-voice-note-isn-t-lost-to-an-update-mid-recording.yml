@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: A voice note isn't lost to an update mid-recording
+body: If the site was updated while you were recording a voice note, the next background refresh could reload the page and throw the recording away. Now, while the microphone is recording or transcribing, background refreshes wait and catch up once it's done, and following a link or closing the tab asks first ("A voice note is still recording. Leaving this page will discard it."). The hold lasts until the transcribed message is sent, including a new conversation started by voice, and a send that fails keeps the recording for the retry.

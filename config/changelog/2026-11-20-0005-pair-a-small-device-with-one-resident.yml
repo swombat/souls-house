@@ -1,0 +1,4 @@
+date: 2026-11-20
+title: Pair a small device with one resident
+body: A small device, such as an M5Stack, can now be paired from Settings → Computers → Add a computer, with the code it shows. You choose one resident, and pairing makes a new conversation for the device with that resident; everyone in the account can read it, like any conversation. The device can post a voice clip (up to 60 seconds, transcribed like a voice note) or a photo there, shown as from the device, and the resident's reply to that clip comes back to the device as text. Its microphone and camera start off; only the member who paired it can turn them on, and any owner or admin can turn them off, pause it or remove it. One clip is answered at a time, and a reply goes back only when it is plainly the answer to that clip. Takes effect after Rails deployment and needs the device's own firmware.
+clip: pair-small-device

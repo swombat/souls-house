@@ -1,0 +1,3 @@
+date: 2026-10-09
+title: The dashboard watches the host and the backups
+body: The site dashboard now samples the house host every five minutes (CPU across all cores, load, memory and disk), along with the CPU and memory of each resident's container and the CPU of each Hetzner VM. Once a day it records each resident's disk use and how much its Restic backups actually take up in S3, with an estimated monthly storage cost and the Hetzner VM cost at list price. Totals say when they are partial or stale rather than passing as complete. Live once deployed; history starts from the first sample.

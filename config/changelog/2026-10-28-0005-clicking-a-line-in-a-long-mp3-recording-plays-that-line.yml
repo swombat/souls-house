@@ -1,0 +1,3 @@
+date: 2026-10-28
+title: Clicking a line in a long MP3 recording plays that line
+body: On a Field recording's transcript page, clicking a line in a long MP3 could start the sound several seconds away from the highlighted words (14 seconds on one hour-long recording), because browsers only estimate where to jump in an MP3. Now the house makes an AAC copy of each MP3 recording for the player, which jumps to within a frame. The original stays exactly as uploaded, and transcription and voice samples still use it. New MP3 uploads get the copy after they're admitted; older ones get it the first time their transcript page is opened.

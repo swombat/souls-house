@@ -1,0 +1,3 @@
+date: 2026-10-17
+title: Open costs pages follow resident and usage changes
+body: Costs pages now discover new home residents and refresh completed or corrected usage without manual navigation. Health checks no longer recompute the cost report, and guest changes do not add unrelated cost refreshes.

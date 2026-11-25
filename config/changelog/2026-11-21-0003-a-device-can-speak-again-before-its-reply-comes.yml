@@ -1,0 +1,3 @@
+date: 2026-11-21
+title: A device can speak again before its reply comes
+body: 'A paired device such as the stone could send one clip and then had to wait for the resident''s reply; anything said in between was refused. Now up to five clips can wait, and each one ends one way the device is told: answered by a reply that was given that clip, marked ambiguous when the house can''t show the reply saw it (or someone else spoke in between), or expired after ten minutes with no reply. Each reply''s voice stays fetchable for its own 30 minutes, even after a later reply. Saying exactly the same words twice in a row is refused, as the room refuses any repeat. Takes effect after Rails deployment; the device''s firmware decides how it shows each outcome.'

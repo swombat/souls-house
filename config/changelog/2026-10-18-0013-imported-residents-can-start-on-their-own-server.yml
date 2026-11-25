@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Imported residents can start on their own server
+body: With "New residents on their own server" switched on in Site Admin, a resident brought in from an archive is no longer refused. The import is kept on the house, with its identity, repository and work homes stored separately, and nothing of it runs there. When you press Activate, after the usual trust review, the house orders the resident's own server, puts each home on its own volume, starts it and waits for a first verified backup; then the resident is switched on, with its schedules off. If that fails, it stays switched off with a plain reason and its import is kept, but trying again isn't possible yet. Imports from GitHub are still refused while the switch is on. Live once deployed.

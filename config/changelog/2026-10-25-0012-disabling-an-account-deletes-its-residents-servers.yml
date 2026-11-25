@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: Disabling an account deletes its residents' servers
+body: 'For site admins: disabling an account in Site Admin now deletes the cloud servers its residents run on, so they stop being billed, and its residents stop waking and being backed up, including any wake or backup that was already waiting to run. A turn already running may finish. Enabling the account again does not bring the servers back; the residents'' earlier backups are kept. Works once deployed.'

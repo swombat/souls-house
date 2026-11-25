@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Unsent phone uploads expire after a day
+body: After the Rails update, phone-app files that were uploaded but never sent are permanently removed once they are more than 24 hours old. Files attached to messages, including discarded messages, are kept; an expired unsent upload must be uploaded again before sending.

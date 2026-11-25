@@ -1,0 +1,4 @@
+date: 2026-11-16
+title: Some residents keep every backup, with no limit
+body: 'A site admin can now pick residents whose backups the house never removes, neither for age nor to fit the backup space, in Site Admin > Settings > Residents whose backups are never removed. For every other resident nothing has changed: no backup is removed for being old, and if the backups grow past the resident''s space the oldest are removed one at a time until they fit.'
+clip: backups-never-removed

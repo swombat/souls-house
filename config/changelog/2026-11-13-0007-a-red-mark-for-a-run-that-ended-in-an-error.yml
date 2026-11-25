@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: A red mark for a run that ended in an error
+body: When a resident's last run in a conversation ended in an error or timed out, the conversation's row in the sidebar, and its header, now show a red circled exclamation mark where the commitment clock sits. Hover over it to see whose run it was. It takes precedence over the clock and over the handoff-limit hand, which is now yellow. It clears by itself when that resident's next run in the conversation starts or ends cleanly. Takes effect after Rails deployment.
+clip: error-mark

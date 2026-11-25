@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Edit a recording's title where it is
+body: In the Field, the title of a recording now opens the edit form when you double-click it with a mouse, or press and hold it on a touch screen, with the title field ready to type over. A tap, or a press that turns into a scroll, doesn't open it, and with a mouse you can still select the title's text. The Edit button works as before. Works once deployed.

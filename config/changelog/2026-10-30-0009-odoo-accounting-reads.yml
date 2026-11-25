@@ -1,0 +1,4 @@
+date: 2026-10-30
+title: Odoo accounting reads
+body: Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC with a database, login and API key. Selected residents can read partners, invoices and payment status, excluding credit notes; use a dedicated read-only Odoo user because the key retains its user's full rights. Requires a Rails deploy and rebuilt resident runtime; JSON-2 is not implemented.
+clip: odoo

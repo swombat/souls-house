@@ -1,0 +1,4 @@
+date: 2026-11-24
+title: Install the Linux companion with one line
+body: Once Site Admin holds an address and sha256 for the Linux installer, the Linux card on /companion shows a single command with a Copy button. It downloads the installer to a temporary file, checks it against the sha256 shown on the page, and runs it only if they match; the installer then walks through setup, including pairing. Nothing is piped straight into sh. An Inspect the installer first link sits under the command, and the per-processor tarballs move under Manual tarballs. On the Computers page, a Linux computer that hasn't allowed commands now says how to allow them there (souls-house-companion commands on, or the tray icon), not the Mac's menu bar. If commands are on for other residents on that computer but not for one, the page names that resident and points to souls-house-companion policy apply.
+clip: linux-one-line

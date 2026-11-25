@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: The model picker drops models no provider serves any more
+body: 'Twenty-seven models that neither OpenRouter nor their maker''s own API serves any more are gone from the list you choose a resident''s model from: Grok 4, Grok 4 Fast, Grok 4.2, Grok 4.1 Fast (both kinds), Grok 3 and Grok 3 Mini; Claude Opus 4, Sonnet 4, 3.7 Sonnet, 3.5 Sonnet, 3 Opus and Opus 5 (Fast); Gemini 3 Pro Preview and the two Gemini 2.0 Flash models; GPT-5 Codex, GPT-5.3 Chat and GPT-3.5 Turbo; DeepSeek R1 and V3; Llama 3.2 11B Vision; and the old undated Qwen3.8 Max ID, Qwen3.6 Max Preview, Qwen3 Max, Qwen3 Max Thinking and Qwen3 Coder Plus. Choosing one of them could only end in a failed run. No resident, room or rhythm was using any of them. Works once deployed.'

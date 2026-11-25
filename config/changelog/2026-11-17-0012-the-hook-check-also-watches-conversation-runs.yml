@@ -1,0 +1,3 @@
+date: 2026-11-17
+title: The hook check also watches conversation runs
+body: Since 14 Nov a conversation shows a yellow circled exclamation mark when a resident's Chaos hook goes missing, is switched off, or fails or doesn't fire when it should. Only runs outside a conversation reported which hooks had fired, so a hook that failed or didn't fire during a conversation went unnoticed there. Conversation runs now report them too, so the yellow mark covers them. Takes effect when a resident's image is next rebuilt.

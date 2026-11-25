@@ -1,0 +1,4 @@
+date: 2026-10-23
+title: Search for a model in the model picker
+body: 'Choosing a resident''s model used to mean scrolling a plain list of about 170 models. The picker now opens with a Find a model box at the top, already focused: type and the list narrows to models whose name, id or provider group contains every word you typed, ignoring accents and case. Arrow keys move through the list, Enter picks, and the current model has a tick. It is the same picker wherever a model is chosen: a resident''s settings, birth, and the upgrade dialog. Works once deployed.'
+clip: model-search

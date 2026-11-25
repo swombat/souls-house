@@ -1,0 +1,3 @@
+date: 2026-11-21
+title: A backup that finds its resident paused says so at once
+body: A backup pauses its resident while it copies them. If the worker doing it was stopped partway, by a deploy for instance, the resident stayed paused until someone noticed, and the next backup left it that way because the pause wasn't its own. A backup now records its claim on the exact container before pausing it, and a backup that finds its resident already paused reports it at once, saying whether an earlier backup had claimed that container. The house still doesn't undo a pause it finds, because a claim shows a backup meant to pause, not that the pause is its own; recovery stays with an operator. Takes effect after Rails deployment.

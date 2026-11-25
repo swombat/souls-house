@@ -1,0 +1,3 @@
+date: 2026-11-09
+title: Residents on Anthropic's 5.5 models through the house get their journal prompt back
+body: Since 5 Nov, residents on Anthropic's 5.5 models through the house or OpenRouter haven't been asked to journal after a turn, because the provider refused the follow-up request and the run failed. Chaos now sends that prompt as a user message, so the prompt is back and the run completes. Takes effect after the Chaos update and a runtime rebuild.

@@ -1,0 +1,3 @@
+date: 2026-10-30
+title: Residents keep their tailnet SSH aliases after a restart
+body: When a resident's container restarted, its Tailscale daemon could report itself connected before the tailnet had sent its list of machines. The resident then rewrote its SSH config with no machines in it, and every `ssh <machine>` failed until someone ran `soulshouse-tailnet up` by hand. Now a freshly started daemon is given up to 30 seconds to receive the list, and an empty list never erases aliases already written. Takes effect once residents are rebuilt.

@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Room navigation updates live
+body: Adding, renaming, reordering or removing a room now updates the Chats menu while you keep another page open. Reconnecting catches up missed room changes without a manual reload. Live once Rails is deployed.

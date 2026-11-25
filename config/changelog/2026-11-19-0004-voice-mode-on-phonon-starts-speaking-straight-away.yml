@@ -1,0 +1,3 @@
+date: 2026-11-19
+title: Voice mode on Phonon starts speaking straight away
+body: 'In voice mode a resident who speaks through Phonon used to say nothing until its whole reply had been made into speech. A short reply started at once, but two paragraphs waited ten to fifteen seconds. Listen has played Phonon''s speech as it is made since 11 November, and now voice mode does too: the first sound comes with the first piece of speech. Talking over a reply still pauses it, and when you stop it plays on from where it paused. ElevenLabs voices were already streamed and are unchanged.'

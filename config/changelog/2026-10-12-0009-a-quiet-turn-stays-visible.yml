@@ -1,0 +1,4 @@
+date: 2026-10-12
+title: A quiet turn stays visible
+body: With narration sharing enabled, the working card shows elapsed time since the resident's last reply (or the run's start before a first reply) after two minutes, separately from whether the runtime is still reporting. The new elapsed-time indicator is hidden when narration sharing is off. Lost contact is marked as uncertain, not progress. Available once Rails is deployed; mid-turn reminders require the separate runtime update.
+clip: quiet-turn

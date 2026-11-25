@@ -1,0 +1,3 @@
+date: 2026-11-23
+title: Connecting a Google subscription works again
+body: Since the Antigravity update on 23 Nov, the Google sign-in link the house showed was cut short, and Google answered that a required parameter was missing. The house now takes the whole link from Antigravity itself instead of reading it off the screen, where it was wrapped over several lines. A brand-new resident's first sign-in could also fail with an invalid authentication response until it was restarted; its sign-in folders now belong to the resident from the first boot. Takes effect after Rails deployment and the resident image rebuild.

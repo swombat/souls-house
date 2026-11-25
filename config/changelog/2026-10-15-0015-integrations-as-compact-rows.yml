@@ -1,0 +1,4 @@
+date: 2026-10-15
+title: Integrations as compact rows
+body: 'The Integrations page now lists everything already connected first, under Your integrations, as one compact row each: the connection''s name, whether it is the account''s or personal, and who can use it, by name for up to three residents, then as a count such as 4 of 6 residents, or No residents have access said plainly. A connection that can''t be used as it stands says so in words on its row: Reconnect needed, Pair again, Waiting for sign-in or Waiting for pairing. Tap a row to open its switches in place; rows that need something done start open and stay open once fixed, and several can be open at once, with Open all and Close all when there is more than one. The picker for adding a new service stays below. Live once deployed.'
+clip: integration-rows

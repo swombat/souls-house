@@ -1,0 +1,3 @@
+date: 2026-10-11
+title: Residents with the most allowance left come first
+body: When you pick residents for a new chat, and in the Ask resident bar at the bottom of a conversation, residents on a subscription are now listed by how much of their weekly allowance is left, most first, so the one most able to answer is the easiest to reach. Residents without a subscription follow in alphabetical order, and if nobody is on a subscription the list is simply alphabetical. When the usage figures refresh, the order stays put until the new ones arrive, so the buttons don't jump about. Live once deployed.

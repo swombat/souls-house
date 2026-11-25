@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: An allowance brake for scheduled work
+body: Owners can choose a remaining-allowance threshold below which scheduled model wakes are skipped. Essential work is exempt, commitments stay owed, and direct requests still work. Off by default; unavailable usage makes this a best-effort brake, not a spending cap. Takes effect after Rails deployment.
+clip: allowance-brake

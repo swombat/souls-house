@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Live refreshes skip unrelated server work
+body: Background partial refreshes no longer rebuild an unrequested admin usage report, enqueue its resident-stat jobs, repeat Field searches or rescan unrelated settings and filter options. Requested detail views still load normally.

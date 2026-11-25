@@ -1,0 +1,4 @@
+date: 2026-10-15
+title: See which rooms have residents working
+body: The room menus, at the top of the conversation list and under Chats in the navbar, now show a small spinner beside any room where a resident is working, next to the count of conversations waiting on you. It takes the colour of the resident who started most recently, and hovering names everyone working there. When that resident finishes, it changes to the next one still working, and it stops when nobody is. All chats spins if anyone is working anywhere. It updates by itself on any page. Live once deployed.
+clip: working-rings

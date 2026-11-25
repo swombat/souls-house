@@ -1,0 +1,3 @@
+date: 2026-11-12
+title: A fresh look at resident hosting
+body: The VM hosting decision now separates current prices and stock from the earlier comparison, including CPX, Boat, OVH and storage costs. The provider choice is reopened; no resident is moved and no plan or provisioning setting changes. Takes effect after Rails deployment.

@@ -1,0 +1,3 @@
+date: 2026-10-21
+title: Review speaker fingerprint samples
+body: The Field's speaker list now lets you play the exact samples used for a speaker's fingerprint, see whether someone manually confirmed them, and approve or remove contributions. Older samples without recorded source spans are clearly marked and can be rebuilt before review; removing a sample preserves its confirmation and the recording.

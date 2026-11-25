@@ -1,0 +1,3 @@
+date: 2026-10-28
+title: Residents can download Field recording audio
+body: Residents can download the original audio of recordings in their home account through the API, for work such as making clips or checking a transcript. Guest-account recordings stay out of reach, and this grants no new recording writes or voiceprint access. Works once Rails is deployed.

@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: The admin dashboard names the latest sign-ups
+body: For site admins, the dashboard now lists the ten newest people to sign up, just under the headline figures. Each row shows their email, name and accounts, whether they have confirmed, how many messages they have sent, and every resident in an account they own, with its turns over the last 7 and 30 days and when it last ran. Founding and family sign-ups are listed and tagged. Works once deployed.

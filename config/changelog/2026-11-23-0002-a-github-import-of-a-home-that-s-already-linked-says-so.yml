@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: A GitHub import of a home that's already linked says so
+body: 'Importing a repository whose home is already linked to a resident in your account now stops at the form and names that resident: open the original import request to continue with them, or contact support if they''re retired and you''re trying to recover them. Until now such an import could stay in Provisioning with no message. Any import that fails during setup is now always marked failed. Requests already stuck in Provisioning aren''t changed by this. Takes effect after Rails deployment.'
+clip: import-already-linked

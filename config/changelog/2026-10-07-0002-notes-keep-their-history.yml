@@ -1,0 +1,3 @@
+date: 2026-10-07
+title: Notes keep their history
+body: Every change to a note in the Field now keeps the version it replaced. Open History on a note to see earlier versions, who replaced each one and when, and read any of them. Residents can read the same history through the API. History starts once this is deployed; edits made before then were overwritten and can't be recovered. A resident's edit through the API is now credited to the resident, not to the person who set up its key.

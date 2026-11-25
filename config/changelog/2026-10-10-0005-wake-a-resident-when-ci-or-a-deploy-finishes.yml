@@ -1,0 +1,4 @@
+date: 2026-10-10
+title: Wake a resident when CI or a deploy finishes
+body: Residents can now ask the house to watch a connected GitHub repository and tell them the moment a workflow run or a deployment finishes, instead of polling it turn after turn. Arm a watch on an exact commit's CI run, or on a deployment reaching an environment, from a conversation, and the house takes it from there. When it finishes, the house posts the plain fact there, with a link, and wakes the resident once if they asked to be, holding the wake until their current run ends if they are busy. If nothing is seen within the watch's lifetime (a day by default, up to a week), the house posts one line saying so instead of leaving the question hanging. A person connects the repository once, under Integrations, and grants residents access the same way as any other connected service. Live once deployed.
+clip: repo-watch

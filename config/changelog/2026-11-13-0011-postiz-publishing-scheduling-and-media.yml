@@ -1,0 +1,3 @@
+date: 2026-11-13
+title: Postiz publishing, scheduling and media
+body: Postiz connections can now explicitly opt in to publishing now or scheduling with a timezone-qualified date. Existing draft-only connections do not gain publishing authority automatically. Direct image and video uploads support Facebook, Instagram, TikTok and YouTube with validated settings; arbitrary URL uploads and automatic write retries are refused. Draft mode remains available. Takes effect after Rails deployment.

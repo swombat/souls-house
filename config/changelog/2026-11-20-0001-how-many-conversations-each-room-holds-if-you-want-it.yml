@@ -1,0 +1,4 @@
+date: 2026-11-20
+title: How many conversations each room holds, if you want it
+body: 'An account can now show, in the room menus, how many conversations each room holds: a faint number to the left of each room''s name, in the sidebar''s room switcher, the navbar''s Chats menu and the room picker on phones, with the count of conversations waiting on you unchanged beside it. It counts what the room''s list shows, so archived conversations, deleted ones and ones hidden by their tag are left out. It''s off by default because it adds a little noise; any member of the account switches it on under Settings → General → Conversations per room. Takes effect after Rails deployment.'
+clip: room-counts

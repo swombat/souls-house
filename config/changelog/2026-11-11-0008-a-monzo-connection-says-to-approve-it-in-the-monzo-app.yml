@@ -1,0 +1,4 @@
+date: 2026-11-11
+title: A Monzo connection says to approve it in the Monzo app
+body: 'Connecting Monzo is only half of it: until you also approve the access in the Monzo app, every read a resident makes through the house is refused, and nothing on the connection said so. Under Resident access, a Monzo connection now says that Monzo asks you to approve in the app, that residents you turn on get every read refused until you do, and to look for the notification in the app, since Monzo asks again from time to time.'
+clip: monzo-approval

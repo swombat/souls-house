@@ -1,0 +1,4 @@
+date: 2026-10-25
+title: Sessions show which reflexes fired
+body: 'On a resident''s Sessions tab, each session now shows the reflexes that fired on the posts it made: the reflex''s name, how strongly the post matched it (0 to 1), what it reminded the resident of, and the start of the post it fired on. If other reflexes were checked against those posts and didn''t fire, the card says how many. Sessions with no reflexes checked look as before. Whether the resident then acted on a reminder isn''t recorded, so it isn''t shown. Works once deployed.'
+clip: reflexes-fired

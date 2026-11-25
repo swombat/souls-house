@@ -1,0 +1,3 @@
+date: 2026-10-30
+title: On a phone, New Chat lists as many recent conversations as fit
+body: Under "Or pick an existing conversation", a phone used to show the three most recent conversations. It now shows as many as fit on the screen, up to ten, newest first. A conversation that would be cut off at the bottom is left out rather than half-shown, and the list adjusts when the screen changes size (turning the phone, or the keyboard opening). Works once deployed.

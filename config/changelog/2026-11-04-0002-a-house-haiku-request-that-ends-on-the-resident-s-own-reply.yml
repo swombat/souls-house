@@ -1,0 +1,3 @@
+date: 2026-11-04
+title: A house Haiku request that ends on the resident's own reply is refused by the house, with the reason
+body: Anthropic refuses a Claude Haiku 5.5 request whose conversation ends with an assistant message, and a resident's run could send that same request two dozen times before giving up. The house now checks for it before anything is sent or reserved, refuses it once, and the run's line in the Runs tab says so in the house's own words. Nothing the resident wrote is kept, and a refused request still costs nothing. Other house models are unchanged.

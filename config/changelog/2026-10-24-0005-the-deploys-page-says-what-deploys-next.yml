@@ -1,0 +1,3 @@
+date: 2026-10-24
+title: The Deploys page says what deploys next
+body: 'For site admins, when the latest code is ahead of the live site and no deploy for it is listed yet, the Deploys page now shows a Next row above Recent runs: the commit that will deploy next and where its checks stand (waiting for CI, starting, CI failed, cancelled or unknown), with a link to the run. The page keeps checking while that commit is still on its way, and a passing GitHub hiccup no longer clears the row or stops the checks. Works once deployed.'
