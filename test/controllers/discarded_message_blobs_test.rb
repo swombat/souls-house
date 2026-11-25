@@ -54,6 +54,41 @@ class DiscardedMessageBlobsTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "an html preview is served sandboxed, never cached, and denied after discard" do
+    html = "<!doctype html><html><body><h1>Draft</h1><script>alert(1)</script></body></html>"
+    msg = @chat.messages.create!(content: "Preview", role: "user", user: @user)
+    msg.attachments.attach(io: StringIO.new(html), filename: "preview.html",
+      content_type: "text/html", identify: false)
+    files = msg.files_json.first
+    url = files.fetch(:html_preview_url)
+
+    get url
+    assert_response :success
+    assert_equal html, response.body
+    assert_equal "text/html; charset=utf-8", response.content_type
+    assert_equal "private, no-store", response.headers["Cache-Control"]
+    assert_equal "SAMEORIGIN", response.headers["X-Frame-Options"]
+    assert_equal "no-referrer", response.headers["Referrer-Policy"]
+    assert_equal "nosniff", response.headers["X-Content-Type-Options"]
+    assert_equal AttachmentHtmlPreviewsController::CONTENT_POLICY, response.headers["Content-Security-Policy"]
+    assert_includes response.headers["Content-Security-Policy"], "sandbox;"
+    assert_includes response.headers["Content-Security-Policy"], "script-src 'none'"
+    assert_includes response.headers["Content-Security-Policy"], "default-src 'none'"
+
+    msg.discard!
+    get url
+    assert_response :not_found
+  end
+
+  test "an html preview rejects non-html blobs and forged ids" do
+    get "/attachment_html_previews/not-a-signed-id/preview.html"
+    assert_response :not_found
+
+    image_blob = @message.attachments.first.blob
+    get "/attachment_html_previews/#{image_blob.signed_id}/test_image.png"
+    assert_response :unsupported_media_type
+  end
+
   test "an old variant URL is denied after discard" do
     url = @message.files_json.first.fetch(:thumb_url)
     @message.discard!

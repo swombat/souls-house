@@ -322,7 +322,18 @@ class MessageTest < ActiveSupport::TestCase
     assert_match %r{\A/rails/active_storage/blobs/redirect/}, metadata[:inline_url]
     assert_includes metadata[:inline_url], "disposition=inline"
     assert_match %r{\A/attachment_previews/[^/]+/comparison\.md\z}, metadata[:text_preview_url]
+    assert_nil metadata[:html_preview_url]
     assert_includes metadata[:url], "disposition=attachment"
+  end
+
+  test "html attachments carry a sandboxed html preview url" do
+    message = @chat.messages.create!(user: @user, role: "user", content: "Preview attached")
+    message.attachments.attach(io: StringIO.new("<h1>Draft</h1>"), filename: "preview.html",
+      content_type: "text/html", identify: false)
+    metadata = message.reload.files_json.first
+
+    assert_match %r{\A/attachment_html_previews/[^/]+/preview\.html\z}, metadata[:html_preview_url]
+    assert_match %r{\A/attachment_previews/[^/]+/preview\.html\z}, metadata[:text_preview_url]
   end
 
   test "validates file size limit" do
