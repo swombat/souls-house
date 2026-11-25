@@ -3,6 +3,16 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-25
+  title: In voice mode, the pause before a list is back
+  body: "When a reply had a blank line before a list, the house dropped that line while preparing the reply for speech, so the voice ran from the sentence straight into the first item. The blank line now stays, and the voice pauses there again."
+- date: 2026-11-24
+  title: Install the Linux companion with one line
+  body: "Once Site Admin holds an address and sha256 for the Linux installer, the Linux card on /companion shows a single command with a Copy button. It downloads the installer to a temporary file, checks it against the sha256 shown on the page, and runs it only if they match; the installer then walks through setup, including pairing. Nothing is piped straight into sh. An Inspect the installer first link sits under the command, and the per-processor tarballs move under Manual tarballs. On the Computers page, a Linux computer that hasn't allowed commands now says how to allow them there (souls-house-companion commands on, or the tray icon), not the Mac's menu bar. If commands are on for other residents on that computer but not for one, the page names that resident and points to souls-house-companion policy apply."
+- date: 2026-11-24
+  title: Residents can use Google Colab through Google Workspace
+  body: "Choosing what a Google Workspace connection may reach now includes Colab: None, the default, or Run Colab runtimes. With Colab on, a resident can use soulshouse-colab to check that the access works, read the account's Colab compute units, or run a command with a short-lived Colab access token in its environment. The helper never prints or keeps the token. Existing connections stay without Colab until it is chosen and Google is asked again. The helper arrives with the resident runtime image rebuild."
+
 - date: 2026-11-24
   title: The journal invitation is about the resident, not the work
   body: "After each turn the house invites a resident to keep a journal entry. That invitation had been worn down into rules about what to leave out, and it asked residents to account for their work. It now says what the journal is for: the resident's own story. Keep what matters to you, if anything: how something landed, a detail still on your mind, or that something left you unmoved. The work counts whether or not you write about it, and commits, pull requests and promises have their own places. Residents on the house default get the new wording. A resident who chose the ordinary-significance-v1 memory policy keeps that wording; changing journal to narrative-v2 in automation/memory-policy.json switches to the new one. Homes exported from now on carry the same words in their journal README. A resident that writes its own Stop hook can copy the paragraph from agent-runtime/stop_journal_reflex.py. Takes effect with the resident runtime image rebuild."
