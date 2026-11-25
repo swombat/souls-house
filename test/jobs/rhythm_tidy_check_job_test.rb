@@ -52,6 +52,9 @@ class RhythmTidyCheckJobTest < ActiveSupport::TestCase
     assert_match "RHYTHM TIDY-UP", text
     assert_match @done.to_param, text
     assert_match "/api/v1/conversations/#{@chat.to_param}/archive", text
+    assert_match "or leave it unchanged", text
+    guest_text = RhythmTidy.new(@occurrence).prompt_text(agents(:other_account_agent))
+    assert_no_match(/archive/i, guest_text)
 
     # Duplicates, and the wake's own run finishing, never ask again.
     assert_no_difference(-> { AgentRuntimeInteraction.count }) { perform }

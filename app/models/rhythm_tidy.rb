@@ -96,7 +96,7 @@ class RhythmTidy
     <<~TEXT.strip
       RHYTHM TIDY-UP (platform, not a person). This conversation, #{chat.to_param}, is a run of the rhythm #{occurrence.rhythm_title.to_json}. Its opening round has ended, nobody in it has been flagged, no person has spoken in it, and nothing is still running. Yours was the last turn to finish, so you are the one asked: does it need a person to look at it?
 
-      You may mark it done or archive it, so it doesn't sit on the conversation list, or leave it unchanged. #{ways_for(agent)} Use whichever fits how this account keeps its list. Leave it if something in it should be seen (something made that nobody has read yet, or a question for someone), or if you're unsure. Whatever you choose, say nothing in the room, or at most one line. You won't be asked about this run again, and this wake grants no new permissions.
+      So that it doesn't sit on the conversation list, you may use one of these, whichever fits how this account keeps its list, or leave it unchanged. #{ways_for(agent)} Leave it if something in it should be seen (something made that nobody has read yet, or a question for someone), or if you're unsure. Whatever you choose, say nothing in the room, or at most one line. You won't be asked about this run again, and this wake grants no new permissions.
     TEXT
   end
 
