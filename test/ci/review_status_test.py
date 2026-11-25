@@ -3,9 +3,12 @@ from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
 import re
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+# A .pyc under scripts/ would trip the Rails identity-leak scan of that tree.
+sys.dont_write_bytecode = True
 _loader = SourceFileLoader("review_status", str(ROOT / "scripts" / "review-status"))
 _spec = spec_from_loader("review_status", _loader)
 review_status = module_from_spec(_spec)
