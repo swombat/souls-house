@@ -8,11 +8,14 @@
 # - no person has posted in it, apart from the rhythm's own opening message
 #   (a person-created rhythm opens with a message in that person's name);
 # - nothing in it has ever been flagged for a person (a ReplyExpectation in
-#   any state, so dismissing the eye does not hide the run again).
+#   any state, so dismissing the eye does not hide the run again);
+# - it carries no visible tag. A resident tagging a run (Input Required, say)
+#   is asking for it to be seen; a tag that hides from the list keeps it off.
 #
 # The conditions are evaluated from the rows themselves, so promotion needs no
-# state of its own: a person replying, the eye appearing, or a second resident
-# taking a seat each make the run an ordinary listed conversation.
+# state of its own: a person replying, the eye appearing, a visible tag, or a
+# second resident taking a seat each make the run an ordinary listed
+# conversation.
 module Chat::QuietRhythmRun
 
   extend ActiveSupport::Concern
@@ -28,6 +31,10 @@ module Chat::QuietRhythmRun
     AND NOT EXISTS (
       SELECT 1 FROM reply_expectations re JOIN messages fm ON fm.id = re.message_id
       WHERE fm.chat_id = chats.id
+    )
+    AND (
+      chats.visual_tag_id IS NULL
+      OR EXISTS (SELECT 1 FROM visual_tags qvt WHERE qvt.id = chats.visual_tag_id AND qvt.hides_from_list)
     )
   SQL
 
