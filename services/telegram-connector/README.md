@@ -333,17 +333,22 @@ minutes, enforced inside the container by `--deadline` (the process exits 124
 and its connection, with the snapshot, goes with it), because killing the
 `docker exec` client need not end the process Docker started; and the client
 12 minutes, killed with its process group. stderr is drained as it comes and
-only its last 64 KiB kept, which holds the closing JSON line. The bucket has no lifecycle rule, so the job prunes its prefix after
-each successful upload: dumps older than 14 days go, except that the newest
-three always stay. That is a target, not a hard limit: pruning runs only after
-a successful upload, so while dumps fail nothing is pruned, and the newest
-three can be older than 14 days. A disconnected owner's session therefore
-outlives the disconnect in backups by about 14 days when backups are healthy,
-and for longer when they are not.
+only its last 64 KiB kept, which holds the closing JSON line.
+
+**Retention: everything is kept for now.** The bucket has no lifecycle rule,
+and the job's own pruning is switched off (`PRUNE = false`) until Daniel
+agrees the retention, so every dump stays, like the house dumps beside it, and
+a disconnected owner's sealed session stays in backups indefinitely. The
+proposed retention, written and tested but not running: after each successful
+upload, dumps older than 14 days go, except that the newest three always
+stay. That is a target, not a hard limit: pruning would run only after a
+successful upload, so while dumps fail nothing is pruned, and the newest three
+can be older than 14 days.
 
 **What the backup is worth.** Exactly as much as `COMMS_STORE_KEY`: without
 the key a dump is noise, by design, and backing the key up is outside this
-store (it lives in the host's deploy secrets). Restoring brings back the
+store. Today its only copy is the host's deploy secrets, so losing the host
+loses every dump with it; an off-host copy is Daniel's decision. Restoring brings back the
 sessions, the outbox (delivered and pending), the carryover and the sync
 cursors as they were at the snapshot. Messages already committed in Rails are
 in Rails either way; events still pending in the outbox after the snapshot,
