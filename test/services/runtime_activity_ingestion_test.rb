@@ -301,6 +301,22 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_nil json[:turn_ended_at]
   end
 
+  test "the final plan and commentary flush after turn.finished does not clear the marker" do
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    ingest(2, "turn.started")
+    ingest(3, "turn.finished")
+    ingest(4, "plan.updated", { "steps" => [ { "text" => "done", "status" => "completed" } ] })
+    ingest(5, "commentary.completed", { "text" => "wrapping up" })
+    travel 11.minutes
+    ingest(6, "heartbeat")
+    json = @run.reload.as_chat_activity_json
+    assert json[:exit_unconfirmed]
+    assert_equal "ended its turn; exit not confirmed", json[:status_label]
+
+    ingest(7, "tool.started", { "operation_id" => "late", "category" => "tool" })
+    assert_not @run.reload.as_chat_activity_json[:exit_unconfirmed]
+  end
+
   test "the turn-ended marker does not carry into a fallback attempt" do
     ingest(1, "attempt.started", { "narration_capability" => "unknown" })
     ingest(2, "turn.finished")

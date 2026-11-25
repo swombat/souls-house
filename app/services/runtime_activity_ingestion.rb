@@ -12,8 +12,11 @@ class RuntimeActivityIngestion
   TYPES = %w[attempt.started turn.started turn.finished wake.started wake.finished tool.started tool.finished agent.status_changed stream.started stream.gap commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
   OUTCOMES = %w[completed failed timed_out outcome_unknown].freeze
   # Events that show the runtime doing something after its turn ended. Any of
-  # them clears the turn-ended marker; heartbeats, gaps and warnings do not.
-  WORK_AFTER_TURN = %w[turn.started wake.started tool.started tool.finished commentary.completed plan.updated fallback].freeze
+  # them clears the turn-ended marker. Heartbeats, gaps and warnings do not,
+  # and nor do plan.updated or commentary.completed: the shim flushes its
+  # final plan snapshot after turn.finished, so they are not evidence that
+  # work resumed.
+  WORK_AFTER_TURN = %w[turn.started wake.started tool.started tool.finished fallback].freeze
 
   def initialize(run, payload)
     @run, @payload = run, payload
