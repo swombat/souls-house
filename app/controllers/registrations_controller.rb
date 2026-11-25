@@ -43,9 +43,8 @@ class RegistrationsController < ApplicationController
 
   def register_user
     user = User.register!(normalized_email)
-    membership = user.memberships.last
 
-    return redirect_for_existing_user if membership.confirmed?
+    return redirect_for_existing_user if user.confirmed?
 
     redirect_with_confirmation_sent(user.was_new_record?)
     true
@@ -75,7 +74,12 @@ class RegistrationsController < ApplicationController
     membership = Membership.confirm_by_token!(params[:token])
     user = membership.user
 
-    user.password_digest? ? redirect_confirmed_user : redirect_for_password_setup(user)
+    if user.password_digest?
+      redirect_confirmed_user
+    else
+      session[:pending_invitation_account_id] = membership.invitation? ? membership.account_id : nil
+      redirect_for_password_setup(user)
+    end
     true
   rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
     false
@@ -120,9 +124,11 @@ class RegistrationsController < ApplicationController
     end
 
     session.delete(:pending_password_user_id)
+    invited_account = @user.confirmed_accounts.find_by(id: session.delete(:pending_invitation_account_id))
     start_new_session_for @user
     audit(:complete_registration, @user)
-    redirect_to after_authentication_url, notice: "Account setup complete! Welcome!"
+    landing_url = account_chats_url(invited_account) if invited_account
+    redirect_to after_authentication_url(landing_url: landing_url), notice: "Account setup complete! Welcome!"
     true
   end
 

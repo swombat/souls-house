@@ -486,7 +486,7 @@ test.describe('browser contracts', () => {
     await invitedPage.getByLabel('Password', { exact: true }).fill(setup.password);
     await invitedPage.getByLabel('Confirm Password').fill(setup.password);
     await invitedPage.getByRole('button', { name: 'Complete Setup' }).click();
-    await expect(invitedPage).toHaveURL(/\/$/);
+    await expect(invitedPage).toHaveURL(`/accounts/${setup.account_id}/chats`);
     await invitedContext.close();
 
     const state = await getRunState(request, setup.run_id);

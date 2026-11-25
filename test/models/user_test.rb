@@ -614,11 +614,7 @@ class UserTest < ActiveSupport::TestCase
   # === Invitation System Tests ===
 
   test "created_via_invitation? returns true for unconfirmed users with invitations" do
-    # Use find_or_invite to create a user without a personal account
     user = User.find_or_invite("invitedtest@example.com")
-
-    # Remove the auto-created personal account
-    user.memberships.destroy_all
 
     account = accounts(:team)
 
@@ -681,9 +677,11 @@ class UserTest < ActiveSupport::TestCase
 
   test "find_or_invite creates user without password" do
     assert_difference "User.count" do
-      user = User.find_or_invite("brandnew@example.com")
-      assert user.persisted?
-      assert_nil user.password_digest
+      assert_no_difference [ "Account.count", "Membership.count" ] do
+        user = User.find_or_invite("brandnew@example.com")
+        assert user.persisted?
+        assert_nil user.password_digest
+      end
     end
   end
 

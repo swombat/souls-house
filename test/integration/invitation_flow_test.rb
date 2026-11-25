@@ -10,8 +10,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     # 1. Admin sends invitation
     sign_in admin
 
-    # Two Membership records: personal account + team invitation
-    assert_difference "Membership.count", 2 do
+    assert_difference "Membership.count", 1 do
       post account_invitations_path(account), params: {
         email: "newuser@example.com",
         role: "member"
@@ -22,23 +21,58 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     assert invitation.invitation?
     assert_equal admin, invitation.invited_by
     assert invitation.invitation_pending?
+    delete logout_path
 
     # 2. User accepts invitation
     get email_confirmation_path(token: invitation.confirmation_token_for_url)
+    assert_redirected_to set_password_path
 
     invitation.reload
     assert invitation.confirmed?
     assert invitation.invitation_accepted_at.present?
     assert_not invitation.invitation_pending?
 
-    # 3. User can now access the account
-    user = invitation.user
-    user.update!(password: "ValidPassword123")
-    user.profile.update!(first_name: "New", last_name: "User")
+    # 3. The invitee finishes setup and goes straight to the invited account
+    patch set_password_path, params: {
+      password: "ValidPassword123", password_confirmation: "ValidPassword123",
+      first_name: "New", last_name: "User"
+    }
+    assert_redirected_to account_chats_path(account)
+    assert_equal [ account ], invitation.user.reload.accounts.to_a
 
-    sign_in user
     get account_path(account)
     assert_response :success
+
+    delete logout_path
+    post login_path, params: { email_address: invitation.user.email_address, password: "ValidPassword123" }
+    get account_path(account)
+    assert_response :success
+  end
+
+  test "retrying signup resends a pending team invitation without creating a personal account" do
+    account = accounts(:team)
+    invitation = account.send_invitation(email: "retry@example.com", role: "member", invited_by: users(:admin))
+
+    assert_no_difference [ "Account.count", "Membership.count" ] do
+      assert_enqueued_email_with AccountMailer, :team_invitation, args: [ invitation ] do
+        post signup_path, params: { email_address: invitation.user.email_address }
+      end
+    end
+    assert_redirected_to check_email_path
+  end
+
+  test "retrying signup after acceptance does not provision a personal account" do
+    account = accounts(:team)
+    invitation = account.send_invitation(email: "accepted@example.com", role: "member", invited_by: users(:admin))
+    invitation.confirm!
+    invitation.user.update!(password: "ValidPassword123")
+
+    assert_no_difference [ "Account.count", "Membership.count" ] do
+      assert_no_enqueued_emails do
+        post signup_path, params: { email_address: invitation.user.email_address }
+      end
+    end
+    assert_redirected_to signup_path
   end
 
   test "admin can resend invitation" do
@@ -75,7 +109,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
 
     sign_in member
 
-    assert_difference "Membership.count", 2 do
+    assert_difference "Membership.count", 1 do
       post account_invitations_path(account), params: {
         email: "unauthorized@example.com",
         role: "member"
