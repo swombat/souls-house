@@ -6,6 +6,8 @@
   import ApiKeyCreateForm from '$lib/components/api_keys/ApiKeyCreateForm.svelte';
   import ApiKeyList from '$lib/components/api_keys/ApiKeyList.svelte';
   import ApiUsageCard from '$lib/components/api_keys/ApiUsageCard.svelte';
+  import DisabledResidents from '$lib/components/api_keys/DisabledResidents.svelte';
+  import { partitionResidents, disabledKeyResidentCount } from '$lib/components/api_keys/resident-visibility';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { siteName } from '$lib/branding';
   import { accountApiKeyPath, accountApiKeysPath } from '@/routes';
@@ -13,6 +15,9 @@
   let { account, external_access_keys = [], resident_keys = [], key_residents = [] } = $props();
   let newKeyName = $state('');
   let showForm = $state(false);
+  let residents = $derived(partitionResidents(key_residents));
+  let keys = $derived(partitionResidents(resident_keys));
+  let disabledKeyResidents = $derived(disabledKeyResidentCount(resident_keys));
 
   function createKey() {
     if (newKeyName.trim()) {
@@ -71,10 +76,17 @@
         <p class="text-sm text-muted-foreground">Manage these keys in the resident's Settings.</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        {#each key_residents as resident (resident.id)}
+        {#each residents.active as resident (resident.id)}
           <Button href={resident.settings_url} variant="outline">{resident.name}'s Settings</Button>
         {/each}
       </div>
+      <DisabledResidents count={residents.disabled.length}>
+        <div class="flex flex-wrap gap-2">
+          {#each residents.disabled as resident (resident.id)}
+            <Button href={resident.settings_url} variant="outline">{resident.name}'s Settings</Button>
+          {/each}
+        </div>
+      </DisabledResidents>
     </section>
   {/if}
 
@@ -91,7 +103,12 @@
         other bodies in the resident's Settings; house keys are system-managed.
       </p>
       <div class="opacity-80">
-        <ApiKeyList apiKeys={resident_keys} emptyMessage="No residents have keys yet." />
+        <ApiKeyList
+          apiKeys={keys.active}
+          emptyMessage={keys.disabled.length ? 'No active residents have keys yet.' : 'No residents have keys yet.'} />
+        <DisabledResidents count={disabledKeyResidents}>
+          <ApiKeyList apiKeys={keys.disabled} />
+        </DisabledResidents>
       </div>
     </div>
   </details>
