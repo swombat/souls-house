@@ -116,6 +116,9 @@ module AgentRuntimeInteraction::FailureReport
     # Only when the runtime's failure text shows the refusal (ModelRefusal,
     # #1118); a bare tag falls through to a cause that claims nothing.
     return "model_unavailable" if ModelRefusal.evidenced?(response_body)
+    # The tag with no recorded failure text behind it: the exit code says the
+    # run failed, not why, so the cause stays unidentified (#1118, case c).
+    return "unknown" if error_kind == ModelRefusal::KIND && !runtime_failure_recorded?
     # Ahead of authentication_error: Claude Code words a Cloudflare challenge
     # as "Failed to authenticate. API Error: 403 ..." (eOyrdJ).
     return error_kind if error_kind.in?(PROVIDER_EDGE_CATEGORIES)

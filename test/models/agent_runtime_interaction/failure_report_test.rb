@@ -175,11 +175,11 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
       rejected.failure_reason
 
     # The tag alone, as a real failed payload carries it (the shim can set it
-    # from stdout): the error the run did record, no subscription diagnosis.
+    # from stdout): the exit code says it failed, not why.
     tag_only = live_run("failed", runtime_status: "error", runtime_returncode: 1,
       response_body: { "status" => "error", "returncode" => 1, "error_kind" => "model_unavailable" })
-    assert_equal "runtime_error", tag_only.failure_category
-    assert_equal "the run ended in an error", tag_only.failure_reason
+    assert_equal "unknown", tag_only.failure_category
+    assert_equal "the run failed and the cause isn't identified", tag_only.failure_reason
 
     # The tag plus an unrelated runtime failure: that failure, never the refusal.
     unrelated = live_run("failed", runtime_status: "error", runtime_returncode: 1,

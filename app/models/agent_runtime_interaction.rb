@@ -682,6 +682,10 @@ class AgentRuntimeInteraction < ApplicationRecord
     end
   end
 
+  def runtime_failure_recorded?
+    runtime_failure_text.present?
+  end
+
   def runtime_failure_text
     failure = response_body["runtime_failure"] if response_body.is_a?(Hash)
     return unless failure.is_a?(Hash) && failure["message"].present?
