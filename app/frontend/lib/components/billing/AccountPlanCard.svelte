@@ -49,7 +49,10 @@
     if (subscriptionLive && (subscription?.status !== 'active' || subscription?.cancel_at_period_end)) return [];
     const rank = ORDER.indexOf(current.id);
     return accountPlans.filter((plan) => {
-      if (!plan.purchasable || plan.id === base.id) return false;
+      if (!plan.purchasable) return false;
+      // On a bill with no plan line every plan can be added, Companions too:
+      // the account is on it without paying for it.
+      if (plan.id === base.id && !(onBill && !subscriptionLive)) return false;
       // A plan the house gave is never lowered by a purchase.
       if (source === 'grant') return ORDER.indexOf(plan.id) > rank;
       return true;
@@ -61,16 +64,17 @@
     return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value));
   }
 
-  // The paid plan is ended here, and an ending made here kept.
+  // The paid plan is ended here, and an ending made here kept: driven by
+  // the plan line on the bill, not by the plan in force, which a grant can
+  // mask (a paid Partners under a given Colleagues still needs ending).
+  let billed = $derived(subscription?.plan ? accountPlans.find((plan) => plan.id === subscription.plan) || null : null);
   let endable = $derived(
     canPay &&
-      source === 'subscription' &&
-      ['active', 'past_due'].includes(subscription?.status) &&
-      !subscription?.cancel_at_period_end
+      Boolean(subscription) &&
+      ['active', 'past_due'].includes(subscription.status) &&
+      !subscription.cancel_at_period_end
   );
-  let keepable = $derived(
-    canPay && source === 'subscription' && subscriptionLive && subscription?.cancel_at_period_end
-  );
+  let keepable = $derived(canPay && subscriptionLive && Boolean(subscription?.cancel_at_period_end));
 
   // Every move goes through account_plan_checkout: on a bill it comes back
   // as a quote to confirm (?add=), never a change made unseen.
@@ -165,11 +169,11 @@
       <div class="mt-4 flex flex-wrap items-center gap-2 border-t pt-4" data-testid="account-plan-end">
         {#if keepable}
           <Button size="sm" variant="outline" onclick={() => act('keep_plan')} disabled={busy !== null}>
-            {busy === 'keep_plan' ? 'Saving…' : `Keep ${current.name}`}
+            {busy === 'keep_plan' ? 'Saving…' : `Keep ${(billed ?? current).name}`}
           </Button>
         {:else}
           <Button size="sm" variant="outline" onclick={() => act('end_plan')} disabled={busy !== null}>
-            {busy === 'end_plan' ? 'Saving…' : `End ${current.name}`}
+            {busy === 'end_plan' ? 'Saving…' : `End ${(billed ?? current).name}`}
           </Button>
           <span class="text-xs text-muted-foreground">You see what it changes before anything is sent.</span>
         {/if}

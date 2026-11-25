@@ -284,7 +284,10 @@ module Billing
       return current&.update!(stripe_status: "canceled", last_synced_at: @now) if op["price"].blank?
 
       plan = AccountPlan.for_price(op["price"]) || raise(InvalidSubscription, "No plan at #{op["price"].inspect}")
-      (current || AccountSubscription.new(account:, stripe_subscription_id: remote.id))
+      # A plan added back to a bill it was taken off reuses that bill's row:
+      # the row names the subscription, and one subscription has one plan row.
+      (current || AccountSubscription.find_by(stripe_subscription_id: remote.id) ||
+        AccountSubscription.new(account:, stripe_subscription_id: remote.id))
         .update!(plan: plan.id, stripe_price_id: op["price"], stripe_status: remote.status, last_synced_at: @now)
     end
 

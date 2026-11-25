@@ -296,6 +296,62 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_match(/no plan on its bill/, error.message)
   end
 
+  test "a plan ended off a bill and added back lands on both sides, on the same plan row" do
+    bill!(@a => LIFE_INCLUDED_PRICE, plan: PARTNERS_PRICE)
+    reconcile.propose_end_plan.then { |change| reconcile.confirm(change, digest: change.digest) }
+    assert_equal({ LIFE_PRICE => 1 }, remote)
+
+    change = go!([ { op: "plan", price: COLLEAGUES_PRICE } ])
+    assert change.applied?
+    assert_equal({ COLLEAGUES_PRICE => 1, LIFE_INCLUDED_PRICE => 1 }, remote)
+    assert_equal({ COLLEAGUES_PRICE => 1, LIFE_INCLUDED_PRICE => 1 }, Billing::BillSync.house_lines("sub_acct"))
+    assert_equal [ [ "colleagues", "active" ] ], AccountSubscription.where(account: @account).pluck(:plan, :stripe_status)
+  end
+
+  test "ending the plan is decided on the bill as it is after earlier work lands: a resident added meanwhile stays" do
+    bill!(plan: PARTNERS_PRICE)
+    addition = reconcile.propose([ add(@a, CONVERSATION_INCLUDED_PRICE) ])
+    @stripe.fail_next_subscription_update(applied: true)
+    assert_raises(Billing::Reconcile::Uncertain) { reconcile.confirm(addition, digest: addition.digest) }
+    assert addition.reload.submitted?
+
+    change = reconcile.propose_end_plan
+    assert addition.reload.applied?
+    assert_equal [ { "op" => "plan" }, { "op" => "demote", "agent_id" => @a.id, "price" => CONVERSATION_PRICE } ], change.ops
+    assert_not change.quote["ends"], "the bill carries a resident now: only the plan line goes"
+  end
+
+  test "a quote ending a plan-only bill is refused at confirmation once the bill carries a resident" do
+    bill!(plan: PARTNERS_PRICE)
+    change = reconcile.propose_end_plan
+    assert_equal [ { "op" => "end_bill" } ], change.ops
+    # The bill moved under the quote: a resident is on it now.
+    ResidentSubscription.create!(agent: @a, account: @account, stripe_subscription_id: "sub_acct", tier: "conversation",
+      rate: "included", stripe_price_id: CONVERSATION_INCLUDED_PRICE, stripe_status: "active")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { price: PARTNERS_PRICE, quantity: 1 }, { price: CONVERSATION_INCLUDED_PRICE, quantity: 1 } ])
+
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+  end
+
+  test "during a free trial the plan isn't changed or ended by itself, only with the trial's resident" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE, status: "trialing")
+    [ [ { op: "plan" } ], [ { op: "plan", price: PARTNERS_PRICE } ], [ { op: "end_bill" } ] ].each do |ops|
+      error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose(ops) }
+      assert_match(/free trial/, error.message)
+    end
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose_end_plan }
+    assert_match(/free trial/, error.message)
+    assert_equal [ { "op" => "end_bill", "agent_id" => @a.id } ], reconcile.propose_end(@a).ops
+  end
+
+  test "a plan the house gives still includes the resident when the paid plan line leaves" do
+    @account.update!(granted_plan: "companions")
+    bill!(@a => LIFE_INCLUDED_PRICE, plan: PARTNERS_PRICE)
+    assert_equal [ { "op" => "plan" } ], reconcile.propose_end_plan.ops
+  end
+
   test "a timeout after Stripe applied the change: the retry replays the same key and nothing is added twice" do
     bill!(@a => CONVERSATION_PRICE)
     change = reconcile.propose([ add(@b, CONVERSATION_PRICE) ])

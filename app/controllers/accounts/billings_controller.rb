@@ -167,6 +167,9 @@ class Accounts::BillingsController < ApplicationController
   # is charged now.
   def account_plan_checkout
     plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
+    # A plan op with no price takes the plan off the bill: a plan with no
+    # price configured is never sold, not read as that.
+    raise Billing::NotConfigured, "The #{plan.name} plan has no Stripe price configured" unless plan.purchasable?
     if Billing::Reconcile.applies?(current_account)
       change = reconcile.propose([ { op: "plan", price: plan.price_id } ], by: Current.user)
       return redirect_to account_billing_path(current_account, add: change.id)

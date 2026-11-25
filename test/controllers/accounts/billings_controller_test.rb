@@ -170,7 +170,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
       stripe_status: "active", current_period_end: Time.utc(2026, 12, 10), cancel_at_period_end: true)
     get account_billing_path(@account)
     assert_equal({ "id" => "colleagues", "source" => "subscription",
-      "subscription" => { "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true },
+      "subscription" => { "plan" => "colleagues", "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true },
       "chosen" => nil, "bill" => true, "includes_resident" => true },
       inertia_shared_props["account_plan"])
   end
@@ -204,6 +204,16 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
       post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" }
     end
     assert_match(/already on Partners/, flash[:alert])
+
+    # A plan with no price configured is never sold: a plan op with no price
+    # would read as taking the plan off.
+    unpriced = Class.new(Billing::AccountPlan) { def price_ids = [] }.new(id: "colleagues", name: "Colleagues",
+      monthly_usd: "59.99", members: "several", swarm_searches: 100, subagents: true, transcription_hours: 40)
+    Billing::AccountPlan.stub(:find, unpriced) do
+      with_stripe { post account_plan_checkout_account_billing_path(@account), params: { plan: "colleagues" } }
+    end
+    assert_match(/no Stripe price configured/, flash[:alert])
+    assert_empty BillChange.where(account: @account)
 
     with_stripe { post end_plan_account_billing_path(@account) }
     change = BillChange.unresolved.find_by!(account: @account)

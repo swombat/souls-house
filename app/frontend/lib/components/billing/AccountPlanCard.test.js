@@ -155,6 +155,26 @@ test('a paid plan is ended from the card, and an ending kept', async () => {
   expect(post).toHaveBeenCalledWith('/accounts/acc/billing/keep_plan', {}, expect.any(Object));
 });
 
+test('a paid plan under a higher grant is still ended from the card, named by what is billed', async () => {
+  show({
+    id: 'colleagues',
+    source: 'grant',
+    subscription: {
+      plan: 'partners',
+      status: 'active',
+      current_period_end: '2026-12-10T00:00:00Z',
+      cancel_at_period_end: false,
+    },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'End Partners' }));
+  expect(post).toHaveBeenCalledWith('/accounts/acc/billing/end_plan', {}, expect.any(Object));
+});
+
+test('a bill with no plan line can add Companions too', () => {
+  show({ id: 'companions', source: 'default', subscription: null, chosen: null, bill: true, includes_resident: true });
+  expect(screen.getByRole('button', { name: 'Add Companions · $9.99 a month' })).toBeVisible();
+});
+
 test('during the free days there is no End or Keep on the plan: the trial resident carries it', () => {
   show({
     id: 'companions',
