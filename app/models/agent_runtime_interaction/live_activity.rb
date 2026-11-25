@@ -83,6 +83,9 @@ module AgentRuntimeInteraction::LiveActivity
     if (commitment = Commitment.find_by(wake_interaction_id: id))
       return claim_commitment!(commitment)
     end
+    if (occurrence = RhythmTidy.for_interaction(self))
+      return claim_rhythm_tidy!(occurrence)
+    end
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
@@ -176,6 +179,24 @@ module AgentRuntimeInteraction::LiveActivity
 
     with_lock { finish_execution!("cancelled") if dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES) }
     false
+  end
+
+  # A rhythm tidy wake (RhythmTidyCheckJob) starts only while the run is
+  # still nobody's: no person has spoken, nothing was tagged or flagged and
+  # nothing else is running or owed a wake since it was reserved, and the
+  # resident isn't paused or past its allowance brake (never essential). Otherwise it is cancelled, not deferred: the
+  # question is asked once. Lock order: chat, agent, then this interaction.
+  def claim_rhythm_tidy!(occurrence)
+    chat.with_lock do
+      agent.with_lock do
+        refused = agent.paused? || RhythmTidy.new(occurrence).refusal_reason(except: self) ||
+          Agents::AllowanceBrake.interaction_reason(self)
+        next claim_dispatch_unchecked! unless refused
+
+        with_lock { finish_execution!("cancelled") if dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES) }
+        false
+      end
+    end
   end
 
   # A run the stalled-thread sweeper woke starts only while every gate that

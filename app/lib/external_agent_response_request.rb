@@ -387,6 +387,13 @@ class ExternalAgentResponseRequest
     @interaction&.follow_through_of
   end
 
+  # The rhythm run this wake asks about, when it is a tidy wake (RhythmTidy).
+  def rhythm_tidy_source
+    return @rhythm_tidy_source if defined?(@rhythm_tidy_source)
+
+    @rhythm_tidy_source = RhythmTidy.for_interaction(@interaction)
+  end
+
   # The stalled-thread sweep that woke this run, when one did.
   def stalled_sweep_source
     @interaction&.stalled_thread_sweep
@@ -413,6 +420,7 @@ class ExternalAgentResponseRequest
   def trigger_intro_text
     return FollowThroughCheck.new(follow_through_source).nudge_text if follow_through_source
     return stalled_sweep_source.nudge_text if stalled_sweep_source
+    return RhythmTidy.new(rhythm_tidy_source).prompt_text(agent) if rhythm_tidy_source
     return ProviderEdgeRetry.new(@interaction.provider_retry_of).prompt_text if @interaction&.provider_retry_of
 
     parts = [ ordinary_trigger_intro_text ]

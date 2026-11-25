@@ -38,6 +38,13 @@ class Agents::AllowanceBrake
       essential: essential_for?(commitment, commitment.agent)).braked?
   end
 
+  # A rhythm tidy wake (RhythmTidy) is optional housekeeping: never essential,
+  # even when the rhythm that opened the run is.
+  def self.rhythm_tidy_reason(agent, chat)
+    model_id = Agents::ModelSelection.for(agent, chat: chat).model_id
+    "skipped_allowance" if check(agent, model_id: model_id).braked?
+  end
+
   # Hosting a guest's work does not confer authority over its home budget.
   def self.essential_for?(work, agent)
     work.essential? && work.account_id == agent.account_id
@@ -58,6 +65,8 @@ class Agents::AllowanceBrake
       return pending_wake_reason(wake)
     elsif (commitment = Commitment.find_by(wake_interaction_id: interaction.id))
       return commitment_reason(commitment, chat: interaction.chat)
+    elsif RhythmTidy.for_interaction(interaction)
+      return rhythm_tidy_reason(interaction.agent, interaction.chat)
     end
     nil
   end
