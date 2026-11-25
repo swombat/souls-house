@@ -535,7 +535,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
         returncode: 1,
         stdout: "invalid model selection: model gemini-4-argon-medium is not recognized",
         error_kind: "model_unavailable",
-        runtime_failure: { code: "antigravity_runtime_failed", message: "invalid model selection: model gemini-4-argon-medium is not recognized" }
+        runtime_failure: { code: "antigravity_runtime_failed", message: "model gemini-4-argon-medium is not available on your plan" }
       }.to_json
     )
 

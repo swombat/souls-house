@@ -49,7 +49,7 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
   test "a model the subscription doesn't offer is its own category, from the runtime's structured kind" do
     refused = live_run("failed", runtime_status: "error", runtime_returncode: 1,
       response_body: { "status" => "error", "error_kind" => "model_unavailable",
-        "runtime_failure" => { "code" => "runtime_error", "message" => "Invalid model selection: gemini-4-argon" } })
+        "runtime_failure" => { "code" => "runtime_error", "message" => "Model gemini-4-argon is not available on your plan" } })
     assert_equal "model_unavailable", refused.failure_category
     # The CLI's words in stdout are not the evidence; the runtime's classification is.
     assert_equal "runtime_error", live_run("failed", runtime_status: "error", runtime_returncode: 1,
@@ -60,7 +60,7 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     2.times do
       live_run("failed", runtime_status: "error", runtime_returncode: 1,
         response_body: { "status" => "error", "error_kind" => "model_unavailable",
-        "runtime_failure" => { "code" => "runtime_error", "message" => "Invalid model selection: gemini-4-argon" } })
+        "runtime_failure" => { "code" => "runtime_error", "message" => "Model gemini-4-argon is not available on your plan" } })
     end
     card = Agents::RunFailureStreak.call(@agent).as_card_json
     assert_equal 2, card[:count]
@@ -159,16 +159,27 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
   end
 
   test "a model refusal is named only when the runtime's own failure shows it (#1118)" do
-    said = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable",
-      "runtime_failure" => { "code" => "runtime_error", "message" => "Invalid model selection: gemini-4-argon" } })
+    said = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "model_unavailable",
+        "runtime_failure" => { "code" => "runtime_error", "message" => "Model gemini-4-argon is not available on your plan" } })
     assert_equal "model_unavailable", said.failure_category
-    assert_equal "its model isn't available on its subscription (runtime said: runtime_error: Invalid model selection: gemini-4-argon)",
+    assert_equal "its model isn't available on its subscription (runtime said: runtime_error: Model gemini-4-argon is not available on your plan)",
       said.failure_reason
 
-    # The tag alone (the shim can set it from stdout): no subscription diagnosis.
-    tag_only = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable" })
-    assert_equal "unknown", tag_only.failure_category
-    assert_equal "the run failed and the cause isn't identified", tag_only.failure_reason
+    # A rejection that doesn't say why: no subscription claim, the runtime's words instead.
+    rejected = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "model_unavailable",
+        "runtime_failure" => { "code" => "antigravity_runtime_failed", "message" => "Invalid model selection: gemini-4-argon" } })
+    assert_equal "runtime_error", rejected.failure_category
+    assert_equal "the run ended in an error (runtime said: antigravity_runtime_failed: Invalid model selection: gemini-4-argon)",
+      rejected.failure_reason
+
+    # The tag alone, as a real failed payload carries it (the shim can set it
+    # from stdout): the error the run did record, no subscription diagnosis.
+    tag_only = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "returncode" => 1, "error_kind" => "model_unavailable" })
+    assert_equal "runtime_error", tag_only.failure_category
+    assert_equal "the run ended in an error", tag_only.failure_reason
 
     # The tag plus an unrelated runtime failure: that failure, never the refusal.
     unrelated = live_run("failed", runtime_status: "error", runtime_returncode: 1,

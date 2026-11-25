@@ -10,7 +10,10 @@ class ModelRefusalTest < ActiveSupport::TestCase
     [
       { "error_kind" => "model_unavailable" },
       { "error_kind" => "model_unavailable", "runtime_failure" => { "message" => "tool call exceeded its deadline" } },
-      { "error_kind" => "model_unavailable", "runtime_failure" => "Invalid model selection" }
+      { "error_kind" => "model_unavailable", "runtime_failure" => "Invalid model selection" },
+      # A rejection without a reason is not a subscription refusal.
+      { "error_kind" => "model_unavailable", "runtime_failure" => { "message" => "Invalid model selection: gemini-4-argon" } },
+      { "error_kind" => "model_unavailable", "runtime_failure" => { "message" => "gemini-4-argon is not recognized as a known model" } }
     ].each do |body|
       assert_not ModelRefusal.evidenced?(body), body.inspect
       assert_nil ModelRefusal.error_kind(body), body.inspect
