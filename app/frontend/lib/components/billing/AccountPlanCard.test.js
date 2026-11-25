@@ -69,14 +69,22 @@ test('no bill yet: the plan the first bill will carry, the others to choose, and
   expect(screen.getByRole('button', { name: 'Choose Colleagues · $59.99 a month' })).toBeVisible();
 });
 
-test('a plan chosen for the first bill is the one shown, and Companions can be chosen back', () => {
+test('a plan chosen for the first bill is the one shown, can still be bought now, and Companions can be chosen back', async () => {
   show({ id: 'companions', source: 'default', subscription: null, chosen: 'colleagues' });
   expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
-    "Your first resident's bill will carry Colleagues: $59.99 a month + VAT"
+    "Your first resident's bill will carry Colleagues: $59.99 a month + VAT, with that resident included. " +
+      'Nothing is charged until then. Or buy it now, below.'
   );
   expect(screen.getByTestId('account-plan')).toHaveTextContent('100 swarm searches a month');
   expect(screen.getByRole('button', { name: 'Choose Companions · $9.99 a month' })).toBeVisible();
-  expect(screen.queryByRole('button', { name: /Colleagues/ })).toBeNull();
+  // A choice made before plans could be bought alone doesn't hide them (Reed, #1149).
+  expect(screen.getByRole('button', { name: 'Choose Partners · $29.99 a month' })).toBeVisible();
+  await fireEvent.click(screen.getByRole('button', { name: 'Choose Colleagues · $59.99 a month' }));
+  expect(post).toHaveBeenCalledWith(
+    '/accounts/acc/billing/account_plan_checkout',
+    { plan: 'colleagues' },
+    expect.any(Object)
+  );
 });
 
 test('a subscription: says what it costs and when it renews, and moves by changing the price', async () => {

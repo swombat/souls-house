@@ -63,17 +63,31 @@ module Billing
       CheckoutSession.recover!(attempt, client: @client, remote: method(:remote),
         stale: "An earlier Checkout for this account's plan needs operator reconciliation. " \
                "Contact #{Billing.contact_email}; do not pay another link.")
+    rescue Stripe::InvalidRequestError => error
+      raise unless CheckoutSession.rejected?(attempt, error)
+
+      # Stripe refused the create outright, so there is no session to pay or
+      # recover. The attempt stops holding the first bill and the next try
+      # is a new attempt, with whatever was corrected (Mira, #1149).
+      attempt.update!(resolved_at: Time.current)
+      Rails.error.report(error, handled: true, context: { subsystem: "billing", plan_checkout_attempt_id: attempt.id })
+      raise NotReady, "Stripe refused this Checkout, and nothing was charged. Please try again later, " \
+                      "or contact #{Billing.contact_email}."
     end
 
     # An earlier session for this account's plan, before a new one replaces
     # it: an open one is closed so it can't be paid as well; a completed one
-    # means a plan is paid for, or about to be confirmed.
+    # means a plan is paid for, or its payment is still being decided, unless
+    # Stripe has ended its subscription unpaid (CheckoutSession.ended_unpaid?).
     def settle!(session)
       case session.status
       when "open"
         CheckoutSession.expire!(session, client: @client, remote: method(:remote))
       when "complete"
-        raise AlreadySubscribed, "A payment for this account's plan is still being confirmed by Stripe. Try again in a minute."
+        unless remote { CheckoutSession.ended_unpaid?(session, client: @client) }
+          raise AlreadySubscribed, "A payment for this account's plan is still being confirmed by Stripe. " \
+                                   "It goes onto the account once it has."
+        end
       when "expired"
         # Safe to replace.
       else

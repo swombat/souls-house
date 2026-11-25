@@ -10,7 +10,8 @@ module Billing
 
     WAITING = "Someone in this account has already started its first bill, and it hasn't gone through yet. " \
               "Once it has, start this resident again and it goes onto that bill. If it doesn't go through, " \
-              "it lapses within a day.".freeze
+              "this is freed once Stripe has closed it; if that takes more than a day, contact " \
+              "#{Billing.contact_email}.".freeze
 
     module_function
 

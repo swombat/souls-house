@@ -37,13 +37,42 @@ module Billing
       raise NotReady, "The earlier Checkout could not be expired. Please try again." unless expired.status == "expired"
     end
 
+    # Positive evidence that an attempt's create made no session: Stripe
+    # answered it 400, and nothing was ever bound to the attempt. A 400 is
+    # sent before anything is made, and a replay of a key whose first
+    # request did make a session returns that session, not a 400. A
+    # timeout, a 5xx, a rate limit or a reused key (IdempotencyError, not
+    # an InvalidRequestError) is no such evidence, and the attempt stays.
+    def rejected?(attempt, error)
+      error.is_a?(Stripe::InvalidRequestError) && error.http_status == 400 && attempt.reload.stripe_session_id.nil?
+    end
+
+    # A completed session whose payment is over and never made: Stripe
+    # completed Checkout with the payment still to come (a delayed method),
+    # the first invoice was never paid, and Stripe has ended the
+    # subscription as incomplete_expired, which it never leaves and which
+    # voids the invoice. "unpaid" alone is not this: it is also a payment
+    # still on its way (Mira, #1149).
+    def ended_unpaid?(session, client:)
+      return false unless session.status == "complete" && session.payment_status == "unpaid"
+
+      id = session.subscription.is_a?(String) ? session.subscription : session.subscription&.id
+      return false if id.blank?
+
+      client.v1.subscriptions.retrieve(id).status == "incomplete_expired"
+    end
+
     # Resolves the unresolved attempts in scope whose session Stripe says
-    # has expired. One with no session yet (an uncertain create), still
-    # open, completed, or that Stripe can't be asked about just now, stays.
-    def release_expired!(attempts, client:)
+    # has expired, and, with ended_unpaid, those whose session completed
+    # and whose payment Stripe has ended unpaid. One with no session yet
+    # (an uncertain create), still open, completed and paid or paying, or
+    # that Stripe can't be asked about just now, stays.
+    def release_expired!(attempts, client:, ended_unpaid: false)
       attempts.unresolved.where.not(stripe_session_id: nil).find_each do |attempt|
         session = client.v1.checkout.sessions.retrieve(attempt.stripe_session_id)
-        attempt.update!(resolved_at: Time.current) if session.status == "expired"
+        if session.status == "expired" || (ended_unpaid && ended_unpaid?(session, client:))
+          attempt.update!(resolved_at: Time.current)
+        end
       rescue Stripe::StripeError
         next
       end

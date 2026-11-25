@@ -103,6 +103,75 @@ class Billing::PlanCheckoutTest < ActiveSupport::TestCase
     assert_not Billing::FirstBill.waiting?(@account)
   end
 
+  test "a create Stripe refuses outright frees the first bill, and the next try is a new attempt" do
+    @stripe.fail_next_checkout_create(
+      Stripe::InvalidRequestError.new("No such price: 'price_gone'", "line_items[0][price]", http_status: 400), created: false)
+    error = assert_raises(Billing::NotReady) { checkout.url }
+    assert_match(/refused this Checkout, and nothing was charged/, error.message)
+    assert attempts.sole.resolved_at, "no session was made, so nothing holds the first bill"
+    assert_not Billing::FirstBill.waiting?(@account)
+
+    # The cause corrected, the owner tries again.
+    assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", checkout.url
+    assert_equal 2, attempts.count
+    assert_equal "cs_test_1", attempts.unresolved.sole.stripe_session_id
+  end
+
+  test "a create with no certain answer is never taken as refused" do
+    [ Stripe::IdempotencyError.new("Keys for idempotent requests can only be used with the same parameters"),
+      Stripe::APIError.new("Stripe had a problem", http_status: 500),
+      Stripe::RateLimitError.new("Too many requests", http_status: 429),
+      Stripe::InvalidRequestError.new("No status", "id") ].each do |fault|
+      @stripe.fail_next_checkout_create(fault, created: false)
+      assert_raises(Billing::NotReady, Stripe::StripeError) { checkout.url }
+      assert_nil attempts.sole.resolved_at, "#{fault.class} (#{fault.http_status.inspect}) keeps the attempt pinned"
+      assert Billing::FirstBill.waiting?(@account)
+    end
+  end
+
+  test "completed with the payment still to come: the first bill stays held until it is paid" do
+    checkout.url
+    @stripe.complete_checkout_session("cs_test_1", subscription_id: "sub_slow", payment_status: "unpaid")
+    sync("sub_slow")
+    Billing::Checkout.release_expired!(@account, client: @stripe)
+    assert_nil attempts.sole.resolved_at, "an unpaid session may still be paid"
+    assert Billing::FirstBill.waiting?(@account)
+    assert_raises(Billing::AlreadySubscribed) { checkout("colleagues").url }
+    assert_equal 1, @stripe.checkout_sessions.size
+
+    @stripe.set_subscription_status("sub_slow", "active")
+    sync("sub_slow")
+    assert attempts.sole.resolved_at
+    assert_equal "partners", @account.reload.plan.id
+  end
+
+  test "completed with the payment still to come: the hold is released once Stripe ends it unpaid" do
+    checkout.url
+    @stripe.complete_checkout_session("cs_test_1", subscription_id: "sub_slow", payment_status: "unpaid")
+    @stripe.set_subscription_status("sub_slow", "past_due")
+    Billing::Checkout.release_expired!(@account, client: @stripe)
+    assert_nil attempts.sole.resolved_at, "only incomplete_expired ends it"
+
+    @stripe.set_subscription_status("sub_slow", "incomplete_expired")
+    sync("sub_slow")
+    assert_empty AccountSubscription.where(account: @account)
+    Billing::Checkout.release_expired!(@account, client: @stripe)
+    assert attempts.sole.resolved_at
+    assert_not Billing::FirstBill.waiting?(@account)
+    assert_equal "https://checkout.stripe.com/c/pay/cs_test_2", checkout.url
+  end
+
+  test "a new Checkout replaces one Stripe ended unpaid, under its own lock" do
+    checkout.url
+    @stripe.complete_checkout_session("cs_test_1", subscription_id: "sub_slow", payment_status: "unpaid")
+    @stripe.set_subscription_status("sub_slow", "incomplete_expired")
+    # Release the sweep can't see (it runs first in url); settle! decides.
+    Billing::CheckoutSession.stub(:release_expired!, nil) do
+      assert_equal "https://checkout.stripe.com/c/pay/cs_test_2", checkout("colleagues").url
+    end
+    assert_equal [ "colleagues" ], attempts.unresolved.pluck(:plan)
+  end
+
   test "refused when the house already gives that plan or more" do
     @account.update!(granted_plan: "colleagues")
     error = assert_raises(Billing::NotEligible) { checkout("partners").url }

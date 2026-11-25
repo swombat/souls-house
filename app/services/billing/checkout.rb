@@ -68,7 +68,7 @@ module Billing
     # released (Billing::CheckoutSession.release_expired!).
     def self.release_expired!(account, client: Billing.client)
       CheckoutSession.release_expired!(BillingCheckoutAttempt.where(account:, kind: "checkout"), client:)
-      CheckoutSession.release_expired!(AccountPlanCheckoutAttempt.where(account:), client:)
+      CheckoutSession.release_expired!(AccountPlanCheckoutAttempt.where(account:), client:, ended_unpaid: true)
     end
 
     # Closes every Checkout this resident could still pay before its plan is

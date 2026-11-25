@@ -64,7 +64,12 @@ module Billing
     private
 
     def subscription_card(customer)
-      id = customer.stripe_subscription_id.presence ||
+      # The customer's pointer is not cleared when its bill ends, so it is
+      # trusted only while the house still has lines on it (as in
+      # Reconcile#subscription_of; Reed, #1149).
+      pointed = customer.stripe_subscription_id.presence
+      pointed = nil unless pointed && BillSync.house_lines(pointed).any?
+      id = pointed ||
         AccountSubscription.live.where(account: @account).order(:id).last&.stripe_subscription_id ||
         ResidentSubscription.live.where(account: @account).order(:id).last&.stripe_subscription_id
       return nil if id.blank?
