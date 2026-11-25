@@ -108,7 +108,8 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
       patch account_agent_service_access_path(@account, agent, connection.public_id), params: { enabled: true }
     end
     assert connection.agent_service_accesses.enabled.where(agent: [ @lume, @mira ]).count == 2
-    other = @account.agents.where.not(id: [ @lume.id, @mira.id ]).first
+    other = agents(:inactive_agent)
+    other.update_columns(active: true) # Exercise the service grant, not the resident authentication gate.
 
     # The connector restarts; live messages keep arriving after it.
     before_restart = live_bodies(alice).size
@@ -130,12 +131,10 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
       assert_response :ok
       assert_equal [ "live 3#{CANARY}" ], response.parsed_body["results"].map { |result| result["body"] }
     end
-    if other
-      key = ApiKey.generate_for(@owner, name: "ungranted", agent: other)
-      get api_v1_service_connection_comms_messages_url(connection.public_id, chat: "user:2001"),
-          headers: { "Authorization" => "Bearer #{key.raw_token}" }
-      assert_response :not_found
-    end
+    key = ApiKey.generate_for(@owner, name: "ungranted", agent: other)
+    get api_v1_service_connection_comms_messages_url(connection.public_id, chat: "user:2001"),
+        headers: { "Authorization" => "Bearer #{key.raw_token}" }
+    assert_response :not_found
     assert_operator connection.reload.comms_event_seq, :>=, 5
 
     # Disconnect: logout at Telegram, the connector's store row goes.
