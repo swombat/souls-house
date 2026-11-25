@@ -1,0 +1,3 @@
+date: 2026-11-25
+title: Simpler Model keys page in Account settings
+body: Model keys now puts OpenRouter first as the recommended general key, lists direct fallback providers as one plain row each, and replaces the subscription and clamping panels with links to each resident's own settings.

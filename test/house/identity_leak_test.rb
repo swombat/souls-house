@@ -103,7 +103,6 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/content/decisions/free-resident-model.md" => "decision entry linking to its published method page on souls.house",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",
     "app/frontend/pages/terms.svelte" => "terms page copy",
-    "app/frontend/pages/accounts/agent_api_keys.svelte" => "settings page copy",
     "app/views/user_mailer/confirmation.text.erb" => "email copy",
     "app/views/user_mailer/confirmation.html.erb" => "email copy",
     "app/views/pwa/manifest.json.erb" => "PWA manifest short_name/name",

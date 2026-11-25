@@ -83,18 +83,6 @@ class ProviderPresentationPartialsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "account provider-list partial skips API key configuration presentation" do
-    Agents::Sandbox.stub :new, ->(*) { flunk "account presentation instantiated runtime auth" } do
-      get account_agent_api_keys_path(@account),
-        headers: partial("accounts/agent_api_keys", "subscription_agents,can_manage_ai_credentials")
-      assert_response :success
-    end
-    props = response.parsed_body.fetch("props")
-    assert props.fetch("subscription_agents").any? { |value| value["id"] == @agent.to_param }
-    assert_not props.key?("ai_api_keys_configured")
-    assert_equal true, props["can_manage_ai_credentials"]
-  end
-
   private
 
   def partial(component, props)

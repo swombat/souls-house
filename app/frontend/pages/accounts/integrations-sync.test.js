@@ -109,50 +109,27 @@ test('provider edit subscriptions preserve broad maps and reconcile rendered sta
   expect(subscribeToModel.mock.results.at(-1).value).toHaveBeenCalledOnce();
 });
 
-test('empty model keys list subscribes; arrival, status and removal preserve API key drafts and clear selections', async () => {
+test('model keys page does not subscribe to ProviderPresentation and preserves API key drafts', async () => {
   const props = {
     account: { id: 'first', name: 'First' },
     can_manage_ai_credentials: true,
     ai_api_keys_configured: { anthropic: true },
-    subscription_agents: [],
+    residents: [{ id: 'resident', name: 'Resident' }],
   };
   const view = render(ModelKeys, props);
-  await waitFor(() =>
-    expect(subscribeToModel).toHaveBeenCalledWith('ProviderPresentation', 'first', [
-      'subscription_agents',
-      'can_manage_ai_credentials',
-    ])
-  );
-  const unsubscribe = subscribeToModel.mock.results[0].value;
+  expect(subscribeToModel).not.toHaveBeenCalled();
   const input = view.container.querySelector('#openai_api_key');
   await fireEvent.input(input, { target: { value: 'synthetic-unsaved-api-key' } });
   await fireEvent.click(view.getByRole('button', { name: 'Remove', exact: true }));
   expect(view.getByText('Will be removed')).toBeInTheDocument();
-  const provider = {
-    id: 'resident',
-    name: 'Resident',
-    provider: 'anthropic',
-    provider_name: 'Claude',
-    available: false,
-    connection: { status: 'connected', email: 'synthetic@example.test' },
-  };
-  await view.rerender({ ...props, subscription_agents: [provider] });
-  expect(view.getByText('Connected as synthetic@example.test')).toBeInTheDocument();
-  await view.rerender({ ...props, subscription_agents: [{ ...provider, connection: { status: 'expired' } }] });
-  expect(view.queryByText('Connected as synthetic@example.test')).not.toBeInTheDocument();
-  expect(view.getByText('No Claude subscription connected for clamping.')).toBeInTheDocument();
-  await view.rerender({ ...props });
-  expect(view.queryByText('No Claude subscription connected for clamping.')).not.toBeInTheDocument();
+  await view.rerender({
+    ...props,
+    residents: [
+      { id: 'resident', name: 'Resident' },
+      { id: 'other', name: 'Other' },
+    ],
+  });
   expect(input).toHaveValue('synthetic-unsaved-api-key');
   expect(view.getByText('Will be removed')).toBeInTheDocument();
-  expect(subscribeToModel).toHaveBeenCalledTimes(1);
-  await view.rerender({ ...props, account: { id: 'second', name: 'Second' } });
-  expect(subscribeToModel).toHaveBeenCalledTimes(2);
-  expect(unsubscribe).toHaveBeenCalledOnce();
-  expect(subscribeToModel).toHaveBeenLastCalledWith('ProviderPresentation', 'second', [
-    'subscription_agents',
-    'can_manage_ai_credentials',
-  ]);
-  view.unmount();
-  expect(subscribeToModel.mock.results.at(-1).value).toHaveBeenCalledOnce();
+  expect(subscribeToModel).not.toHaveBeenCalled();
 });

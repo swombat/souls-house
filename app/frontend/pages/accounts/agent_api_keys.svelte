@@ -1,5 +1,5 @@
 <script>
-  import { page, router } from '@inertiajs/svelte';
+  import { Link, page, router } from '@inertiajs/svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ModelKeysDeliveryNote from '$lib/components/accounts/ModelKeysDeliveryNote.svelte';
@@ -7,105 +7,31 @@
   import { Label } from '$lib/components/shadcn/label/index.js';
   import Button from '$lib/components/shadcn/button/button.svelte';
   import { CheckCircle, XCircle } from 'phosphor-svelte';
-  import { accountAgentApiKeysPath } from '@/routes';
-  import AgentProviderSubscriptionPanel from '$lib/components/agents/AgentProviderSubscriptionPanel.svelte';
-  import { siteName } from '$lib/branding';
-  import { createDynamicSync } from '$lib/use-sync';
+  import { accountAgentApiKeysPath, accountAgentsPath, editAccountAgentPath } from '@/routes';
 
   // Read as props, not once from $page.props, so a save re-renders the "Set" badges.
-  let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false, subscription_agents = [] } = $props();
-  const updateProviderSync = createDynamicSync();
-  $effect(() => {
-    updateProviderSync({
-      [`ProviderPresentation:${account.id}`]: ['subscription_agents', 'can_manage_ai_credentials'],
-    });
-  });
-  const providerSections = [
+  let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false, residents = [] } = $props();
+
+  const openRouterProvider = {
+    id: 'openrouter',
+    name: 'OpenRouter API key',
+  };
+
+  const fallbackProviders = [
+    { id: 'anthropic', name: 'Anthropic' },
+    { id: 'gemini', name: 'Gemini' },
+    { id: 'openai', name: 'OpenAI' },
+    { id: 'xai', name: 'xAI' },
+    { id: 'zai', name: 'Z.ai' },
     {
-      title: 'OpenRouter',
-      description:
-        'OpenRouter usage is billed through its API rather than a model provider subscription. For supported direct-provider models, a selected subscription or matching provider key takes priority. Models without a supported direct route stay on OpenRouter.',
-      providers: [
-        {
-          id: 'openrouter',
-          name: 'OpenRouter API key',
-          help: 'Also available to residents for ancillary services such as image generation.',
-        },
-      ],
+      id: 'moonshot',
+      name: 'Kimi Code',
+      note: 'Use a Kimi Code Console key only. Standard Moonshot platform (PAYG) keys do not work here.',
     },
-    {
-      title: 'API Key or Claude-Code Clamped subscription',
-      description:
-        'Use a metered Anthropic API key, or connect a hosted Claude resident to a personal Claude subscription from that resident’s Settings tab.',
-      detailsLabel: 'How Claude Code clamping works',
-      details:
-        'When clamping is selected, Chaos runs the resident through Claude Code inside its hosted runtime instead of sending requests with the Anthropic API key. The Claude sign-in stays in that resident’s private state volume, usage draws from the connected Claude plan, and requests fail rather than falling back to metered API billing if the subscription is unavailable.',
-      providers: [
-        {
-          id: 'anthropic',
-          name: 'Anthropic API key',
-          help: 'Enter a metered Anthropic API key here, or configure Claude Code clamping in the resident’s Settings tab.',
-        },
-      ],
-    },
-    {
-      title: 'API key or experimental Antigravity clamp',
-      description:
-        'Use a metered Gemini API key, or explicitly opt a hosted Gemini resident into the official Antigravity CLI transport.',
-      detailsLabel: 'Google policy and account risk',
-      details:
-        'Google’s current Antigravity terms prohibit third-party access patterns and Google has enforced against accounts using third-party tools or proxies. Running the official Antigravity CLI as a Chaos subprocess keeps OAuth credentials out of souls.house, but does not make this workflow supported or terms-compliant. Use an account you can risk losing access to related Gemini developer services.',
-      providers: [
-        {
-          id: 'gemini',
-          name: 'Gemini',
-          help: 'Enter a metered Gemini API key here, or configure experimental Antigravity clamping in the resident’s Settings tab.',
-        },
-      ],
-    },
-    {
-      title: 'API key or subscription',
-      description:
-        'These providers can use a metered API key entered here, or a resident can be connected to a supported subscription through Chaos.',
-      providers: [
-        {
-          id: 'openai',
-          name: 'OpenAI',
-          help: 'Use an OpenAI API key here, or connect the resident to a ChatGPT subscription in Chaos.',
-        },
-        {
-          id: 'xai',
-          name: 'xAI',
-          help: 'Use an xAI API key here, or connect the resident to an eligible xAI subscription in Chaos.',
-        },
-      ],
-    },
-    {
-      title: 'Subscription API keys',
-      description:
-        'Kimi Code uses a subscription API key, not a sign-in. Select a Kimi Code subscription model to use it.',
-      details:
-        'Create a key at kimi.com/code/console and select a model in the Kimi Code subscription group in resident settings. Existing Moonshot / Kimi models still use OpenRouter and its separate billing. Kimi Code is for personal interactive use, not unattended batch jobs or resale; model access depends on your plan. Z.ai and MiniMax keys are stored, but their direct subscription routes are not wired up yet.',
-      providers: [
-        {
-          id: 'zai',
-          name: 'Z.ai (GLM)',
-          help: 'Accepts a GLM Coding Plan key or a standard Z.ai API key.',
-        },
-        {
-          id: 'moonshot',
-          name: 'Kimi Code subscription',
-          help: 'Use a Kimi Code Console key only. Standard Moonshot platform (PAYG) keys do not work on this endpoint. The route needs the updated resident runtime.',
-        },
-        {
-          id: 'minimax',
-          name: 'MiniMax',
-          help: 'Accepts a MiniMax coding subscription key or a standard API key.',
-        },
-      ],
-    },
+    { id: 'minimax', name: 'MiniMax' },
   ];
-  const aiProviders = providerSections.flatMap((section) => section.providers);
+
+  const aiProviders = [openRouterProvider, ...fallbackProviders];
 
   let aiApiKeys = $state(Object.fromEntries(aiProviders.map((provider) => [provider.id, ''])));
   let clearedAiApiKeys = $state([]);
@@ -149,133 +75,157 @@
 </script>
 
 <svelte:head>
-  <title>Model API keys · {account.name}</title>
+  <title>Model keys · {account.name}</title>
 </svelte:head>
 
 <AccountSettingsLayout
   {account}
   active="model_api_keys"
-  title="Model API keys"
-  description="The AI provider keys residents in this account use to call models.">
+  title="Model keys"
+  description="General and fallback API keys shared by residents in this account.">
   <FlashMessages flash={$page.props.flash} />
 
-  <form onsubmit={save} class="space-y-4">
-    <div class="space-y-4">
-      <ModelKeysDeliveryNote accountName={account.name} />
+  <form onsubmit={save} class="space-y-6">
+    <section class="space-y-3 rounded-lg border p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <h2 class="font-medium">OpenRouter</h2>
+            <span
+              class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              Recommended
+            </span>
+          </div>
+          <p class="text-sm text-muted-foreground">
+            Covers image generation and any model without a direct provider key.
+          </p>
+        </div>
 
-      <div class="space-y-6">
-        {#each providerSections as section}
-          <section class="space-y-3 rounded-lg border p-4">
-            <div class="space-y-1">
-              <h2 class="font-medium">{section.title}</h2>
-              <p class="text-sm text-muted-foreground">{section.description}</p>
-            </div>
-
-            {#if section.details}
-              <details class="rounded-md bg-muted/50 px-3 py-2 text-sm">
-                <summary class="cursor-pointer font-medium">
-                  {section.detailsLabel || 'How subscription API keys work'}
-                </summary>
-                <p class="mt-2 text-muted-foreground">{section.details}</p>
-              </details>
+        <div class="flex items-center gap-2">
+          {#if ai_api_keys_configured.openrouter && !clearedAiApiKeys.includes('openrouter')}
+            <span class="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle size={16} weight="fill" />
+              Set
+            </span>
+            {#if can_manage_ai_credentials}
+              <Button type="button" variant="ghost" size="sm" onclick={() => toggleApiKeyRemoval('openrouter')}>
+                Remove
+              </Button>
             {/if}
-
-            <div class="grid gap-4 md:grid-cols-2">
-              {#each section.providers as provider}
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <Label for={`${provider.id}_api_key`}>{provider.name}</Label>
-                    <div class="flex items-center gap-2">
-                      {#if ai_api_keys_configured[provider.id] && !clearedAiApiKeys.includes(provider.id)}
-                        <span
-                          class="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle size={16} weight="fill" />
-                          Set
-                        </span>
-                        {#if can_manage_ai_credentials}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onclick={() => toggleApiKeyRemoval(provider.id)}>
-                            Remove
-                          </Button>
-                        {/if}
-                      {:else}
-                        <span class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                          <XCircle size={16} weight="fill" />
-                          {clearedAiApiKeys.includes(provider.id) ? 'Will be removed' : 'Not set'}
-                        </span>
-                        {#if can_manage_ai_credentials && clearedAiApiKeys.includes(provider.id)}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onclick={() => toggleApiKeyRemoval(provider.id)}>
-                            Undo
-                          </Button>
-                        {/if}
-                      {/if}
-                    </div>
-                  </div>
-                  <Input
-                    id={`${provider.id}_api_key`}
-                    type="password"
-                    autocomplete="off"
-                    bind:value={aiApiKeys[provider.id]}
-                    disabled={!can_manage_ai_credentials || clearedAiApiKeys.includes(provider.id)}
-                    placeholder={ai_api_keys_configured[provider.id] ? 'Enter a replacement key' : 'Enter API key'} />
-                  <p class="text-xs text-muted-foreground">{provider.help}</p>
-                </div>
-              {/each}
-            </div>
-          </section>
-        {/each}
+          {:else}
+            <span class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <XCircle size={16} weight="fill" />
+              {clearedAiApiKeys.includes('openrouter') ? 'Will be removed' : 'Not set'}
+            </span>
+            {#if can_manage_ai_credentials && clearedAiApiKeys.includes('openrouter')}
+              <Button type="button" variant="ghost" size="sm" onclick={() => toggleApiKeyRemoval('openrouter')}>
+                Undo
+              </Button>
+            {/if}
+          {/if}
+        </div>
       </div>
 
-      <section class="space-y-4 rounded-lg border p-4">
-        <div class="space-y-1">
-          <h2 class="font-medium">Provider subscription accounts</h2>
-          <p class="text-sm text-muted-foreground">
-            Connect a personal provider subscription to a specific resident. The sign-in happens inside that resident's
-            Chaos container; {$siteName} never receives or stores the provider token.
-          </p>
-        </div>
+      <div class="space-y-1.5">
+        <Label for="openrouter_api_key" class="sr-only">OpenRouter API key</Label>
+        <Input
+          id="openrouter_api_key"
+          type="password"
+          autocomplete="off"
+          bind:value={aiApiKeys.openrouter}
+          disabled={!can_manage_ai_credentials || clearedAiApiKeys.includes('openrouter')}
+          placeholder={ai_api_keys_configured.openrouter ? 'Enter a replacement key' : 'Enter API key'} />
+      </div>
+    </section>
 
-        {#if subscription_agents.length === 0}
-          <p class="text-sm text-muted-foreground">
-            No residents currently use a provider with supported subscription sign-in.
-          </p>
-        {:else}
-          <div class="space-y-3">
-            {#each subscription_agents as subscriptionAgent (subscriptionAgent.id)}
-              <AgentProviderSubscriptionPanel {account} {subscriptionAgent} canManage={can_manage_ai_credentials} />
-            {/each}
-          </div>
-        {/if}
-
-        <p class="text-xs text-muted-foreground">
-          Claude subscriptions use Claude Code clamping. Experimental Gemini subscription access uses Google’s official
-          Antigravity CLI while Chaos retains tool and permission control.
+    <section class="rounded-lg border">
+      <div class="border-b px-4 py-3">
+        <h2 class="font-medium">Fallback provider keys</h2>
+        <p class="text-sm text-muted-foreground">
+          Direct provider keys used when a resident is not using a personal subscription.
         </p>
-      </section>
+      </div>
 
-      {#if account.use_system_ai_credentials}
-        <div class="rounded-md border border-blue-500/30 bg-blue-500/10 p-4">
-          <div class="space-y-1">
-            <p class="text-sm font-medium">Shared AI keys are available as a fallback</p>
-            <p class="text-sm text-muted-foreground">
-              A site administrator has enabled shared application keys for providers where this account has no key of
-              its own. Only a site administrator can change this setting.
-            </p>
+      <div class="divide-y">
+        {#each fallbackProviders as provider (provider.id)}
+          <div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:gap-4">
+            <div class="flex items-center justify-between gap-2 sm:w-44 sm:shrink-0 sm:pt-2">
+              <Label for={`${provider.id}_api_key`} class="font-medium">{provider.name}</Label>
+              {#if ai_api_keys_configured[provider.id] && !clearedAiApiKeys.includes(provider.id)}
+                <span class="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle size={15} weight="fill" />
+                  Set
+                </span>
+              {:else}
+                <span class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                  <XCircle size={15} weight="fill" />
+                  {clearedAiApiKeys.includes(provider.id) ? 'Will be removed' : 'Not set'}
+                </span>
+              {/if}
+            </div>
+
+            <div class="flex-1 min-w-0 space-y-1">
+              <div class="flex items-center gap-2">
+                <Input
+                  id={`${provider.id}_api_key`}
+                  type="password"
+                  autocomplete="off"
+                  bind:value={aiApiKeys[provider.id]}
+                  disabled={!can_manage_ai_credentials || clearedAiApiKeys.includes(provider.id)}
+                  placeholder={ai_api_keys_configured[provider.id] ? 'Enter a replacement key' : 'Enter API key'} />
+                {#if can_manage_ai_credentials && ai_api_keys_configured[provider.id] && !clearedAiApiKeys.includes(provider.id)}
+                  <Button type="button" variant="ghost" size="sm" onclick={() => toggleApiKeyRemoval(provider.id)}>
+                    Remove
+                  </Button>
+                {:else if can_manage_ai_credentials && clearedAiApiKeys.includes(provider.id)}
+                  <Button type="button" variant="ghost" size="sm" onclick={() => toggleApiKeyRemoval(provider.id)}>
+                    Undo
+                  </Button>
+                {/if}
+              </div>
+              {#if provider.note}
+                <p class="text-xs text-muted-foreground">{provider.note}</p>
+              {/if}
+            </div>
           </div>
-        </div>
-      {/if}
+        {/each}
+      </div>
+    </section>
 
-      {#if !can_manage_ai_credentials}
-        <p class="text-sm text-muted-foreground">Only account owners and administrators can change model API keys.</p>
+    <p class="text-sm text-muted-foreground">
+      {#if residents.length > 0}
+        Provider subscriptions are connected on each resident's own settings:
+        {#each residents as resident, index (resident.id)}
+          {#if index > 0},
+          {/if}<Link
+            href={editAccountAgentPath(account.id, resident.id, { tab: 'settings' })}
+            class="underline underline-offset-4 hover:text-foreground">{resident.name}</Link
+          >{/each}.
+      {:else}
+        Provider subscriptions are connected
+        <Link href={accountAgentsPath(account.id)} class="underline underline-offset-4 hover:text-foreground"
+          >on each resident's own settings</Link
+        >.
       {/if}
-    </div>
+    </p>
+
+    <ModelKeysDeliveryNote accountName={account.name} />
+
+    {#if account.use_system_ai_credentials}
+      <div class="rounded-md border border-blue-500/30 bg-blue-500/10 p-4">
+        <div class="space-y-1">
+          <p class="text-sm font-medium">Shared AI keys are available as a fallback</p>
+          <p class="text-sm text-muted-foreground">
+            A site administrator has enabled shared application keys for providers where this account has no key of its
+            own. Only a site administrator can change this setting.
+          </p>
+        </div>
+      </div>
+    {/if}
+
+    {#if !can_manage_ai_credentials}
+      <p class="text-sm text-muted-foreground">Only account owners and administrators can change model API keys.</p>
+    {/if}
 
     {#if can_manage_ai_credentials}
       <div class="flex justify-end">
