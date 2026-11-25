@@ -56,7 +56,9 @@ def find_receipt(api, repository, master, base, tree, required=frozenset()):
     head = pr["head"]["sha"]
     if not SHA.fullmatch(head):
         return None
-    marker = f"CI receipt v1 tree={tree} base={base}"
+    # GitHub clears runs[].pull_requests after merge. Bind the PR using
+    # the event number recorded in the receipt, not that mutable list.
+    marker = f"CI v1 #{pr['number']} {tree} {base}"
     runs = api(f"/actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}&per_page=10")
     for run in runs["workflow_runs"]:
         run_id, attempt = run["id"], run["run_attempt"]
@@ -71,12 +73,6 @@ def find_receipt(api, repository, master, base, tree, required=frozenset()):
             and run["head_repository"]["full_name"] == repository
             and run["status"] == "completed"
             and run["conclusion"] == "success"
-            and any(
-                link["number"] == pr["number"]
-                and link["base"]["ref"] == "master"
-                and link["head"]["sha"] == head
-                for link in run["pull_requests"]
-            )
         ):
             continue
         page = api(f"/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")

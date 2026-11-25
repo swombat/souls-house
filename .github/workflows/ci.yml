@@ -70,7 +70,7 @@ jobs:
   receipt:
     # Must complete before CI result so a merge gated on that check cannot
     # outrun receipt creation. Trusted only with successful suite jobs.
-    name: CI receipt v1 tree=${{ needs.plan.outputs.tested_tree }} base=${{ needs.plan.outputs.tested_base }}
+    name: 'CI v1 #${{ github.event.pull_request.number }} ${{ needs.plan.outputs.tested_tree }} ${{ needs.plan.outputs.tested_base }}'
     needs: [plan]
     if: github.event_name == 'pull_request' && needs.plan.outputs.tested_tree != ''
     runs-on: ubuntu-26.04

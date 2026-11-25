@@ -48,6 +48,9 @@ class CiWorkflowTest(unittest.TestCase):
             self.assertEqual(checkout["with"]["persist-credentials"], False)
         self.assertEqual(self.jobs["receipt"]["needs"], ["plan"])
         self.assertIn("github.event_name == 'pull_request'", self.jobs["receipt"]["if"])
+        self.assertEqual(self.jobs["receipt"]["name"],
+                         "CI v1 #${{ github.event.pull_request.number }} "
+                         "${{ needs.plan.outputs.tested_tree }} ${{ needs.plan.outputs.tested_base }}")
         lookup, = (step for step in self.jobs["plan"]["steps"] if step.get("id") == "reuse")
         self.assertEqual(lookup["if"], "github.event_name == 'push' && github.ref == 'refs/heads/master'")
 

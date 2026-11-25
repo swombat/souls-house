@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -22,7 +24,7 @@ REPOSITORY = "souls-house/souls-house"
 MASTER, BASE, TREE, HEAD = (character * 40 for character in "abcd")
 MERGED = "2026-11-25T12:00:00Z"
 FINISHED = "2026-11-25T11:59:00Z"
-MARKER = f"CI receipt v1 tree={TREE} base={BASE}"
+MARKER = f"CI v1 #42 {TREE} {BASE}"
 APPLICATION = [
     f"{suite} ({shard}/{total})"
     for suite, total in (("rails", 4), ("e2e", 10), ("components", 1))
@@ -50,11 +52,8 @@ class CiTreeReceiptTest(unittest.TestCase):
             "head_repository": {"full_name": REPOSITORY},
             "status": "completed",
             "conclusion": "success",
-            "pull_requests": [{
-                "number": 42,
-                "head": {"sha": HEAD},
-                "base": {"ref": "master", "sha": BASE},
-            }],
+            # GitHub empties this list after merge, even for same-repo PRs.
+            "pull_requests": [],
         }
         self.jobs = []
         self.add_jobs(MARKER, "CI result", "Python runtime tests")
@@ -106,6 +105,15 @@ class CiTreeReceiptTest(unittest.TestCase):
         self.add_jobs("Frontend unit tests", *APPLICATION)
         self.assert_suites({"runtime", "frontend", "application"})
 
+    def test_job_names_match_the_trusted_workflow(self):
+        jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+        rows = jobs["application"]["strategy"]["matrix"]["include"]
+        expected = {
+            "application": {f"{r['suite']} ({r['shard']}/{r['total']})" for r in rows},
+            **{key: {jobs[key]["name"]} for key in ("frontend", "runtime")},
+        }
+        self.assertEqual(receipt_module.SUITE_JOBS, expected)
+
     def test_a_receipt_must_cover_the_entire_independent_master_plan(self):
         for required, qualifies in (({"runtime"}, True), ({"runtime", "frontend"}, False)):
             with self.subTest(required=required):
@@ -122,10 +130,11 @@ class CiTreeReceiptTest(unittest.TestCase):
                 self.add_jobs(*(name for name in APPLICATION if name != missing))
                 self.assert_suites({"runtime"})
 
-    def test_wrong_tree_or_base_cannot_authorize_reuse(self):
+    def test_wrong_pr_tree_or_base_cannot_authorize_reuse(self):
         for marker in (
-            f"CI receipt v1 tree={'e' * 40} base={BASE}",
-            f"CI receipt v1 tree={TREE} base={'e' * 40}",
+            f"CI v1 #43 {TREE} {BASE}",
+            f"CI v1 #42 {'e' * 40} {BASE}",
+            f"CI v1 #42 {TREE} {'e' * 40}",
             MARKER + " extra",
         ):
             with self.subTest(marker=marker):
@@ -143,13 +152,6 @@ class CiTreeReceiptTest(unittest.TestCase):
             ("status", "in_progress"),
             ("conclusion", "failure"),
             ("run_attempt", 2),
-            ("pull_requests", []),
-            ("pull_requests", [{"number": 43, "head": {"sha": HEAD},
-                                "base": {"ref": "master"}}]),
-            ("pull_requests", [{"number": 42, "head": {"sha": "e" * 40},
-                                "base": {"ref": "master"}}]),
-            ("pull_requests", [{"number": 42, "head": {"sha": HEAD},
-                                "base": {"ref": "release"}}]),
         )
         baseline = copy.deepcopy(self.run)
         for key, value in cases:
@@ -208,7 +210,6 @@ class CiTreeReceiptTest(unittest.TestCase):
 
     def test_marker_not_current_pr_base_sha_binds_tested_base(self):
         self.pr["base"]["sha"] = "e" * 40
-        self.run["pull_requests"][0]["base"]["sha"] = "e" * 40
         self.assert_suites({"runtime"})
 
     def test_untrusted_suite_job_cannot_supply_coverage(self):
