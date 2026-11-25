@@ -104,7 +104,7 @@ test('persisted provider updates preserve settings and active ceremony drafts', 
     await code.fill('unfinished-browser-code');
     await mutate('connect');
     await expect(code).toHaveValue('unfinished-browser-code');
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByLabel('Connect Claude Code clamping').getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByText('Connected as remote@example.invalid · Synthetic', { exact: true })).toBeVisible();
     await expect(timeoutInput).toHaveValue('45');
     await page.screenshot({ path: testInfo.outputPath('provider-live-drafts.png'), fullPage: true });
