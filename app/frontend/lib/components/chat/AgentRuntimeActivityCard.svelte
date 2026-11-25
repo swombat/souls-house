@@ -4,6 +4,7 @@
   import { runtimeContactUncertain, runtimeServerTime, runtimeSilenceLabel } from '$lib/runtime-activity';
   import { runtimePlanLine } from '$lib/runtime-plan';
   import SubagentActivity from './SubagentActivity.svelte';
+  import StatusCreature from './StatusCreature.svelte';
 
   let { interaction } = $props();
   let expanded = $state(false);
@@ -43,6 +44,13 @@
           (interaction.last_report_at && now - new Date(interaction.last_report_at).getTime() > 30000))
   );
   const silenceLabel = $derived(runtimeSilenceLabel(interaction, now));
+  // Arriving, here and settled get a creature and a phrase; every other state
+  // keeps its plain status_label (eKmBwJ).
+  const stage = $derived(interaction.status_stage && interaction.status_creature ? interaction.status_stage : null);
+  const statusText = $derived(stage && interaction.status_phrase ? interaction.status_phrase : interaction.status_label);
+  const announcement = $derived(
+    stage && interaction.status_plain ? `${interaction.agent_name} ${interaction.status_plain}` : ''
+  );
 
   $effect(() => {
     // Only a new server timestamp resets the anchor, not a local rerender.
@@ -80,12 +88,18 @@
 </script>
 
 <div class="flex justify-start" data-testid="runtime-activity-card" data-run-id={interaction.run_id || interaction.id}>
+  <!-- The one plain announcement per stage change; outside the summary so it
+       is not part of the disclosure button's name. -->
+  <span class="sr-only" aria-live="polite" data-testid="runtime-stage-announcement">{announcement}</span>
   <details
     bind:open={expanded}
     class="w-fit min-w-0 [overflow-wrap:anywhere] max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 {backgroundClass}">
     <summary class="cursor-pointer px-4 py-3 text-sm select-none">
+      {#if stage}
+        <StatusCreature family={interaction.status_creature} {stage} colour={interaction.agent_colour} />
+      {/if}
       <span class="font-medium">{interaction.agent_name}</span>
-      <span class="text-muted-foreground"> {interaction.status_label}</span>
+      <span class="text-muted-foreground" data-testid="runtime-status-text"> {statusText}</span>
       {#if planLine}
         <span class="text-muted-foreground" data-testid="runtime-plan-line"> · {planLine}</span>
       {/if}
