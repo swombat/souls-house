@@ -208,6 +208,33 @@ class CiPlanGitEventTest(unittest.TestCase):
             self.assertTrue(dispatch.run_frontend)
             self.assertTrue(dispatch.run_runtime)
 
+    def test_cross_surface_rename_triggers_source_suite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._init_repo(repo)
+            (repo / "app" / "models").mkdir(parents=True)
+            (repo / "app" / "models" / "example.rb").write_text("class Example; end\n")
+            self._git(repo, "add", ".")
+            self._git(repo, "commit", "-m", "add model")
+            base_sha = self._git(repo, "rev-parse", "HEAD")
+            self._git(repo, "update-ref", "refs/remotes/origin/master", base_sha)
+
+            # Move the Ruby model into docs/; without --no-renames Git only
+            # reports docs/example.rb and would skip application tests.
+            (repo / "docs").mkdir()
+            self._git(repo, "mv", "app/models/example.rb", "docs/example.rb")
+            self._git(repo, "commit", "-m", "move model to docs")
+
+            pr_plan = ci_plan.plan_for_event(repo, "pull_request", fetch_master=False)
+            self.assertTrue(pr_plan.run_application)
+            self.assertFalse(pr_plan.run_frontend)
+            self.assertFalse(pr_plan.run_runtime)
+
+            push_plan = ci_plan.plan_for_event(repo, "push", before_sha=base_sha, fetch_master=False)
+            self.assertTrue(push_plan.run_application)
+            self.assertFalse(push_plan.run_frontend)
+            self.assertFalse(push_plan.run_runtime)
+
     def test_cli_writes_github_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

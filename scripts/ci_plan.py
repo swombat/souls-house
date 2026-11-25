@@ -251,7 +251,7 @@ def changed_paths_for_event(
         if merge_base.returncode != 0 or not merge_base.stdout.strip():
             return None, "could not compute merge-base against origin/master; running all suites"
         base = merge_base.stdout.strip()
-        diff = _run_git(root, "diff", "--name-only", base, "HEAD")
+        diff = _run_git(root, "diff", "--no-renames", "--name-only", base, "HEAD")
         if diff.returncode != 0:
             return None, "git diff against merge-base failed; running all suites"
         return [line for line in diff.stdout.splitlines() if line.strip()], None
@@ -262,7 +262,7 @@ def changed_paths_for_event(
         verify = _run_git(root, "cat-file", "-e", f"{before_sha}^{{commit}}")
         if verify.returncode != 0:
             return None, "push base commit unavailable locally; running all suites"
-        diff = _run_git(root, "diff", "--name-only", before_sha, "HEAD")
+        diff = _run_git(root, "diff", "--no-renames", "--name-only", before_sha, "HEAD")
         if diff.returncode != 0:
             return None, "git diff for push failed; running all suites"
         return [line for line in diff.stdout.splitlines() if line.strip()], None
