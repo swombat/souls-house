@@ -20,7 +20,16 @@ class CiWorkflowTest(unittest.TestCase):
 
     def test_job_budget_and_partitions(self):
         matrix = self.jobs["application"]["strategy"]["matrix"]["include"]
-        self.assertEqual(len(matrix) + len(self.jobs) - 1, 18)
+        self.assertEqual(len(matrix) + len(self.jobs) - 1, 19)
+        plan = self.jobs["plan"]
+        for key in ("run_application", "run_frontend", "run_runtime"):
+            self.assertIn(key, plan["outputs"])
+        for suite in ("application", "frontend", "runtime"):
+            self.assertEqual(self.jobs[suite]["needs"], ["plan"])
+            self.assertEqual(
+                self.jobs[suite]["if"],
+                f"needs.plan.outputs.run_{suite} == 'true'",
+            )
         for suite, total in (("rails", 4), ("e2e", 10), ("components", 1)):
             rows = [row for row in matrix if row["suite"] == suite]
             self.assertEqual(sorted(row["shard"] for row in rows), list(range(1, total + 1)))
@@ -84,22 +93,89 @@ class CiWorkflowTest(unittest.TestCase):
 
     def test_aggregate_rejects_failure_cancel_and_skip(self):
         result = self.jobs["result"]
+        self.assertEqual(result["name"], "CI result")
         self.assertEqual(result["if"], "always()")
-        self.assertEqual(set(result["needs"]), {"application", "frontend", "runtime"})
+        self.assertEqual(set(result["needs"]), {"plan", "application", "frontend", "runtime"})
         lines = result["steps"][0]["run"].splitlines()
         self.assertEqual(lines[0], "python3 - <<'PY'")
         self.assertEqual(lines[-1], "PY")
         script = "\n".join(lines[1:-1])
-        for state in ("success", "failure", "cancelled", "skipped"):
-            results = {name: {"result": "success"} for name in result["needs"]}
-            results["application"]["result"] = state
-            process = subprocess.run(
+
+        def run_gate(results):
+            return subprocess.run(
                 [sys.executable, "-c", script],
                 env={"PATH": os.environ.get("PATH", ""), "RESULTS": json.dumps(results)},
                 capture_output=True,
                 text=True,
             )
+
+        # Planned suites must succeed; failure, cancel, and unexpected skip fail.
+        for state in ("success", "failure", "cancelled", "skipped"):
+            results = {
+                "plan": {
+                    "result": "success",
+                    "outputs": {
+                        "run_application": "true",
+                        "run_frontend": "true",
+                        "run_runtime": "true",
+                    },
+                },
+                "application": {"result": state},
+                "frontend": {"result": "success"},
+                "runtime": {"result": "success"},
+            }
+            process = run_gate(results)
             self.assertEqual(process.returncode == 0, state == "success", process.stderr)
+
+        # Suites explicitly skipped by plan must report skipped (never failure/cancelled/success).
+        for state in ("skipped", "success", "failure", "cancelled"):
+            results = {
+                "plan": {
+                    "result": "success",
+                    "outputs": {
+                        "run_application": "true",
+                        "run_frontend": "false",
+                        "run_runtime": "false",
+                    },
+                },
+                "application": {"result": "success"},
+                "frontend": {"result": state},
+                "runtime": {"result": "skipped"},
+            }
+            process = run_gate(results)
+            self.assertEqual(process.returncode == 0, state == "skipped", process.stderr)
+
+        # Docs-only / all-skipped passes when plan succeeds with all flags 'false'.
+        docs_only = {
+            "plan": {
+                "result": "success",
+                "outputs": {
+                    "run_application": "false",
+                    "run_frontend": "false",
+                    "run_runtime": "false",
+                },
+            },
+            "application": {"result": "skipped"},
+            "frontend": {"result": "skipped"},
+            "runtime": {"result": "skipped"},
+        }
+        self.assertEqual(run_gate(docs_only).returncode, 0)
+
+        # A failed or missing plan fails closed even if all suites were skipped.
+        failed_plan = dict(docs_only, plan={"result": "failure", "outputs": docs_only["plan"]["outputs"]})
+        self.assertNotEqual(run_gate(failed_plan).returncode, 0)
+
+        # Missing/invalid plan flag fails closed.
+        missing_flag = {
+            "plan": {
+                "result": "success",
+                "outputs": {"run_application": "true", "run_frontend": "true"},
+            },
+            "application": {"result": "success"},
+            "frontend": {"result": "success"},
+            "runtime": {"result": "skipped"},
+        }
+        self.assertNotEqual(run_gate(missing_flag).returncode, 0)
 
 
 if __name__ == "__main__":
