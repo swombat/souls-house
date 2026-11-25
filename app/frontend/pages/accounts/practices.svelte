@@ -1,5 +1,6 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
+  import { createDynamicSync } from '$lib/use-sync';
   import { ArrowUp, ArrowDown, PencilSimple, X, Check } from 'phosphor-svelte';
   import { Button } from '$lib/components/shadcn/button';
   import { Input } from '$lib/components/shadcn/input';
@@ -19,6 +20,14 @@
   let editText = $state('');
   let busy = $state(false);
   let draftAccount;
+
+  // Someone else's change (a person or a resident through the API) refreshes
+  // the list; the hint carries no content.
+  const updatePracticesSync = createDynamicSync();
+  $effect(() => {
+    const id = account?.id;
+    updatePracticesSync(id ? { [`PracticeActivity:${id}`]: ['practices', 'used'] } : {});
+  });
 
   // Switching account in the rail must not carry a half-typed line across.
   $effect(() => {

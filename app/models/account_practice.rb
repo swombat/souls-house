@@ -52,6 +52,7 @@ class AccountPractice < ApplicationRecord
       practice.save!
       practice.move_within(lines + [ practice ], position) if position
       practice.audit!("add_account_practice", by:, request:)
+      PracticeActivity.refresh!(account.id)
       practice
     end
   end
@@ -78,6 +79,7 @@ class AccountPractice < ApplicationRecord
       action = before[:text] == self.text ? "reorder_account_practice" : "edit_account_practice"
       audit!(action, by:, request:, from_text: (before[:text] if action == "edit_account_practice"),
         from_position: (before[:position] if before[:position] != self.position))
+      PracticeActivity.refresh!(account_id)
       self
     end
   end
@@ -90,6 +92,7 @@ class AccountPractice < ApplicationRecord
       account.account_practices.ordered.each.with_index(1) do |line, index|
         line.update_column(:position, index) unless line.position == index
       end
+      PracticeActivity.refresh!(account_id)
       self
     end
   end

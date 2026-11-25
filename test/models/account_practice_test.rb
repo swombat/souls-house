@@ -2,6 +2,8 @@ require "test_helper"
 
 class AccountPracticeTest < ActiveSupport::TestCase
 
+  include ActionCable::TestHelper
+
   setup do
     @account = accounts(:personal_account)
     @user = users(:user_1)
@@ -85,6 +87,15 @@ class AccountPracticeTest < ActiveSupport::TestCase
     assert_no_difference -> { AuditLog.count } do
       practice.revise!(text: " Same ", position: 1, by: @user)
     end
+  end
+
+  test "each committed change sends the account a content-free refresh hint" do
+    channel = "PracticeActivity:#{@account.to_param}"
+    practice = nil
+    assert_equal [ { "action" => "refresh" } ], capture_broadcasts(channel) { practice = AccountPractice.add!(account: @account, text: "A", by: @user) }
+    assert_equal [ { "action" => "refresh" } ], capture_broadcasts(channel) { practice.revise!(text: "B", by: @user) }
+    assert_empty capture_broadcasts(channel) { practice.revise!(text: "B", by: @user) }
+    assert_equal [ { "action" => "refresh" } ], capture_broadcasts(channel) { practice.remove!(by: @user) }
   end
 
 end

@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { expect, test, beforeEach } from 'vitest';
+import { expect, test, beforeEach, vi } from 'vitest';
 import { router } from '@inertiajs/svelte';
 import Practices from './practices.svelte';
+
+const { update } = vi.hoisted(() => ({ update: vi.fn() }));
+vi.mock('$lib/use-sync', () => ({ createDynamicSync: () => update }));
 
 const account = { id: 'home', name: 'Home' };
 const path = '/accounts/home/practices';
@@ -29,6 +32,7 @@ test('lists the lines in order with their last editor, the usage, and the guests
   expect(lines[1]).toHaveTextContent('Last changed by Daniel');
   expect(screen.getByTestId('practices-usage')).toHaveTextContent('50 of 3,000 characters used');
   expect(screen.getByTestId('practices-guests-note')).toHaveTextContent('Guests see these practices too.');
+  expect(update).toHaveBeenLastCalledWith({ 'PracticeActivity:home': ['practices', 'used'] });
 });
 
 test('adds a line as one line', async () => {
