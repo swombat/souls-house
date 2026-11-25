@@ -450,3 +450,34 @@ test('the announcement changes with the stage, and the creature stays the same f
   expect(screen.getByTestId('status-creature')).toHaveAttribute('data-stage', 'here');
   expect(screen.getByTestId('runtime-status-text')).toHaveTextContent('is leaning in');
 });
+
+test('a live creature falls back to plain words when reports go quiet on the card clock', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance', 'Date'] });
+  vi.setSystemTime(new Date('2030-01-01T00:00:00Z')); // Deliberately unlike the server clock.
+  try {
+    const interaction = {
+      ...base,
+      agent_name: 'Mira',
+      started_at: '2026-10-12T10:00:00Z',
+      server_time: '2026-10-12T10:01:00Z',
+      last_report_at: '2026-10-12T10:01:00Z',
+      reporter_health: 'live',
+      status_stage: 'here',
+      status_creature: 'wisp',
+      status_phrase: 'is keeping company',
+      status_plain: 'is working',
+    };
+    const { unmount } = render(AgentRuntimeActivityCard, { interaction });
+    expect(screen.getByTestId('status-creature')).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-status-text')).toHaveTextContent('is keeping company');
+    await vi.advanceTimersByTimeAsync(35000);
+    await tick();
+    expect(screen.getByText(/Live updates interrupted/)).toBeInTheDocument();
+    expect(screen.queryByTestId('status-creature')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime-status-text')).toHaveTextContent('is working');
+    expect(screen.getByTestId('runtime-stage-announcement')).toHaveTextContent('');
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});

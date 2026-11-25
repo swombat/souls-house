@@ -46,7 +46,11 @@
   const silenceLabel = $derived(runtimeSilenceLabel(interaction, now));
   // Arriving, here and settled get a creature and a phrase; every other state
   // keeps its plain status_label (eKmBwJ).
-  const stage = $derived(interaction.status_stage && interaction.status_creature ? interaction.status_stage : null);
+  // The card's own clock can see reports go quiet before the server projects
+  // it; an interrupted run must not keep a creature claiming it is alive.
+  const stage = $derived(
+    interaction.status_stage && interaction.status_creature && !healthStale ? interaction.status_stage : null
+  );
   const statusText = $derived(stage && interaction.status_phrase ? interaction.status_phrase : interaction.status_label);
   const announcement = $derived(
     stage && interaction.status_plain ? `${interaction.agent_name} ${interaction.status_plain}` : ''
