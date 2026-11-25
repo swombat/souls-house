@@ -26,6 +26,11 @@ test('advances server time using only monotonic elapsed time, independent of cli
   expect(runtimeServerTime('invalid', 500, 60500)).toBeNull();
 });
 
+test('a run whose turn ended but whose process has not exited stops claiming the runtime is active', () => {
+  expect(runtimeSilenceLabel(running, now)).not.toBeNull();
+  expect(runtimeSilenceLabel({ ...running, exit_unconfirmed: true }, now)).toBeNull();
+});
+
 test('silence starts at two minutes, floors minutes, and never claims task progress', () => {
   const start = Date.parse(running.started_at);
   expect(runtimeSilenceLabel(running, start + 119999)).toBeNull();

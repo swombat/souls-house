@@ -265,6 +265,53 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_nil @run.finished_at
   end
 
+  test "heartbeats long after the turn ended read as exit not confirmed, never as finished" do
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    ingest(2, "turn.started")
+    ingest(3, "turn.finished")
+    travel 9.minutes
+    ingest(4, "heartbeat")
+    assert_equal "is working", @run.reload.as_chat_activity_json[:status_label]
+    assert_not @run.as_chat_activity_json[:exit_unconfirmed]
+
+    travel 2.minutes
+    ingest(5, "heartbeat")
+    json = @run.reload.as_chat_activity_json
+    assert json[:exit_unconfirmed]
+    assert_equal "ended its turn; exit not confirmed", json[:status_label]
+    assert_equal "live", json[:reporter_health]
+    assert json[:active]
+    assert_nil @run.finished_at
+    assert @chat.agent_response_active?(@agent)
+
+    # A later real turn clears the marker.
+    ingest(6, "turn.started")
+    assert_not @run.reload.as_chat_activity_json[:exit_unconfirmed]
+    ingest(7, "turn.finished")
+    travel 11.minutes
+    ingest(8, "heartbeat")
+    assert @run.reload.as_chat_activity_json[:exit_unconfirmed]
+
+    # A late terminal result wins with its own outcome.
+    ingest(9, "supervisor.finished", { "outcome" => "failed" })
+    json = @run.reload.as_chat_activity_json
+    assert_equal "failed", json[:status]
+    assert_equal "finished with an error", json[:status_label]
+    assert_not json[:exit_unconfirmed]
+    assert_nil json[:turn_ended_at]
+  end
+
+  test "the turn-ended marker does not carry into a fallback attempt" do
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    ingest(2, "turn.finished")
+    ingest(3, "fallback")
+    second = SecureRandom.uuid
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" }, attempt_id: second, number: 2)
+    travel 11.minutes
+    ingest(2, "heartbeat", {}, attempt_id: second, number: 2)
+    assert_not @run.reload.as_chat_activity_json[:exit_unconfirmed]
+  end
+
   test "oversized unknown and malformed events are rejected" do
     ingest(1, "attempt.started", { "narration_capability" => "unknown" })
     assert_raises(RuntimeActivityIngestion::Invalid) { ingest(2, "reasoning", { "text" => "private" }) }

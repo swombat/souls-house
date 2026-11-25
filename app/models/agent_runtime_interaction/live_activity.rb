@@ -6,6 +6,11 @@ module AgentRuntimeInteraction::LiveActivity
   PREPARATION_WINDOW = 10.minutes
   RELEASE_GRACE = 10.minutes
   REPORT_FRESHNESS = 30.seconds
+  # A run whose turn ended this long ago, still reporting but not finished,
+  # is shown as "exit not confirmed". A diagnostic only: it does not finish,
+  # kill or retry the run; the deadline and a late terminal result still rule.
+  EXIT_UNCONFIRMED_AFTER = 10.minutes
+  TURN_ENDED_KEY = "turn_ended_at"
 
   included do
     has_many :agent_runtime_attempts, dependent: :destroy
@@ -283,6 +288,12 @@ module AgentRuntimeInteraction::LiveActivity
     replies = linked_messages.count
     state = execution_state
     ongoing = !state.in?(TERMINAL_STATES)
+    turn_ended_at = begin
+      Time.iso8601(stored_snapshot[TURN_ENDED_KEY].to_s)
+    rescue ArgumentError
+      nil
+    end
+    exit_unconfirmed = ongoing && turn_ended_at.present? && turn_ended_at < EXIT_UNCONFIRMED_AFTER.ago
     health = if latest&.last_report_at
       latest.last_report_at < REPORT_FRESHNESS.ago && ongoing ? "stale" : "live"
     else
@@ -296,6 +307,8 @@ module AgentRuntimeInteraction::LiveActivity
     snapshot.merge!(helpers.public_snapshot)
     status_label = if waking
       "is waking up"
+    elsif exit_unconfirmed
+      "ended its turn; exit not confirmed"
     else
       {
         "queued" => "is queued", "preparing" => "is preparing",
@@ -309,6 +322,8 @@ module AgentRuntimeInteraction::LiveActivity
       run_id: run_id, revision: attempts.sum(&:revision) + (ongoing ? 0 : 1_000_000),
       status: state, active: ongoing,
       status_label: status_label,
+      exit_unconfirmed: exit_unconfirmed,
+      turn_ended_at: (turn_ended_at&.iso8601 if ongoing),
       reporter_health: health, snapshot: snapshot,
       narration_shared: helpers_shared,
       server_time: Time.current.iso8601(3),

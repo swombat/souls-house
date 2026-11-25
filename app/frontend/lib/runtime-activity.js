@@ -16,6 +16,7 @@ export function runtimeSilenceLabel(interaction, now) {
     interaction.narration_shared === false ||
     !interaction.run_id ||
     !interaction.active ||
+    interaction.exit_unconfirmed ||
     interaction.status !== 'running' ||
     now == null
   )
