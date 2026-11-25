@@ -12,6 +12,8 @@
     working = { rooms: {}, all: [] },
     resident_room_id = null,
     main_room = { id: null, name: 'Main', description: null },
+    model_residents = [],
+    room_model_defaults = [],
   } = $props();
 
   page.set({
@@ -40,4 +42,6 @@
   main_count={12}
   {main_room}
   {resident_room_id}
+  {model_residents}
+  {room_model_defaults}
   can_manage={true} />

@@ -1,0 +1,6 @@
+date: 2026-11-25
+title: Rooms, resident defaults, and room models now live in one list
+body: >-
+  Account Settings → Rooms now brings each active room, its "Default for residents" mark, and each resident's
+  starting model for that room together into a single list, with "Add room" as its footer row. Archived rooms stay in
+  their own list underneath.
