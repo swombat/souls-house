@@ -128,7 +128,13 @@ class Backup::CommsTelegramDumpJobTest < ActiveJob::TestCase
     key, bytes = @uploads.first
     assert_match %r{\Acomms-telegram/\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.tgbackup\z}, key
     assert_equal "TGBACKUP\x01\x00\x00\x00\x02{}\xFF\xFEbinary\x00tail".b, bytes
-    assert_equal key, @pruned
+  end
+
+  test "the nightly run deletes nothing until retention is agreed" do
+    refute Backup::CommsTelegramDumpJob::PRUNE
+    run_job("ok")
+    assert_equal 1, @uploads.size
+    assert_nil @pruned
   end
 
   test "skips only when the connector is not configured" do

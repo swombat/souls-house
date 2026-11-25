@@ -35,9 +35,15 @@ module Backup
     INSPECT_TIMEOUT = 30.seconds
     MAX_STDERR = 64.kilobytes # the retained tail; the rest is read and dropped
     PREFIX = "comms-telegram/".freeze
-    # The bucket has no lifecycle rule, so this prefix prunes itself: a
+    # The bucket has no lifecycle rule, so this prefix can prune itself: a
     # dump holds sealed sessions, and an owner who disconnects should not
     # stay recoverable in backups for long. Only after a new dump uploaded.
+    #
+    # Off until Daniel agrees the retention (asked 17 Nov, no answer yet):
+    # a review can't consent to deleting backups for him. Until then every
+    # dump is kept, like the house dumps beside it. Turning it on is this
+    # one constant; prune! and its tests stay as written.
+    PRUNE = false
     KEEP_FOR = 14.days
     KEEP_AT_LEAST = 3
 
@@ -52,7 +58,7 @@ module Backup
         file.close
         summary = dump!(file.path)
         upload!(file.path, key)
-        prune!(key)
+        prune!(key) if PRUNE
         Rails.logger.info "Telegram connector backup completed: #{key} #{summary.to_json}"
       end
     end
