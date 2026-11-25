@@ -144,10 +144,11 @@ its own scope, ownership, deduplication and stop controls.
 
 ### Review as a status check, merge on green (2026-11-25)
 
-In the slowdown review (`JVwQWY`), Daniel put velocity first: one reviewer is
-enough, and GitHub may merge by itself once CI is green and a review is
-present. Because every contributor pushes as the same user, a review is the
-`review` commit status set with `scripts/review-status` on the exact head that
-was read. "Protect Main" requires it and `CI result`; repository auto-merge
-(squash) merges when both are green. Built in `YbknXe`. CONTRIBUTING.md has the
-flow.
+In the slowdown review (`JVwQWY`, `YxGmqb`), Daniel put velocity first: a
+builder may merge once one reviewer has responded, and GitHub may merge by
+itself "when CI is green and two are present". Because every contributor
+pushes as the same user, each review is a `review/<who>` commit status on the
+exact head that was read, and `scripts/review-status` derives the required
+`review` status from them (any block fails it; two approvals pass it).
+"Protect Main" requires it and `CI result`; repository auto-merge (squash)
+merges when both are green. Built in `YbknXe`. CONTRIBUTING.md has the flow.

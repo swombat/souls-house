@@ -2,9 +2,13 @@
 """Record a review, or turn on auto-merge, for a souls.house pull request.
 
 Every contributor pushes as the same GitHub user, so GitHub's own Approve is
-impossible. A review is a commit status instead: context `review` on the exact
-head the reviewer read. The "Protect Main" ruleset requires `CI result` and
-`review` to be green, and auto-merge then squashes the PR in.
+impossible. A review is a commit status instead: each reviewer sets
+`review/<who>` on the exact head they read, and this script then derives the
+`review` status from all of them. `review` fails if anyone has blocked that
+head, succeeds once two different reviewers have approved it, and is pending
+otherwise. The "Protect Main" ruleset requires `CI result` and `review`, and
+auto-merge then squashes the PR in. A block holds until a new head is pushed
+or the same reviewer approves that head.
 
     scripts/review-status <pr> <sha> approve "Mira: read the whole diff"
     scripts/review-status <pr> <sha> block "Mira: the lock is taken too late"
@@ -12,7 +16,7 @@ head the reviewer read. The "Protect Main" ruleset requires `CI result` and
 
 <sha> is the head you reviewed (seven characters or more). The script reads the
 PR's current head and refuses if they differ, so a push you haven't read can't
-be approved by mistake. A later approve on the same head replaces a block.
+be approved by mistake.
 
 The token comes from GITHUB_TOKEN or GH_TOKEN, else from `git credential fill`.
 """
@@ -27,6 +31,7 @@ REPO = os.environ.get("REVIEW_STATUS_REPO", "swombat/souls-house")
 API = "https://api.github.com"
 CONTEXT = "review"
 STATES = {"approve": "success", "block": "failure"}
+REQUIRED_APPROVALS = 2
 MIN_SHA = 7
 MAX_DESCRIPTION = 140
 
@@ -78,15 +83,43 @@ def check_head(pull, reviewed_sha):
     return head
 
 
+def reviewer_slug(note):
+    who = note.split(":", 1)[0].strip().lower()
+    slug = "".join(ch if ch.isalnum() else "-" for ch in who).strip("-")
+    if ":" not in note or not slug:
+        raise Refused('say who is reviewing: "<who>: <why>"')
+    return slug
+
+
+def clip(text):
+    text = " ".join(text.split())
+    return text if len(text) <= MAX_DESCRIPTION else text[: MAX_DESCRIPTION - 1] + "…"
+
+
 def status_body(verdict, note):
     if verdict not in STATES:
         raise Refused(f"verdict must be one of {', '.join(STATES)}")
     note = " ".join(note.split())
-    if ":" not in note or not note.split(":", 1)[0].strip():
-        raise Refused('say who is reviewing: "<who>: <why>"')
-    if len(note) > MAX_DESCRIPTION:
-        note = note[: MAX_DESCRIPTION - 1] + "…"
-    return {"state": STATES[verdict], "context": CONTEXT, "description": note}
+    context = f"{CONTEXT}/{reviewer_slug(note)}"
+    return {"state": STATES[verdict], "context": context, "description": clip(note)}
+
+
+def aggregate(statuses):
+    """The required `review` status, from the latest status of each review/<who>."""
+    reviews = {s["context"]: s for s in statuses if s["context"].startswith(CONTEXT + "/")}
+    blocks = [s for s in reviews.values() if s["state"] in ("failure", "error")]
+    approvals = sorted(c.split("/", 1)[1] for c, s in reviews.items() if s["state"] == "success")
+    if blocks:
+        return {"state": "failure", "context": CONTEXT, "description": clip("Blocked. " + " | ".join(s["description"] or s["context"] for s in blocks))}
+    if len(approvals) >= REQUIRED_APPROVALS:
+        return {"state": "success", "context": CONTEXT, "description": clip(f"Approved by {', '.join(approvals)}")}
+    so_far = f": {', '.join(approvals)}" if approvals else ""
+    return {"state": "pending", "context": CONTEXT, "description": clip(f"{len(approvals)} of {REQUIRED_APPROVALS} approvals{so_far}")}
+
+
+def latest_statuses(head, auth):
+    # The combined endpoint returns the newest status for each context.
+    return request("GET", f"{API}/repos/{REPO}/commits/{head}/status?per_page=100", auth)["statuses"]
 
 
 def review(number, reviewed_sha, verdict, note, auth):
@@ -94,7 +127,15 @@ def review(number, reviewed_sha, verdict, note, auth):
     pull = request("GET", f"{API}/repos/{REPO}/pulls/{number}", auth)
     head = check_head(pull, reviewed_sha)
     request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, body)
-    print(f"#{number} {head[:12]}: review {body['state']} ({body['description']})")
+    summary = aggregate(latest_statuses(head, auth))
+    request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, summary)
+    # Two reviewers may run this at once. Read again after writing, so the last
+    # word reflects every review/<who> that had landed by then.
+    settled = aggregate(latest_statuses(head, auth))
+    if settled != summary:
+        request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, settled)
+        summary = settled
+    print(f"#{number} {head[:12]}: {body['context']} {body['state']}; review {summary['state']} ({summary['description']})")
 
 
 def auto_merge(number, auth):

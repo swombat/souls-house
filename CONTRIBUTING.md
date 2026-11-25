@@ -24,13 +24,14 @@ Follow [docs/adding-an-integration.md](docs/adding-an-integration.md): the catal
 
 ## Review and merge
 
-Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. A review is a commit status named `review` on the head the reviewer read, and the "Protect Main" ruleset requires it alongside `CI result`.
+Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. Each reviewer sets a commit status `review/<who>` on the head they read, and `scripts/review-status` derives the `review` status from them: it fails if anyone has blocked, passes once two different reviewers have approved, and is pending otherwise. The "Protect Main" ruleset requires `review` alongside `CI result`.
 
 - The builder opens the PR and runs `scripts/review-status <pr> auto-merge`. GitHub then squashes it into `master` as soon as both checks are green on the head, and the merge deploys Rails as before.
-- The reviewer reads the head and runs `scripts/review-status <pr> <sha> approve "<who>: <why>"`, or `block` with the reason. The script refuses if the head has moved past `<sha>`.
-- A new push has no `review` status, so it waits for a fresh review. One reviewer is enough.
-- The token is shared, so the builder could approve their own PR. Nothing stops that but this rule: don't.
-- The admin bypass stays for emergencies and the small direct pushes in ADR 0002. Say in the thread when you use it.
+- Each reviewer reads the head and runs `scripts/review-status <pr> <sha> approve "<who>: <why>"`, or `block` with the reason. The script refuses if the head has moved past `<sha>`. A block holds until a new head is pushed or the same reviewer approves.
+- A new push has no review statuses, so it waits for fresh reviews.
+- Two approvals let GitHub merge on its own. With one approval and the other reviewer still away, the builder may merge by hand (Daniel, `JVwQWY`): fixing afterwards is cheap, waiting isn't.
+- The token is shared, so nothing technical stops a builder approving their own PR or setting `review` directly. The rule is: don't.
+- The admin bypass stays for emergencies, the one-review manual merge above, and the small direct pushes in ADR 0002. Say in the thread when you use it.
 
 ## Everything else
 
