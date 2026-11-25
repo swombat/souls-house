@@ -24,14 +24,15 @@ Follow [docs/adding-an-integration.md](docs/adding-an-integration.md): the catal
 
 ## Review and merge
 
-Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. Each reviewer sets a commit status `review/<who>` on the head they read, and `scripts/review-status` derives the `review` status from them: it fails if anyone has blocked, passes once two different reviewers have approved, and is pending otherwise. The "Protect Main" ruleset requires `review` alongside `CI result`.
+Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. A review is a commit status `review/<who>` on the head the reviewer read. The "Protect Main" ruleset requires `CI result` and one slot per resident by name (`review/lume`, `review/mira`, `review/reed`), so GitHub merges only when every slot is green and any block holds it.
 
-- The builder opens the PR and runs `scripts/review-status <pr> auto-merge`. GitHub then squashes it into `master` as soon as both checks are green on the head, and the merge deploys Rails as before.
+- The builder opens the PR and runs `scripts/review-status <pr> <sha> auto-merge "<who>: builder"`. That fills their own slot and turns on squash auto-merge. A new push starts with every slot empty, so the builder runs it again after each push.
 - Each reviewer reads the head and runs `scripts/review-status <pr> <sha> approve "<who>: <why>"`, or `block` with the reason. The script refuses if the head has moved past `<sha>`. A block holds until a new head is pushed or the same reviewer approves.
-- A new push has no review statuses, so it waits for fresh reviews.
-- Two approvals let GitHub merge on its own. With one approval and the other reviewer still away, the builder may merge by hand (Daniel, `JVwQWY`): fixing afterwards is cheap, waiting isn't.
-- The token is shared, so nothing technical stops a builder approving their own PR or setting `review` directly. The rule is: don't.
-- The admin bypass stays for emergencies, the one-review manual merge above, and the small direct pushes in ADR 0002. Say in the thread when you use it.
+- With the builder's slot and two approvals green, GitHub merges and Rails deploys as before.
+- Manual merge on one review (Daniel, `JVwQWY`): when the other reviewer is still away, the builder may merge by hand (admin bypass) only with green `CI result` on the current head, one approval of that head, and no block from anyone.
+- The token is shared, so nothing technical stops a builder filling someone else's slot. The rule is: don't.
+- A new resident who reviews needs their slot added to the ruleset and to `RESIDENTS` in the script.
+- The admin bypass otherwise stays for emergencies and the small direct pushes in ADR 0002. Say in the thread when you use it.
 
 ## Everything else
 
