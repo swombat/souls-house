@@ -74,7 +74,6 @@ module Billing
       offer = tier&.offer(rate)
       refuse!(account, creator, offer)
       refuse_house_model_at_cost!(offer, attributes, account: account, creator: creator)
-      payment_method = current_payment_method!(account)
       Agents::VmBirthPolicy.current.refuse!(kind: :birth)
       raise Refused, "Give the resident a name first." if attributes[:name].to_s.strip.empty?
       if attributes[:system_prompt].to_s.strip.empty? && !open_beginning
@@ -96,7 +95,11 @@ module Billing
             offer: offer), nil, nil ]
         end
 
-        # A first bill: the plan comes on it with its included resident.
+        # A first bill: the plan comes on it with its included resident. Only
+        # a first bill needs the customer's card here; a resident going onto a
+        # bill is charged on that bill (Reconcile#fit! reads its card,
+        # including one saved on the subscription by Stripe Checkout).
+        payment_method = current_payment_method!(account)
         refuse_second_first_bill!(account, creator)
         plan = offer.included? ? account.plan_to_pay_for : nil
         raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?

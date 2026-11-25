@@ -14,13 +14,16 @@ module Billing
     end
 
     # nil when the account has no customer at Stripe yet, or no saved card.
+    # A card paid with in Stripe Checkout (a plan bought alone,
+    # Billing::PlanCheckout) is saved on the subscription, not the customer:
+    # the account's live subscription's card counts too.
     def current
       customer = BillingCustomer.find_by(account: @account)
       return nil if customer.nil?
 
       remote = @client.v1.customers.retrieve(customer.stripe_customer_id,
         { expand: [ "invoice_settings.default_payment_method" ] })
-      summarize(remote.invoice_settings&.default_payment_method)
+      summarize(card(remote.invoice_settings&.default_payment_method) || subscription_card(customer))
     end
 
     # An embedded Stripe form that saves a card (and billing address) to the
@@ -59,6 +62,27 @@ module Billing
     end
 
     private
+
+    def subscription_card(customer)
+      id = customer.stripe_subscription_id.presence ||
+        AccountSubscription.live.where(account: @account).order(:id).last&.stripe_subscription_id ||
+        ResidentSubscription.live.where(account: @account).order(:id).last&.stripe_subscription_id
+      return nil if id.blank?
+
+      remote = @client.v1.subscriptions.retrieve(id, { expand: [ "default_payment_method" ] })
+      return nil unless remote.status.in?(BillSync::LIVE)
+
+      card(remote[:default_payment_method])
+    rescue Stripe::InvalidRequestError
+      nil
+    end
+
+    # An expanded payment method, or one named by id.
+    def card(method)
+      return method unless method.is_a?(String)
+
+      @client.v1.payment_methods.retrieve(method)
+    end
 
     def summarize(method)
       return nil if method.nil? || method.is_a?(String) || method.card.nil?

@@ -157,9 +157,9 @@
             confirm.
           {:else}
             {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, one small
-            resident included. Choosing one charges nothing now: it starts with your first resident.{trialShown
-              ? ' Only Companions has the free days.'
-              : ''}
+            resident included. Partners and Colleagues are paid now, in Stripe Checkout, and your first resident then
+            joins that bill as the one the plan includes. Choosing Companions charges nothing now: it starts with your
+            first resident.{trialShown ? ' Only Companions has the free days.' : ''}
           {/if}
         </p>
       </div>

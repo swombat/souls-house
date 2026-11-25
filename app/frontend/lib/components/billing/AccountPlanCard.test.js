@@ -55,7 +55,8 @@ test('no bill yet: the plan the first bill will carry, the others to choose, and
 
   const terms = screen.getByTestId('account-plan-terms');
   expect(terms).toHaveTextContent('Partners is $29.99 a month + VAT; Colleagues is $59.99 a month + VAT, one small');
-  expect(terms).toHaveTextContent('Choosing one charges nothing now: it starts with your first resident.');
+  expect(terms).toHaveTextContent('Partners and Colleagues are paid now, in Stripe Checkout');
+  expect(terms).toHaveTextContent('Choosing Companions charges nothing now: it starts with your first resident.');
   expect(terms).toHaveTextContent('Only Companions has the free days.');
   expect(screen.queryByRole('button', { name: /Companions/ })).toBeNull();
 
@@ -237,6 +238,6 @@ test('renders nothing when the props carry no account plan', () => {
 test('an account the tab offers no free trial is never told about one, and still sees the charge', () => {
   show({ id: 'companions', source: 'default', subscription: null, chosen: 'companions' }, true, false);
   const terms = screen.getByTestId('account-plan-terms');
-  expect(terms).toHaveTextContent('Choosing one charges nothing now: it starts with your first resident.');
+  expect(terms).toHaveTextContent('Choosing Companions charges nothing now: it starts with your first resident.');
   expect(terms).not.toHaveTextContent(/free/i);
 });

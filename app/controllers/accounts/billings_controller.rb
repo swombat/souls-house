@@ -161,10 +161,12 @@ class Accounts::BillingsController < ApplicationController
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
-  # An account that pays already puts the plan on its bill, or changes the
-  # plan line there, quoted first (a plan may stand alone on a bill). One
-  # that doesn't yet chooses the plan its first bill carries, and nothing
-  # is charged now.
+  # A plan may stand alone on a bill (jGgWgj). An account that pays already
+  # puts the plan on its bill, or changes the plan line there, quoted first.
+  # One that doesn't yet buys it by itself in Stripe Checkout, as its first
+  # bill (Billing::PlanCheckout); its first resident then goes onto that
+  # bill, the plan's included one. Companions on no bill is only a choice:
+  # every account starts on it, and it comes with the first resident.
   def account_plan_checkout
     plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
     # A plan op with no price takes the plan off the bill: a plan with no
@@ -175,10 +177,18 @@ class Accounts::BillingsController < ApplicationController
       return redirect_to account_billing_path(current_account, add: change.id)
     end
 
-    current_account.update!(chosen_plan: plan.id)
-    audit("choose_account_plan", current_account, plan: plan.id)
-    redirect_to account_billing_path(current_account),
-      notice: "#{plan.name} it is. It starts with your first resident, which it includes; nothing is charged until then."
+    if plan == Billing::AccountPlan.default
+      current_account.update!(chosen_plan: plan.id)
+      audit("choose_account_plan", current_account, plan: plan.id)
+      return redirect_to account_billing_path(current_account),
+        notice: "#{plan.name} it is. It starts with your first resident, which it includes; nothing is charged until then."
+    end
+
+    url = Billing::PlanCheckout.new(account: current_account, plan: plan,
+      success_url: account_billing_url(current_account, checkout: "success"),
+      cancel_url: account_billing_url(current_account)).url
+    audit("account_plan_checkout", current_account, plan: plan.id)
+    inertia_location url
   rescue *BILL_ERRORS => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end

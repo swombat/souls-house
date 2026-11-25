@@ -333,6 +333,14 @@ class FakeStripe
     )
   end
 
+  def payment_methods
+    Service.new(retrieve: lambda { |id|
+      raise Stripe::InvalidRequestError.new("No such PaymentMethod: '#{id}'", "id") unless @payment_methods.key?(id)
+
+      construct(@payment_methods[id])
+    })
+  end
+
   def customers
     Service.new(
       create: lambda { |params, opts|

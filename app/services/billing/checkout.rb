@@ -3,7 +3,7 @@
 module Billing
   class Checkout
 
-    REPLAY_WINDOW = 23.hours # Stripe may prune keys after 24h.
+    REPLAY_WINDOW = CheckoutSession::REPLAY_WINDOW
     OPERATION_BUDGET = 30 # cooperative seconds, checked between HTTP calls
 
     def initialize(agent:, tier:, success_url:, cancel_url:, rate: "standard", client: Billing.client)
@@ -60,19 +60,15 @@ module Billing
       end
     end
 
-    # An account's resident Checkouts that Stripe confirms expired are
-    # resolved here, so they stop holding the plan's included resident
-    # (Billing::Included) or a plan code (BillingCode#plan_refusal). Only a
-    # session Stripe says is expired is released: one with no session yet (an
-    # uncertain create), one still open, one completed, or one Stripe can't
-    # be asked about just now, stays as it is.
+    # An account's Checkouts that Stripe confirms expired are resolved here,
+    # its residents' and its plan's (Billing::PlanCheckout), so they stop
+    # holding the plan's included resident (Billing::Included), a plan code
+    # (BillingCode#plan_refusal) or the account's first bill
+    # (Billing::FirstBill). Only a session Stripe says is expired is
+    # released (Billing::CheckoutSession.release_expired!).
     def self.release_expired!(account, client: Billing.client)
-      BillingCheckoutAttempt.unresolved.where(account:, kind: "checkout").where.not(stripe_session_id: nil).find_each do |attempt|
-        session = client.v1.checkout.sessions.retrieve(attempt.stripe_session_id)
-        attempt.update!(resolved_at: Time.current) if session.status == "expired"
-      rescue Stripe::StripeError
-        next
-      end
+      CheckoutSession.release_expired!(BillingCheckoutAttempt.where(account:, kind: "checkout"), client:)
+      CheckoutSession.release_expired!(AccountPlanCheckoutAttempt.where(account:), client:)
     end
 
     # Closes every Checkout this resident could still pay before its plan is
@@ -112,21 +108,9 @@ module Billing
     end
 
     def recover!(attempt)
-      if attempt.stripe_session_id?
-        return remote { @client.v1.checkout.sessions.retrieve(attempt.stripe_session_id) }
-      end
-      if attempt.created_at < REPLAY_WINDOW.ago
-        raise NotReady, "An earlier Checkout for #{@agent.name} needs operator reconciliation. Contact #{Billing.contact_email}; do not pay another link."
-      end
-
-      session = remote do
-        @client.v1.checkout.sessions.create(attempt.create_params.deep_symbolize_keys,
-          { idempotency_key: attempt.idempotency_key })
-      end
-      attempt.update!(stripe_session_id: session.id)
-      # Read live state: a replay can return the originally cached open response
-      # even after the session completed or expired.
-      remote { @client.v1.checkout.sessions.retrieve(session.id) }
+      CheckoutSession.recover!(attempt, client: @client, remote: method(:remote),
+        stale: "An earlier Checkout for #{@agent.name} needs operator reconciliation. " \
+               "Contact #{Billing.contact_email}; do not pay another link.")
     end
 
     def publish!(attempt, session, entitlement)
@@ -138,8 +122,7 @@ module Billing
     def settle!(session)
       case session.status
       when "open"
-        expired = remote { @client.v1.checkout.sessions.expire(session.id) }
-        raise NotReady, "The earlier Checkout could not be expired. Please try again." unless expired.status == "expired"
+        CheckoutSession.expire!(session, client: @client, remote: method(:remote))
       when "complete"
         recorded = ResidentSubscription.find_by(stripe_subscription_id: stripe_id(session.subscription),
           agent: @agent, account: @agent.account)
