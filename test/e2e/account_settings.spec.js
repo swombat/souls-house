@@ -40,11 +40,13 @@ for (const role of ['primary_user', 'secondary_user']) {
         .getByRole('link', { name: / API$/, exact: false })
         .filter({ hasText: /house|Helix/i })
         .click();
-      const internal = page.locator('details').filter({ hasText: 'Internal resident keys' });
-      await expect(internal).not.toHaveAttribute('open', '');
-      await internal.locator('summary').click();
-      await expect(internal).toHaveAttribute('open', '');
-      await expect(internal.getByRole('button')).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Keys that act as you' })).toBeVisible();
+      const residentKeys = page.locator('details').filter({ hasText: 'All resident keys' });
+      await expect(residentKeys).toHaveCount(1);
+      await expect(residentKeys).not.toHaveAttribute('open', '');
+      await residentKeys.locator('summary').click();
+      await expect(residentKeys).toHaveAttribute('open', '');
+      await expect(residentKeys.getByRole('button')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('api-desktop.png'), fullPage: true });
 
       await nav.getByRole('link', { name: 'Model API keys', exact: true }).click();
