@@ -37,12 +37,12 @@ module Billing
       raise NotReady, "The earlier Checkout could not be expired. Please try again." unless expired.status == "expired"
     end
 
-    # Positive evidence that an attempt's create made no session: Stripe
-    # answered it 400, and nothing was ever bound to the attempt. A 400 is
-    # sent before anything is made, and a replay of a key whose first
-    # request did make a session returns that session, not a 400. A
-    # timeout, a 5xx, a rate limit or a reused key (IdempotencyError, not
-    # an InvalidRequestError) is no such evidence, and the attempt stays.
+    # Stripe refused a create outright: a 400 validation error, nothing
+    # bound to the attempt. Evidence that this send made nothing; only the
+    # caller knows whether it was the attempt's first send, and a replay's
+    # 400 says nothing about an earlier send that had no answer. A timeout,
+    # a 5xx, a rate limit or a reused key (IdempotencyError, not an
+    # InvalidRequestError) is no such evidence either.
     def rejected?(attempt, error)
       error.is_a?(Stripe::InvalidRequestError) && error.http_status == 400 && attempt.reload.stripe_session_id.nil?
     end

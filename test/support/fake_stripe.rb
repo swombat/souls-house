@@ -137,6 +137,10 @@ class FakeStripe
     @checkout_fault = [ error, created ]
   end
 
+  # The next Checkout session create answers with error before anything,
+  # replay or not.
+  def fail_next_checkout_send(error) = @checkout_replay_fault = error
+
   # Search hasn't indexed anything yet (Stripe's search lags by up to a minute).
   def search_lags!
     @search_lags = true
@@ -373,6 +377,10 @@ class FakeStripe
   def checkout
     sessions = Service.new(
       create: lambda { |params, opts|
+        if (fault = @checkout_replay_fault)
+          @checkout_replay_fault = nil
+          raise fault
+        end
         # Stripe replays an idempotency key only for identical parameters.
         if (replayed = @session_states.find { |_id, state| state[:idempotency_key] && state[:idempotency_key] == opts[:idempotency_key] })
           id, state = replayed

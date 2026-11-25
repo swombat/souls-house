@@ -50,7 +50,7 @@ module Billing
         # No surrounding transaction: this write has committed when create runs.
         attempt = AccountPlanCheckoutAttempt.create!(account: @account, plan: @plan.id, stripe_price_id: @plan.price_id,
           idempotency_key: key, create_params: params(customer, key))
-        session = recover!(attempt)
+        session = recover!(attempt, first_send: true)
         raise NotReady, "This Checkout is no longer open. Please try again." unless session.status == "open" && session.url.present?
 
         session.url
@@ -59,15 +59,17 @@ module Billing
 
     private
 
-    def recover!(attempt)
+    def recover!(attempt, first_send: false)
       CheckoutSession.recover!(attempt, client: @client, remote: method(:remote),
         stale: "An earlier Checkout for this account's plan needs operator reconciliation. " \
                "Contact #{Billing.contact_email}; do not pay another link.")
     rescue Stripe::InvalidRequestError => error
-      raise unless CheckoutSession.rejected?(attempt, error)
+      raise unless first_send && CheckoutSession.rejected?(attempt, error)
 
-      # Stripe refused the create outright, so there is no session to pay or
-      # recover. The attempt stops holding the first bill and the next try
+      # Stripe refused this attempt's first and only send outright, so there
+      # is no session to pay or recover. A 400 on a replay proves nothing
+      # about an earlier send that had no answer, so that attempt stays
+      # pinned (Mira, #1149). The attempt stops holding the first bill and the next try
       # is a new attempt, with whatever was corrected (Mira, #1149).
       attempt.update!(resolved_at: Time.current)
       Rails.error.report(error, handled: true, context: { subsystem: "billing", plan_checkout_attempt_id: attempt.id })
@@ -98,7 +100,11 @@ module Billing
     def params(customer, key)
       metadata = { kind: "account_plan", plan: @plan.id, account_id: @account.id.to_s, plan_checkout_attempt: key }
       {
-        mode: "subscription", customer: customer.stripe_customer_id, client_reference_id: "account-#{@account.id}",
+        # Card only: a card pays the first invoice before Checkout completes,
+        # so the subscription is never active unpaid. A delayed method can
+        # make it active before its payment clears (Mira, #1149).
+        mode: "subscription", payment_method_types: [ "card" ],
+        customer: customer.stripe_customer_id, client_reference_id: "account-#{@account.id}",
         line_items: [ { price: @plan.price_id, quantity: 1 } ],
         subscription_data: { metadata: metadata, description: "#{@plan.name} plan" },
         metadata: metadata, automatic_tax: { enabled: true }, tax_id_collection: { enabled: true },

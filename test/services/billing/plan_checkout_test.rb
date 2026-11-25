@@ -36,6 +36,7 @@ class Billing::PlanCheckoutTest < ActiveSupport::TestCase
     assert_equal json(params), attempt.create_params
     assert_equal [ "partners", PARTNERS_PRICE, "cs_test_1" ], [ attempt.plan, attempt.stripe_price_id, attempt.stripe_session_id ]
     assert_equal "subscription", params[:mode]
+    assert_equal [ "card" ], params[:payment_method_types], "a card pays before Checkout completes; no delayed methods"
     assert_equal [ { price: PARTNERS_PRICE, quantity: 1 } ], params[:line_items]
     metadata = { kind: "account_plan", plan: "partners", account_id: @account.id.to_s,
                  plan_checkout_attempt: attempt.idempotency_key }
@@ -127,6 +128,30 @@ class Billing::PlanCheckoutTest < ActiveSupport::TestCase
       assert_nil attempts.sole.resolved_at, "#{fault.class} (#{fault.http_status.inspect}) keeps the attempt pinned"
       assert Billing::FirstBill.waiting?(@account)
     end
+  end
+
+  test "a 400 on a replay after a send with no answer keeps the attempt: that send may have made a session" do
+    @stripe.fail_next_checkout_create # Stripe made the session; the answer was lost.
+    assert_raises(Billing::NotReady, Stripe::APIConnectionError) { checkout.url }
+
+    @stripe.fail_next_checkout_send(
+      Stripe::InvalidRequestError.new("Invalid request", "line_items", http_status: 400))
+    assert_raises(Stripe::InvalidRequestError) { checkout.url }
+    assert_nil attempts.sole.resolved_at, "a replay's 400 proves nothing about the first send"
+    assert Billing::FirstBill.waiting?(@account)
+
+    # The next replay finds the session the first send made.
+    assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", checkout.url
+    assert_equal "cs_test_1", attempts.sole.stripe_session_id
+    assert_equal 1, @stripe.checkout_sessions.size
+  end
+
+  test "a 400 on a replay is never taken as refused, even when the first send made nothing" do
+    @stripe.fail_next_checkout_create(Stripe::APIConnectionError.new("timed out"), created: false)
+    assert_raises(Billing::NotReady, Stripe::APIConnectionError) { checkout.url }
+    @stripe.fail_next_checkout_send(Stripe::InvalidRequestError.new("Invalid request", "line_items", http_status: 400))
+    assert_raises(Stripe::InvalidRequestError) { checkout.url }
+    assert_nil attempts.sole.resolved_at
   end
 
   test "completed with the payment still to come: the first bill stays held until it is paid" do
