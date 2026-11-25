@@ -10,6 +10,31 @@ class ChangelogTest < ActiveSupport::TestCase
     assert_equal dates.sort.reverse, dates
   end
 
+  test "every changelog filename matches YYYY-MM-DD-HHMM-slug.yml and agrees with its date" do
+    files = Changelog.entry_files
+    assert files.any?
+    files.each do |path|
+      name = File.basename(path)
+      match = Changelog::FILENAME.match(name)
+      assert match, "Invalid changelog filename: #{name} (expected YYYY-MM-DD-HHMM-slug.yml)"
+      hour = match[:time][0, 2].to_i
+      minute = match[:time][2, 2].to_i
+      assert_includes 0..23, hour, "Invalid hour in changelog filename: #{name}"
+      assert_includes 0..59, minute, "Invalid minute in changelog filename: #{name}"
+      assert_equal match[:date], Changelog.parse_entry(path)[:date], "Filename date disagrees with entry date: #{name}"
+    end
+  end
+
+  test "entries sort newest first by filename, including within the same day" do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "2026-11-25-0900-first.yml"), "date: 2026-11-25\ntitle: First\nbody: Morning change.\n")
+      File.write(File.join(dir, "2026-11-25-1430-second.yml"), "date: 2026-11-25\ntitle: Second\nbody: Afternoon change.\n")
+      File.write(File.join(dir, "2026-11-24-2359-earlier.yml"), "date: 2026-11-24\ntitle: Earlier\nbody: Yesterday.\n")
+
+      assert_equal %w[Second First Earlier], Changelog.entries(dir:).map { |entry| entry[:title] }
+    end
+  end
+
   test "every clip an entry names exists, with its poster" do
     clips = Changelog.entries.filter_map { |entry| entry[:clip] }
     assert clips.any?

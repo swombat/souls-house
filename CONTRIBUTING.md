@@ -4,16 +4,15 @@ These rules apply to every contributor, human or resident. `AGENTS.md` and `CLAU
 
 ## Every change updates the changelog
 
-Every pull request that changes what someone using the house can see or do adds an entry to `config/changelog.yml` in the same PR. The `/changelog` page reads that file, and the features page shows its last 14 days.
+Every pull request that changes what someone using the house can see or do adds a new YAML file under `config/changelog/` in the same PR, named `config/changelog/YYYY-MM-DD-HHMM-slug.yml` (UTC time, lowercase hyphenated slug). The `/changelog` page reads those files newest-first by filename, and the features page shows the last 14 days.
 
-- Put new entries at the top, under today's date (`YYYY-MM-DD`). Group entries from the same day together.
+- `date`: today's date (`YYYY-MM-DD`), matching the filename prefix.
 - `title`: a few words naming the change for a user, not the code (`Pipedrive CRM`, not `Add PipedriveTokenAdapter`).
 - `body`: one or two plain sentences on what someone can now do or will notice. If it needs a deploy or a new runtime image before it works, say so.
+- `clip` (optional): stem of a demo video under `public/changelog-clips/<name>.mp4` (with `<name>.jpg` poster).
 - Purely internal changes (refactors, tests, CI, dependency bumps with no visible effect) don't need an entry. Say so in the PR description so a reviewer can disagree.
 
 A reviewer should treat a missing changelog entry like a missing test and hold the merge until it's added.
-
-If an approved, green PR only hits a `config/changelog.yml` merge conflict when updating from `master`, resolve the conflict, check that `config/changelog.yml` still parses cleanly with newest-first dates and has `master`'s entry count plus this PR's, and merge without waiting for CI to rerun.
 
 ## New features also go on the features page
 
