@@ -11,6 +11,12 @@ class RuntimeActivityIngestion
   PLAN_STEP_STATUSES = %w[pending in_progress blocked completed cancelled].freeze
   TYPES = %w[attempt.started turn.started turn.finished wake.started wake.finished tool.started tool.finished agent.status_changed stream.started stream.gap commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
   OUTCOMES = %w[completed failed timed_out outcome_unknown].freeze
+  # Events that show the runtime doing something after its turn ended. Any of
+  # them clears the turn-ended marker. Heartbeats, gaps and warnings do not,
+  # and nor do plan.updated or commentary.completed: the shim flushes its
+  # final plan snapshot after turn.finished, so they are not evidence that
+  # work resumed.
+  WORK_AFTER_TURN = %w[turn.started wake.started tool.started tool.finished fallback].freeze
 
   def initialize(run, payload)
     @run, @payload = run, payload
@@ -260,6 +266,10 @@ class RuntimeActivityIngestion
 
   def apply(attempt, type, data, latest:)
     snapshot = attempt.snapshot.deep_dup
+    # turn.finished means the turn ended, completed or failed (the projection
+    # maps both), not that the process exited. Kept so the card can say
+    # "exit not confirmed" when heartbeats continue long after it.
+    snapshot.delete(AgentRuntimeInteraction::TURN_ENDED_KEY) if type.in?(WORK_AFTER_TURN)
     case type
     when "attempt.started"
       snapshot.merge!(data)
@@ -267,8 +277,11 @@ class RuntimeActivityIngestion
       run.update!(execution_state: "running") if latest && !run.finished_at?
     when "wake.started"
       snapshot["phase"] = "waking"
-    when "wake.finished", "stream.started", "stream.gap", "turn.finished"
+    when "wake.finished", "stream.started", "stream.gap"
       snapshot.delete("phase")
+    when "turn.finished"
+      snapshot.delete("phase")
+      snapshot[AgentRuntimeInteraction::TURN_ENDED_KEY] = Time.current.iso8601
     when "tool.started"
       operations = snapshot.fetch("operations", {}).except(data["operation_id"])
       operations[data["operation_id"]] = data if operations.size < 256
