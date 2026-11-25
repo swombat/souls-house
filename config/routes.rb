@@ -179,6 +179,7 @@ Rails.application.routes.draw do
     end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resource :transcription_glossary, path: "glossary", only: [ :show, :create, :update, :destroy ], module: :accounts
+    resources :practices, only: [ :index, :create, :update, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
@@ -532,6 +533,7 @@ Rails.application.routes.draw do
         end
       end
       resource :transcription_glossary, only: %i[show create update destroy]
+      resources :account_practices, only: %i[index create update destroy]
       # Account administration with a person's key (the web's account pages).
       resource :account, only: %i[show update], controller: "account_administration" do
         scope module: :accounts do

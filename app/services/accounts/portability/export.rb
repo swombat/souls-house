@@ -249,6 +249,7 @@ module Accounts::Portability
           )
         end,
         "glossary" => @account.transcription_glossary_terms.where(suppressed_at: nil).order(:id).map { |t| { "term" => t.term, "pinned" => t.pinned } },
+        "practices" => @account.account_practices.ordered.map { |practice| { "text" => practice.text } },
         "services" => @account.service_connections.order(:id).map do |connection|
           { "provider" => connection.provider, "label" => connection.label.to_s.truncate(200), "kind" => connection.credential_kind }
         end
@@ -320,7 +321,7 @@ module Accounts::Portability
           field/<kind>/<key>/      item.json (metadata, transcript, summary, note, tags)
                                    and media (the original bytes, where any exist)
           setup.json               rooms, rooms' model defaults, rhythms (they arrive held),
-                                   the transcription glossary, and the names and kinds of
+                                   the transcription glossary, the account's practices, and the names and kinds of
                                    service connections to reconnect
           conversations/           only when conversations were chosen: message text with
                                    authors as names; no attachments, tool calls or state

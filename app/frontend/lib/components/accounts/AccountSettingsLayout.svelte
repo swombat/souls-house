@@ -17,6 +17,7 @@
     Users,
     Tag,
     SlidersHorizontal,
+    ListChecks,
   } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
@@ -62,6 +63,7 @@
           { id: 'integrations', label: 'Integrations', icon: Plugs, href: `/accounts/${account.id}/integrations` },
           { id: 'computers', label: 'Computers', icon: Desktop, href: `/accounts/${account.id}/computers` },
           { id: 'notices', label: 'Notices', icon: Megaphone, href: accountNoticesPath(account.id) },
+          { id: 'practices', label: 'Practices', icon: ListChecks, href: `/accounts/${account.id}/practices` },
         ],
       },
       {

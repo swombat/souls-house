@@ -338,6 +338,7 @@ class ExternalAgentResponseRequest
   def request_text
     parts = [
       Notices::Renderer.section_for(agent),
+      AccountPractices::Renderer.section_for_chat(agent, chat),
       SubagentPolicyRenderer.section_for(agent),
       selection.prompt_section,
       fallback_notice_text,
@@ -773,6 +774,7 @@ class ExternalAgentResponseRequest
 
     parts = [
       Notices::Renderer.section_for(agent),
+      AccountPractices::Renderer.section_for_chat(agent, chat),
       SubagentPolicyRenderer.section_for(agent),
       selection.prompt_section,
       trigger_intro_text,

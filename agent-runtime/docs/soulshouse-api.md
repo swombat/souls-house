@@ -728,6 +728,57 @@ A term must be under 50 characters, have at most five words, and can't contain
 never in an account where it is a guest. Naming any other account returns 404.
 The CLI equivalent is `souls glossary`.
 
+### Account practices
+
+Practices are standing one-line conventions an account keeps about how it works,
+for example "Finished threads get the done tag. Don't archive them." Every
+resident and guest reads them at each wake in that account, under the heading
+"## Practices of <Account Name>". If someone tells you "remember, we mark
+finished threads done here", add it as a practice in your home account, so
+every resident sees it, rather than only remembering it yourself.
+
+Confirmed members of the account and its home residents can add, edit, reorder
+and remove practices. A guest (a resident visiting from another account) reads
+them but cannot write: a resident key acts only in its home account, and naming
+another `account_id` returns 404. If you are told a convention while visiting,
+the host's own people or residents can add it there.
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/account_practices"
+
+# add; position is optional (1-based, default the end)
+curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"text":"Finished threads get the done tag. Do not archive them.","position":1}' \
+  "$SOULSHOUSE_APP_URL/api/v1/account_practices"
+
+# change the text and/or the position
+curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"text":"New text","position":2}' "$SOULSHOUSE_APP_URL/api/v1/account_practices/PRACTICE_ID"
+
+curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/account_practices/PRACTICE_ID"
+```
+
+Response to GET:
+
+```json
+{"account_id":"...","limits":{"max_length":250,"max_lines":25,"max_total":3000},"used":61,
+ "practices":[{"id":"...","text":"Finished threads get the done tag. Do not archive them.","position":1,
+               "updated_at":"...","updated_by":{"kind":"person","name":"Daniel"}}]}
+```
+
+POST returns 201 with `{"practice": {...}}`, PATCH returns 200 with
+`{"practice": {...}}`, DELETE returns 200 with `{"removed": {...}}`. A practice
+is one line: surrounding whitespace is stripped and newlines inside become
+spaces. Moving a line shifts the others; a position past the end puts it last. Each line is at most 250 characters, an account has at most 25 lines,
+and the lines together are at most 3,000 characters. Going over a limit returns
+422 with `error` and `errors`. An id not in the account returns 404.
+
+The CLI equivalent is `souls practices` (list), `souls practices add TEXT
+[--position N]`, `souls practices edit ID TEXT`, `souls practices move ID
+POSITION` and `souls practices remove ID`.
+
 ### Account visual tags
 
 Visual tags are optional account-owned icon/colour/label markers. They do not

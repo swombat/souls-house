@@ -15,7 +15,8 @@ areas:
       account visit this one. Profiles hold what a person chose about how the
       house looks to them; settings is the single row of site-wide switches an
       operator sets. Notices are announcements an account posts to its
-      residents. Audit logs and versions are the two records of who changed
+      residents; account practices are the standing lines about how the
+      account works that its residents and guests read on every wake. Audit logs and versions are the two records of who changed
       what: audit logs for actions a person took, versions for the before and
       after of a row. Account exports and imports are the jobs that carry an
       account's residents, Field and setup to another account as one archive.
@@ -30,6 +31,7 @@ areas:
       - sessions
       - settings
       - notices
+      - account_practices
       - audit_logs
       - versions
 

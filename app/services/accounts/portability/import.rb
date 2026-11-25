@@ -65,6 +65,7 @@ module Accounts::Portability
       import_rooms
       import_room_model_defaults
       import_glossary
+      import_practices
       import_field
       import_rhythms
       import_conversations
@@ -233,6 +234,24 @@ module Accounts::Portability
         clear_failure!("glossary", key)
       rescue ActiveRecord::RecordInvalid => error
         fail!("glossary", key, doc["term"], error.record.errors.full_messages.to_sentence)
+      end
+    end
+
+    # The account's practices, in order, after any it already keeps. A line
+    # the account already has (same text) is not added twice, so a resumed or
+    # repeated import doesn't double them. Over the limits, the rest fail
+    # visibly in the summary rather than being cut silently.
+    def import_practices
+      Array(@archive.setup["practices"]).each_with_index do |doc, index|
+        key = "p#{index + 1}"
+        next if ledger("practices").key?(key)
+
+        text = AccountPractice.clean(doc["text"])
+        practice = @account.account_practices.find_by(text:) || AccountPractice.add!(account: @account, text:, by: @user)
+        note!("practices", key, practice.id)
+        clear_failure!("practices", key)
+      rescue ActiveRecord::RecordInvalid => error
+        fail!("practices", key, doc["text"].to_s.truncate(80), error.record.errors.full_messages.to_sentence)
       end
     end
 
@@ -455,7 +474,7 @@ module Accounts::Portability
         "residents" => led.fetch("residents", {}).count { |_, v| v.is_a?(Hash) && v["agent_id"] },
         "field" => Archive::FIELD_KINDS.index_with { |kind| field.fetch(kind, {}).count { |_, v| v.is_a?(Integer) } },
         "rooms" => created.call("rooms"), "rhythms" => created.call("rhythms"), "conversations" => created.call("conversations"),
-        "glossary" => created.call("glossary"), "room_model_defaults" => created.call("room_model_defaults"),
+        "glossary" => created.call("glossary"), "practices" => created.call("practices"), "room_model_defaults" => created.call("room_model_defaults"),
         "partial" => not_in_archive.any? || failures.any?,
         "not_in_archive" => not_in_archive,
         "failures" => failures,

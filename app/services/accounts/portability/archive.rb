@@ -301,6 +301,7 @@ module Accounts::Portability
         rooms: setup_doc["rooms"].map { |room| room["name"] },
         rhythms: setup_doc["rhythms"].length,
         glossary_terms: setup_doc["glossary"].length,
+        practices: Array(setup_doc["practices"]).length,
         services: setup_doc["services"],
         conversations: conversation_keys.length,
         limits: self.class.limits,

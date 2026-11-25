@@ -77,6 +77,7 @@ class ExternalAgentWakeRequest
     now = Time.current
     [
       Notices::Renderer.section_for(agent),
+      AccountPractices::Renderer.section_for_home(agent),
       SubagentPolicyRenderer.section_for(agent),
       <<~TEXT,
       This is a heartbeat: a scheduled wake that nobody asked for.

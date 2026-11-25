@@ -27,6 +27,8 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     @rhythm = Rhythm.create!(account: @source, creator: @user, title: "Morning", opening: "What's today?", cadence: "daily",
       time_of_day: "08:30", timezone: "Madrid", agents: [ @resident ])
     @source.transcription_glossary_terms.create!(term: "GrantTree", pinned: true)
+    AccountPractice.add!(account: @source, text: "Finished threads get the done tag.", by: @user)
+    AccountPractice.add!(account: @source, text: "Book afternoons.", by: @user)
     @chat = @source.chats.create!(title: "Plans", room: @room, model_id_string: "openrouter/auto")
     @chat.chat_agents.create!(agent: @resident)
     Message.insert_all!([
@@ -151,6 +153,7 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     assert rhythm.held?
     assert_equal [ agent ], rhythm.agents.to_a
     assert @destination.transcription_glossary_terms.exists?(term: "GrantTree", pinned: true)
+    assert_equal [ "Finished threads get the done tag.", "Book afternoons." ], @destination.account_practices.ordered.pluck(:text)
     assert_empty @destination.chats, "conversations travel only when chosen"
     assert_equal 0, @destination.memberships.where.not(user: @user).count
 

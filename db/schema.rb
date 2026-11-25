@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -62,6 +62,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_180000) do
     t.index ["account_id"], name: "one_unresolved_account_plan_checkout_per_account", unique: true, where: "(resolved_at IS NULL)"
     t.index ["idempotency_key"], name: "index_account_plan_checkout_attempts_on_idempotency_key", unique: true
     t.index ["stripe_session_id"], name: "index_account_plan_checkout_attempts_on_stripe_session_id", unique: true
+  end
+
+  create_table "account_practices", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "text", null: false
+    t.integer "position", null: false
+    t.bigint "updated_by_user_id"
+    t.bigint "updated_by_agent_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "position"], name: "index_account_practices_on_account_id_and_position"
+    t.index ["updated_by_agent_id"], name: "index_account_practices_on_updated_by_agent_id"
+    t.index ["updated_by_user_id"], name: "index_account_practices_on_updated_by_user_id"
+    t.check_constraint "\"position\" >= 1", name: "account_practices_position_positive"
+    t.check_constraint "char_length(text::text) >= 1 AND char_length(text::text) <= 250", name: "account_practices_text_length"
+    t.check_constraint "text::text !~ '[\\r\\n]'::text", name: "account_practices_one_line"
   end
 
   create_table "account_subscriptions", force: :cascade do |t|
@@ -3642,6 +3658,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_180000) do
   add_foreign_key "account_imports", "accounts"
   add_foreign_key "account_imports", "users"
   add_foreign_key "account_plan_checkout_attempts", "accounts"
+  add_foreign_key "account_practices", "accounts"
+  add_foreign_key "account_practices", "agents", column: "updated_by_agent_id", on_delete: :nullify
+  add_foreign_key "account_practices", "users", column: "updated_by_user_id", on_delete: :nullify
   add_foreign_key "account_subscriptions", "accounts"
   add_foreign_key "accounts", "rooms", column: "resident_room_id", on_delete: :nullify
   add_foreign_key "action_mcp_session_messages", "action_mcp_sessions", column: "session_id", name: "fk_action_mcp_session_messages_session_id", on_update: :cascade, on_delete: :cascade
