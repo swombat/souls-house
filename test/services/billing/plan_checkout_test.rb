@@ -36,7 +36,8 @@ class Billing::PlanCheckoutTest < ActiveSupport::TestCase
     assert_equal json(params), attempt.create_params
     assert_equal [ "partners", PARTNERS_PRICE, "cs_test_1" ], [ attempt.plan, attempt.stripe_price_id, attempt.stripe_session_id ]
     assert_equal "subscription", params[:mode]
-    assert_equal [ "card" ], params[:payment_method_types], "a card pays before Checkout completes; no delayed methods"
+    assert_equal [ "card" ], params[:allowed_payment_method_types], "a card pays before Checkout completes; no delayed methods"
+    assert_nil params[:payment_method_types], "Stripe refuses payment_method_types on a Checkout Session since 2026-09-30.endive"
     assert_equal [ { price: PARTNERS_PRICE, quantity: 1 } ], params[:line_items]
     metadata = { kind: "account_plan", plan: "partners", account_id: @account.id.to_s,
                  plan_checkout_attempt: attempt.idempotency_key }

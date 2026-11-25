@@ -381,6 +381,11 @@ class FakeStripe
           @checkout_replay_fault = nil
           raise fault
         end
+        # As the live API (2026-09-30.endive on), seen in test mode on #1149.
+        if params.key?(:payment_method_types)
+          raise Stripe::InvalidRequestError.new("The `payment_method_types` parameter is no longer supported when " \
+                                                "creating a Checkout Session.", "payment_method_types", http_status: 400)
+        end
         # Stripe replays an idempotency key only for identical parameters.
         if (replayed = @session_states.find { |_id, state| state[:idempotency_key] && state[:idempotency_key] == opts[:idempotency_key] })
           id, state = replayed

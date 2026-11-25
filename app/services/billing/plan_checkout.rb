@@ -102,8 +102,10 @@ module Billing
       {
         # Card only: a card pays the first invoice before Checkout completes,
         # so the subscription is never active unpaid. A delayed method can
-        # make it active before its payment clears (Mira, #1149).
-        mode: "subscription", payment_method_types: [ "card" ],
+        # make it active before its payment clears (Mira, #1149). Stripe's
+        # API (2026-09-30.endive on) refuses payment_method_types on a
+        # Checkout Session; allowed_payment_method_types is its successor.
+        mode: "subscription", allowed_payment_method_types: [ "card" ],
         customer: customer.stripe_customer_id, client_reference_id: "account-#{@account.id}",
         line_items: [ { price: @plan.price_id, quantity: 1 } ],
         subscription_data: { metadata: metadata, description: "#{@plan.name} plan" },
