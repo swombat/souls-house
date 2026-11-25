@@ -185,6 +185,7 @@ Rails.application.routes.draw do
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
+    resource :users, only: :show, module: :accounts
     resource :interface, only: %i[show update], module: :accounts
     # Computers enrolled through the companion app, and the owner's switches.
     resources :companion_devices, path: "computers", only: %i[index update], module: :accounts

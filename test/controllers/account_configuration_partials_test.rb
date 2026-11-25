@@ -8,16 +8,16 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
     sign_in @member
   end
 
-  test "navbar and newly mapped General partials do not build unrequested members" do
-    controller = AccountsController.new
-    AccountsController.stub :new, controller do
+  test "navbar and non-member Users partials do not build unrequested members" do
+    controller = Accounts::UsersController.new
+    Accounts::UsersController.stub :new, controller do
       controller.stub :account_members_json, -> { flunk "partial built unrequested members" } do
         [
           "accounts,expired_subscriptions,account,is_account_admin",
           "account,is_account_admin",
-          "can_be_personal,can_manage,resident_handoff_cap"
+          "account,can_manage,can_invite_owner"
         ].each do |props|
-          get account_path(@account), headers: partial("accounts/show", props)
+          get account_users_path(@account), headers: partial("accounts/users", props)
           assert_response :success
           result = response.parsed_body.fetch("props")
           assert_not result.key?("members")
@@ -27,18 +27,26 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "requested members are evaluated and pending invitations update conversion eligibility" do
+  test "requested members are evaluated on Users and pending invitations update General conversion eligibility" do
     account = accounts(:team_single_user)
     sign_in users(:user_1)
-    get account_path(account), headers: partial("accounts/show", "members,can_be_personal")
+    get account_path(account), headers: partial("accounts/show", "can_be_personal,members_count")
     assert_response :success
     assert response.parsed_body.dig("props", "can_be_personal")
+    assert_equal 1, response.parsed_body.dig("props", "members_count")
+
+    get account_users_path(account), headers: partial("accounts/users", "members")
+    assert_response :success
     assert_equal 1, response.parsed_body.dig("props", "members").length
 
     Membership.create!(account:, user: users(:confirmed_user), role: "member", invited_by: users(:user_1))
-    get account_path(account), headers: partial("accounts/show", "members,can_be_personal")
+    get account_path(account), headers: partial("accounts/show", "can_be_personal,members_count")
     assert_response :success
     assert_not response.parsed_body.dig("props", "can_be_personal")
+    assert_equal 2, response.parsed_body.dig("props", "members_count")
+
+    get account_users_path(account), headers: partial("accounts/users", "members")
+    assert_response :success
     assert_equal 1, response.parsed_body.dig("props", "members").count { |member| member["invitation_pending"] }
   end
 
@@ -48,6 +56,7 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
       membership.update!(role:)
       [
         [ account_path(@account), "accounts/show" ],
+        [ account_users_path(@account), "accounts/users" ],
         [ account_interface_path(@account), "accounts/interface" ],
         [ account_rooms_path(@account), "accounts/rooms" ]
       ].each do |path, component|
@@ -68,6 +77,7 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
     @account.update!(name: "Current settings", logo_colour: "teal", resident_handoff_cap: 11)
     [
       [ account_path(@account), "accounts/show" ],
+      [ account_users_path(@account), "accounts/users" ],
       [ account_interface_path(@account), "accounts/interface" ],
       [ account_rooms_path(@account), "accounts/rooms" ]
     ].each do |path, component|
@@ -102,6 +112,7 @@ class AccountConfigurationPartialsTest < ActionDispatch::IntegrationTest
   def assert_inaccessible
     [
       [ account_path(@account), "accounts/show" ],
+      [ account_users_path(@account), "accounts/users" ],
       [ account_interface_path(@account), "accounts/interface" ],
       [ account_rooms_path(@account), "accounts/rooms" ]
     ].each do |path, component|

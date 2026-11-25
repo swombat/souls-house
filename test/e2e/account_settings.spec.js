@@ -23,6 +23,7 @@ for (const role of ['primary_user', 'secondary_user']) {
 
       const nav = page.getByRole('navigation', { name: 'Account settings', exact: true });
       for (const [label, path] of [
+        ['Users', '/users'],
         ['Interface', '/interface'],
         ['Model API keys', '/agent_api_keys'],
         ['Integrations', '/integrations'],
@@ -65,10 +66,15 @@ for (const role of ['primary_user', 'secondary_user']) {
 
       if (role === 'primary_user') {
         await page.setViewportSize({ width: 1280, height: 900 });
+        await nav.getByRole('link', { name: 'Users', exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`${base}/users$`));
         const memberRow = page.getByRole('row').filter({ hasText: setup.secondary_user.email });
         page.once('dialog', (dialog) => dialog.accept());
         await memberRow.getByRole('button', { name: 'Remove', exact: true }).click();
         await expect(memberRow).toHaveCount(0);
+        await expect(page).toHaveURL(new RegExp(`${base}/users$`));
+        await nav.getByRole('link', { name: 'General', exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`${base}$`));
         await page.getByRole('button', { name: 'Convert to personal account', exact: true }).click();
         await expect(page.getByText(/renamed after its remaining owner/)).toBeVisible();
         await page.getByRole('button', { name: 'Convert to Personal Account', exact: true }).click();

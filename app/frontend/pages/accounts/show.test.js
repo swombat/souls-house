@@ -11,7 +11,7 @@ const props = {
   account: { id: 'first', name: 'First', personal: false, created_at: '2026-01-01' },
   can_manage: true,
   can_be_personal: true,
-  current_user_id: 1,
+  members_count: 1,
   resident_handoff_cap: 6,
   reflexes_enabled: false,
 };
@@ -27,10 +27,9 @@ test('General follows pristine baselines, updates derived permissions and keeps 
   const view = render(General, props);
   expect(subscribe).toHaveBeenCalledWith('Account', 'first', [
     'account',
-    'members',
     'can_be_personal',
+    'members_count',
     'can_manage',
-    'can_invite_owner',
     'resident_handoff_cap',
     'telegram_bot_wake_limit',
     'reflexes_enabled',
@@ -63,7 +62,6 @@ test('General follows pristine baselines, updates derived permissions and keeps 
   expect(cap()).toHaveValue(4);
   await view.rerender({ ...props, can_manage: false, resident_handoff_cap: 0 });
   expect(screen.getByTestId('resident-handoff-cap-readonly')).toHaveTextContent('Resident handoffs are off.');
-  expect(screen.queryByRole('button', { name: 'Invite Member' })).not.toBeInTheDocument();
   view.unmount();
   expect(cleanup).toHaveBeenCalledOnce();
 });
@@ -212,16 +210,6 @@ test.each([
     expect(subscribe).toHaveBeenLastCalledWith('Account', 'second', expect.any(Array));
   }
 );
-
-test('invitation draft survives same-account updates and closes deliberately on account switch', async () => {
-  const view = render(General, props);
-  await fireEvent.click(screen.getByRole('button', { name: 'Invite Member' }));
-  await input(screen.getByLabelText('Email Address'), 'unfinished@example.com');
-  await view.rerender({ ...props, account: { ...props.account, name: 'Renamed remotely' } });
-  expect(screen.getByLabelText('Email Address')).toHaveValue('unfinished@example.com');
-  await view.rerender({ ...props, account: { ...props.account, id: 'second', name: 'Second' } });
-  expect(screen.queryByLabelText('Email Address')).not.toBeInTheDocument();
-});
 
 test('reflexes switch saves immediately and the readonly text reflects the account setting', async () => {
   const view = render(General, props);
