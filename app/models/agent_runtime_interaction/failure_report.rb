@@ -33,7 +33,7 @@ module AgentRuntimeInteraction::FailureReport
   FAILURE_CATEGORIES = %w[
     needs_setup house_allowance_exhausted house_allowance_none house_provider_refused subscription_limit
     fallback_off fallback_cap_reached fallback_payer_key_missing fallback_model_unavailable fallback_provider_refused
-    runtime_unavailable container_paused model_unavailable provider_challenge
+    runtime_unavailable container_paused model_not_on_list model_selection_refused model_unavailable provider_challenge
     provider_transient authentication_error runtime_error timed_out unknown
   ].freeze
   # The model provider failing a request it would normally serve, positively
@@ -50,6 +50,8 @@ module AgentRuntimeInteraction::FailureReport
   REMOTE_UNAVAILABLE_ERROR_CLASSES = %w[
     Agents::RemoteRuntime::Unavailable Agents::RemoteRuntime::Settling Agents::RemoteRuntime::RunnerTooOld
   ].freeze
+  # The house's own model-selection check refused the run (#1118).
+  SELECTION_REFUSALS = %w[model_not_on_list model_selection_refused].freeze
   # The request never reached a runtime that could answer it.
   UNAVAILABLE_ERROR_CLASSES = (%w[
     Errno::ECONNREFUSED Errno::EHOSTUNREACH Errno::ENETUNREACH SocketError Net::OpenTimeout
@@ -102,6 +104,11 @@ module AgentRuntimeInteraction::FailureReport
     # (ExternalAgentResponseRequest#notify_unreachable). What paused it is
     # not claimed.
     return "container_paused" if error_kind == "container_paused"
+    # The house refused the conversation's selected model before dispatch
+    # (ExternalAgentResponseRequest#notify_model_unavailable, #1118): either
+    # it is no longer on the resident's list, or another of the house's
+    # checks refused it and said why. Neither is a provider refusal.
+    return error_kind if error_kind.in?(SELECTION_REFUSALS)
     return "runtime_unavailable" if error_class.in?(UNAVAILABLE_ERROR_CLASSES)
     return "runtime_unavailable" if runtime_status.nil? && transport_status.in?(UNAVAILABLE_TRANSPORT_STATUSES)
     # The runtime's own structured classification (trigger_shim.py

@@ -655,11 +655,31 @@ class AgentRuntimeInteraction < ApplicationRecord
     if category.in?([ "runtime_error", *FailureReport::PROVIDER_EDGE_CATEGORIES ]) && (said = runtime_failure_text)
       cause = "#{cause} (runtime said: #{said})"
     end
+    # Which model, and the house's own sentence for why it refused (#1118).
+    if category.in?(SELECTION_REFUSALS) && (detail = selection_refusal_text(category))
+      cause = "#{cause} (#{detail})"
+    end
+    # The CLI's refusal, when the runtime carried one; with none, the
+    # category alone. Being on the list is no evidence of why (#1118).
+    if category == "model_unavailable" && (said = runtime_failure_text)
+      cause = "#{cause} (runtime said: #{said})"
+    end
     # A VM resident's own reason (#868), written by the house, not the runtime.
     if category == "runtime_unavailable" && error_class.in?(REMOTE_UNAVAILABLE_ERROR_CLASSES) && error_message.present?
       cause = "#{cause} (#{error_message.truncate(300)})"
     end
     cause
+  end
+
+  def selection_refusal_text(category)
+    return unless response_body.is_a?(Hash)
+
+    label = Agent.label_for_model(response_body["selected_model_id"]) if response_body["selected_model_id"].present?
+    if category == "model_not_on_list"
+      label
+    elsif response_body["selection_problem"].present?
+      [ label, response_body["selection_problem"] ].compact.join(" ").truncate(300)
+    end
   end
 
   def runtime_failure_text

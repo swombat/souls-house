@@ -253,10 +253,21 @@ class ExternalAgentResponseRequest
       notice = ConversationModelEvent.unavailable!(chat: chat, agent: agent, selection: selection)
       # The refusal already explains this run in the room. Record it before
       # finalizing, so the after-commit failure check cannot post a second line.
-      @interaction&.update!(failure_notice_message: notice)
+      # The cause goes on the run too (#1118), so its Runs line, streaks and
+      # the health check name it rather than "cause isn't identified". The
+      # problem is the house's own sentence (ModelSelection), safe to show.
+      @interaction&.update!(failure_notice_message: notice, response_body: model_unavailable_body)
       @interaction&.finish_execution!("failed")
     end
     { status: 409, error: "selected model unavailable", body: { "status" => "model_unavailable" } }
+  end
+
+  def model_unavailable_body
+    {
+      "error_kind" => selection.off_list? ? "model_not_on_list" : "model_selection_refused",
+      "selected_model_id" => selection.model_id.to_s,
+      "selection_problem" => selection.problem.to_s
+    }
   end
 
   def surface_subscription_auth_failure!

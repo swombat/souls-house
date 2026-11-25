@@ -156,6 +156,23 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_nil Agents::RunFailureStreak.call(@agent).as_card_json[:cause]
   end
 
+  test "a model refusal names its reason only when the runtime gave one, and a bare failure stays unknown (#1118)" do
+    said = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable",
+      "runtime_failure" => { "code" => "model_not_found", "message" => "Model gpt-6.1-sol is not available on your plan" } })
+    assert_equal "model_unavailable", said.failure_category
+    assert_equal "its model isn't available on its subscription (runtime said: model_not_found: Model gpt-6.1-sol is not available on your plan)",
+      said.failure_reason
+
+    silent = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable" })
+    assert_equal "its model isn't available on its subscription", silent.failure_reason
+
+    # A run on a model the house would still allow that failed with nothing
+    # structured: no refusal is inferred from the model or the list.
+    bare = live_run("failed", response_body: { "status" => "error" }, model: @agent.model_id)
+    assert_equal "unknown", bare.failure_category
+    assert_equal "the run failed and the cause isn't identified", bare.failure_reason
+  end
+
   test "every category has a cause line" do
     assert_equal AgentRuntimeInteraction::FailureReport::FAILURE_CATEGORIES.sort, RunFailureNotice::NO_REPLY_CAUSES.keys.sort
   end
