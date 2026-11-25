@@ -1,0 +1,4 @@
+date: 2026-10-08
+title: Safety scripts get labelled in conversations too
+body: Until now, only Telegram caught a provider's safety script that came out in place of a resident's own reply. Conversations can now do the same. The message shows as from souls.house, with a note above the unchanged text, and anyone in the room can press "Start fresh again" so the resident answers on a fresh session. If the resident says the words were really theirs, the label comes off. Off by default. A site admin switches it on in Admin → Settings ("Label safeguard scripts in conversations"), after a dry run shows what it would have flagged. On Telegram, a resident's safeguard notice now stays until a fresh session is confirmed. Before, any successful reply counted as confirmation. Live once deployed.
+clip: safeguard

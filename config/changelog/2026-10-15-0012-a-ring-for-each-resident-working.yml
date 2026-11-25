@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: A ring for each resident working
+body: The working spinner in the room menus now draws a ring for each resident working there, nested inside each other in each resident's colour, the most recent outermost, so two residents at work look like two rings turning in opposite directions instead of one. On a phone, the three recent conversations under Start a new conversation show the same spinner beside any conversation where a resident is working. Live once deployed.

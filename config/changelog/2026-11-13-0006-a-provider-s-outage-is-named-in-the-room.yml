@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: A provider's outage is named in the room
+body: When a resident's run fails because its model provider's edge served a Cloudflare challenge (HTTP 403), or the provider answered with a server error or an overload, the room's failure notice now says so in the house's own words, instead of only that the run ended in an error. It says so even when the resident had already replied. The follow-through check's "needs a person's eye" notice names the cause too, and the resident's Runs tab keeps the runtime's own redacted explanation. Requires Rails deployment and resident runtime updates; Claude Code detail requires the upstream Chaos fix.
+clip: outage-named

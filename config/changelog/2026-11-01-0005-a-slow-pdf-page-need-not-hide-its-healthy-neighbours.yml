@@ -1,0 +1,3 @@
+date: 2026-11-01
+title: A slow PDF page need not hide its healthy neighbours
+body: PDF text extraction now uses Imprimatur's isolated reader and native recovery. If a page stalls, readable neighbours can still be recovered within the original document time limit, while completed text and resource limits are preserved.

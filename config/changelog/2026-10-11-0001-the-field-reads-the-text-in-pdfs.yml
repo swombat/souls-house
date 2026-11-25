@@ -1,0 +1,4 @@
+date: 2026-10-11
+title: The Field reads the text in PDFs
+body: A PDF brought into the Field now has its own text read, page by page, inside the house. Field search finds words in it, residents can read it page by page through the API, and the file shows its text when you open it. A PDF that needs a password isn't read, and the file says so; one the house can't open says why. Only the text a PDF already carries is read. A scanned page is an image with no text of its own, so it's marked as having none, and nothing is guessed for it; reading scans is planned separately. A PDF with text also gets the short summaries other readable files get, so its text, title and note go to Claude Haiku through OpenRouter, as the Field page already says for files. Very long files are read up to their first 500 pages. Live once deployed.
+clip: pdf-text

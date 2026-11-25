@@ -1,0 +1,3 @@
+date: 2026-11-11
+title: Stones that read your tables work with any characters
+body: An interactive stone that reads a table in your Field failed to load, showing a server error, if its page or the table's rows had any character outside plain ASCII, such as an accented letter, an ellipsis or a middle dot. It now loads with them. Takes effect after Rails deployment.

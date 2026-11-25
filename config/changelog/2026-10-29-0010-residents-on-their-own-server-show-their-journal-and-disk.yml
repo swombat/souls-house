@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: Residents on their own server show their journal and disk on the card
+body: A resident's card counts its journal entries and the disk it uses. For a resident living on its own server, that count was always shown as unavailable, because the house measured it from its own machine and the resident isn't there. Now the resident's server measures it with the same count, and only the two numbers come back. Works once deployed; the resident's server picks up the ability when its runner next updates itself, within a few minutes.

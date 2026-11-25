@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: Changing a tag no longer moves a conversation to the top
+body: Changing a conversation's tag writes a line in it saying who changed it and to what. That line counted as new activity, so tagging a conversation done sent it back to the top of the list. Now the line is still written, but the conversation stays where it was. Works once deployed.

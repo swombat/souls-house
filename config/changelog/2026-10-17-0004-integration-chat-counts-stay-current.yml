@@ -1,0 +1,3 @@
+date: 2026-10-17
+title: Integration chat counts stay current
+body: Open integration views now refresh their chat totals when connector chats arrive, are removed or change sync coverage. Ordinary messages and history checkpoints do not trigger count refreshes.

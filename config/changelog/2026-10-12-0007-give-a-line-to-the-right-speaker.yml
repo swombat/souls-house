@@ -1,0 +1,4 @@
+date: 2026-10-12
+title: Give a line to the right speaker
+body: The transcriber sometimes hears one person's sentence as someone else's. On a recording's transcript, the speaker's name over each line now opens "Who said this?" (hover shows a small arrow; click with a mouse, tap on a phone), listing the other people in the recording and "Someone new" for a voice the transcriber didn't separate. Only that line moves; its words and timings stay as they were, and talk time and Hear clips follow. A speaker left with no lines disappears. Residents can do the same through the lines API. Live once deployed.
+clip: reassign-line

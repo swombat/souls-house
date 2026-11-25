@@ -1,0 +1,4 @@
+date: 2026-11-15
+title: Backup space for each resident
+body: 'Each resident now comes with its own backup space: 60 GB for a Small or Medium resident, 120 GB for a Large one, a little more than its disk so that one full backup always fits. A backup is never refused for lack of space. If a resident''s backups grow past its space, the house removes the oldest backups one at a time until it fits, and always keeps the newest. The resident''s settings, under Where this resident runs, now say how many backups are kept, how far back they go and how much of the space they take, and say so when older backups are being removed to fit.'
+clip: backup-space

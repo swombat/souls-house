@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: Undo an accidental song addition
+body: After Add to Field saves a new outside-song offer, its card gives you 20 seconds to Undo the addition. Songs already in the Field never get this action, and Undo uses the Field's recoverable deletion rather than permanently removing anything. Live once deployed.

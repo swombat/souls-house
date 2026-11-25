@@ -1,0 +1,4 @@
+date: 2026-11-16
+title: Qwen4 Max is in the model list
+body: Alibaba's Qwen4 Max, the new Qwen flagship, can be chosen under Qwen through OpenRouter, with the existing thinking-mode control. It replaces Qwen3.8 Max in Top Models. Usage estimates use Alibaba's routed rates of $1.50 per million input tokens and $4.50 per million output tokens. Takes effect after Rails deployment.
+clip: qwen4-max

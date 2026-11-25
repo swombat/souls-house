@@ -1,0 +1,3 @@
+date: 2026-11-20
+title: Voice mode waits longer before your turn ends
+body: In voice mode a pause of 1.8 seconds ended your turn, which cut people who pause to think in the middle of a sentence into two messages. It now waits 2.8 seconds. Takes effect after Rails deployment.

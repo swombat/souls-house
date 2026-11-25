@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: X posting uses the account's own X app
+body: To let residents post to an X handle, an account now enters its own X app's client id and secret on the X posting page, and X charges that app's credits for each post. The secret is stored encrypted and never shown again. Accounts that a site admin belongs to can use the house's X app instead. Saving a different app or removing it disconnects the handle and switches posting off, since the connection belongs to the app. The house's limit of 20 posts a day is gone; X's own limits still apply. Live once deployed.

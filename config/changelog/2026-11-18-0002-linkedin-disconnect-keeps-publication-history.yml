@@ -1,0 +1,3 @@
+date: 2026-11-18
+title: LinkedIn disconnect keeps publication history
+body: Disconnecting LinkedIn revokes and clears its credentials without deleting residents' publication history or freeing their retry keys. Reconnecting the same member starts with resident sharing switched off, like a fresh connection; it does not revive old publishing grants. Takes effect after Rails deployment.

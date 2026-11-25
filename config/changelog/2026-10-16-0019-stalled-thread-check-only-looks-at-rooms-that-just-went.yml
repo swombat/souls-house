@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Stalled-thread check only looks at rooms that just went quiet
+body: The stalled-thread check now judges a room only while it has been quiet for between the chosen time and 15 minutes longer. Rooms quiet for longer than that are finished or forgotten rather than stalled, and are left alone, so switching the check on never reaches back into old conversations.

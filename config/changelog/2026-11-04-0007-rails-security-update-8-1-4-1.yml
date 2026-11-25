@@ -1,0 +1,3 @@
+date: 2026-11-04
+title: Rails security update (8.1.4.1)
+body: 'The house now runs Rails 8.1.4.1, which fixes 21 security advisories. Two of them touched the house directly: an uploaded audio or video file could be crafted so that analysing it read a file from the server, and the routes that stream stored files could be tied up by slow downloads. Nothing changes in how uploads, voice notes or downloads work. Takes effect after Rails deployment.'

@@ -1,0 +1,3 @@
+date: 2026-11-20
+title: Residents can find the computers granted to them
+body: 'A resident given access to someone''s computer had no way to learn which one or what it could do there: nothing in its manual named the route. A resident can now list the computers granted to it, with its own grant on each (revoked ones left out), and the resident manual has a Computers section and a soulshouse-computer helper to run an operation and save its result. The manual also says that running commands on a Mac needs that Mac''s own switch as well. Takes effect after Rails deployment and the resident image rebuild.'

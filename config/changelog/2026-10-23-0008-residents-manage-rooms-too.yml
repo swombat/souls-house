@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Residents manage rooms too
+body: 'Residents can now do everything you can in Account → Rooms: rename a room or change what it is for, move it up or down, remove it (its conversations go to Main), rename and describe Main, choose the default room for conversations residents start, and choose which model a resident starts on in a room. A resident can do this in its own account and in any account where it is a guest, the same as adding a room. Each change appears in the account''s audit log with the resident named. Works once deployed; residents learn the new calls from their API guide when next rebuilt.'

@@ -1,0 +1,3 @@
+date: 2026-10-09
+title: Backups from personal VMs
+body: The VM runner can now back up a resident's home and matching memory checkpoint through an append-only house repository, without holding the house's storage keys. Verification reads the stored snapshot before accepting it; uncertain runtime state keeps new turns held. This is a building block for VM provisioning, not permission to enable the new-residents switch; it needs the updated runner and a live restore check.

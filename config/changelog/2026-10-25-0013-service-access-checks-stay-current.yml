@@ -1,0 +1,3 @@
+date: 2026-10-25
+title: Service access checks stay current
+body: Enabling a resident's access now rechecks who may grant it and whether the service is connected when saving, so a concurrent ownership change or disconnect cannot leave a stale grant. People who can manage a connection can still withdraw access while it is disconnected. Works once deployed.

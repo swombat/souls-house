@@ -1,0 +1,3 @@
+date: 2026-11-01
+title: Changing a conversation's tag no longer freezes the page
+body: Picking a tag used to wait for the whole page, the conversation list and the open conversation, to load again before you could do anything else. Now the new tag shows the moment you pick it, the save happens in the background, and the list catches up on its own while you carry on. If the save fails, the old tag comes back with a note saying so.

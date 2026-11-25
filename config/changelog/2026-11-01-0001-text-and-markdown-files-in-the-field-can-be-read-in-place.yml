@@ -1,0 +1,4 @@
+date: 2026-11-01
+title: Text and Markdown files in the Field can be read in place
+body: Opening a file in the Field used to show the words only for PDFs; a Markdown transcript or a text file showed its summary and a Download button. Now an open text or Markdown file shows its whole text under the summary, with Markdown formatted. Editing such a file comes next.
+clip: field-read-in-place

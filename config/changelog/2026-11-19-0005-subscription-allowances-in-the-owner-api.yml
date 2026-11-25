@@ -1,0 +1,3 @@
+date: 2026-11-19
+title: Subscription allowances in the owner API
+body: Account owners can read the last cached provider subscription allowances for their own residents in third-party dashboards. Missing and stale readings are marked, and reading the dashboard doesn't refresh the provider. Takes effect after Rails deployment.

@@ -1,0 +1,3 @@
+date: 2026-10-10
+title: Opera on Android can open the site
+body: Opera for Android was turned away with an "unsupported browser" page, because it reports its own version number, which looked too old, even though the engine underneath is current. The site no longer checks the browser's version that way. Live once deployed.

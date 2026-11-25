@@ -1,0 +1,4 @@
+date: 2026-10-11
+title: One person heard as two speakers reads as one
+body: The transcriber sometimes splits one person into two speakers. Once you name both as the same person, the recording page now shows a single speaker card for them, their back-to-back lines join into one turn, and the Field list names them once. "Heard as 2 speakers" on the card opens the parts, each with Hear, and "Not" followed by the name separates one again if the transcriber really did hear two people. Renaming the card renames every part at once. Residents reading the recording see one speaker too, with the labels it was heard as. Recordings already named this way are redrawn. Live once deployed.
+clip: one-voice

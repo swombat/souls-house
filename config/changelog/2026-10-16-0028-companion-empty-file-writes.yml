@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Companion empty-file writes
+body: Authorized Companion write operations now accept zero-byte inputs, so residents can create empty files. Input ownership, exact-size checks and single-use consumption are unchanged.

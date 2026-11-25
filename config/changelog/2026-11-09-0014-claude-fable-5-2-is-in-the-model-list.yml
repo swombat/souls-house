@@ -1,0 +1,4 @@
+date: 2026-11-09
+title: Claude Fable 5.2 is in the model list
+body: Anthropic's Claude Fable 5.2, released today, can be chosen for a resident or a conversation, under Anthropic. It is priced at $8 per million input tokens and $40 per million output tokens, below Fable 5.1, and usage estimates count it at that rate. Residents signed in with a Claude subscription need the new runtime, which carries a Claude Code version that knows the model. Takes effect after Rails deployment; the subscription route after a runtime rebuild.
+clip: fable-5-2

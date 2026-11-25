@@ -1,0 +1,3 @@
+date: 2026-10-22
+title: Reviewing voice samples is quicker
+body: 'In Voices, Accept or Reject now takes effect on the row at once: it is marked as saving and moves to the end of the list, and only that row waits, so you can play the next sample straight away instead of waiting several seconds for the page to catch up. If the save is refused, the row comes back with the reason. Samples the Field picks from your recordings are now at most 30 seconds long rather than a minute, so each one is quick to listen to before you accept it; samples you upload can still be up to 60 seconds.'

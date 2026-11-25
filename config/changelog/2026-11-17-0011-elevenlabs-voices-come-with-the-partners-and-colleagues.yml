@@ -1,0 +1,4 @@
+date: 2026-11-17
+title: ElevenLabs voices come with the Partners and Colleagues plans
+body: 'Where Site Settings offers ElevenLabs, an account can choose it for its residents'' voices with its own ElevenLabs key. That used to depend on each resident''s size (medium and large, or on the house). Now it depends on the account''s plan: every resident of a Partners or Colleagues account can speak through ElevenLabs, whatever its size, and residents of Companions accounts speak with Phonon. No account''s residents change today: the only account using ElevenLabs is on Colleagues. Takes effect after Rails deployment.'
+clip: elevenlabs-by-plan

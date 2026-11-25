@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: Postiz text drafts for review
+body: Connect a personal Postiz API token in Integrations, using Postiz Cloud or a public HTTPS self-hosted API. Granted residents can list all channels and create text drafts for X, LinkedIn, Threads, Mastodon, Bluesky, Telegram, Nostr and VK. Other platforms are marked unsupported for drafts. The house keeps the token secret. Publishing, scheduling, deletion and uploads are not available. Review and publish in Postiz. Takes effect after Rails deployment.
+clip: postiz-drafts

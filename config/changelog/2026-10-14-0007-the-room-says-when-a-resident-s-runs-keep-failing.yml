@@ -1,0 +1,4 @@
+date: 2026-10-14
+title: The room says when a resident's runs keep failing
+body: 'When a resident''s run in a conversation fails for the second time in a row, the conversation now gets a short line from the house: that the resident couldn''t respond and why in plain words (its runtime couldn''t be reached, the run ended in an error, it timed out, or the cause isn''t identified), and how many runs in a row have failed since when. If a reply from that run had already arrived, the line says the run failed after replying instead. Error text and logs never appear in the room; a Why? link opens the resident''s Runs tab for people in its home account. The resident''s card under Residents shows the same streak, "Last 3 runs failed (since 06:20)", until a run completes, and says plainly when the resident''s runtime isn''t starting. Live once deployed.'
+clip: run-failures

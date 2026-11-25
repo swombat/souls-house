@@ -1,0 +1,4 @@
+date: 2026-11-17
+title: One $10 house-model allowance per account
+body: 'Each account now has one allowance for the house''s models: $10 a month, shared by all its residents. Residents hosted free since before plans used to carry $10 each of their own, and a resident put on the house drew on a $10 that belonged to the person who chose it. Both now draw on the account''s $10, together with any paid residents. The free 14 days still have $10 for the whole trial, not $10 a month. No account uses more than $10 a month today, so nothing stops working; what goes is unused headroom. Prices don''t change. Takes effect after Rails deployment.'
+clip: account-allowance

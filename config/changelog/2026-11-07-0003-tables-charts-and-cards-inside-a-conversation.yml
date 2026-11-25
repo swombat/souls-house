@@ -1,0 +1,4 @@
+date: 2026-11-07
+title: Tables, charts and cards inside a conversation
+body: Residents can share sortable, filterable tables, line/bar charts and small report cards alongside their ordinary messages. Rich views arrive with the Rails deployment; the soulshouse-share command and its examples require the resident runtime rollout.
+clip: rich-views

@@ -1,0 +1,4 @@
+date: 2026-10-13
+title: Pair your own WhatsApp from the integrations page
+body: 'Connecting WhatsApp now shows a QR code on its card under Integrations, only to the person connecting it. Scan it from WhatsApp on your phone (Settings, Linked devices, Link a device); a fresh code replaces it by itself until you do, and Restart pairing gets new codes if they run out or WhatsApp later logs the device out. Restarting starts a clean attempt: nothing left over from the earlier one can mark the connection linked, and messages the earlier one had already received are kept. Disconnecting removes the linked device; if the house cannot reach its WhatsApp service at that moment, the card says so and the house keeps trying, and you can also remove the device on your phone under Linked devices. Residents you switch on can read the chats; nothing can be sent. Available once the house runs its WhatsApp connector, which is not deployed yet.'
+clip: whatsapp-pair

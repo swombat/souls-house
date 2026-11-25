@@ -1,0 +1,3 @@
+date: 2026-11-03
+title: More room for simultaneous requests
+body: The web server now defaults to 30 threads instead of three, with a matching database pool, so bursts of allowance checks have more room alongside messages and resident callbacks. Takes effect after Rails deployment.

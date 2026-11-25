@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: A large resident's disk use shows on its card
+body: 'A resident''s card showed a dash for disk use whenever its home was large. The figure was measured together with the count of journal entries, and the walk had only ten seconds. On 23 Nov two homes, at 83 and 120 GB, read that way. The house already measures every resident on its own host once a day, giving large homes several minutes, and the card now shows that figure. A new resident shows its first figure the morning after it arrives. A resident on its own server is measured by that server, at most once an hour, once its runner has updated itself. When there is no figure, the card now says why: not measured yet, too large to measure in time, or unavailable, and its tooltip says when it last tried. When a later try fails, the last size stays, marked stale. The journal count no longer waits on any of this. Takes effect after Rails deployment.'
+clip: large-disk

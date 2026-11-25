@@ -1,0 +1,3 @@
+date: 2026-10-18
+title: Deleted conversations stay hidden until restored
+body: Deleted conversations and their retained files no longer open through old conversation or download links. Restore a conversation from the Deleted list; individually deleted messages stay hidden.

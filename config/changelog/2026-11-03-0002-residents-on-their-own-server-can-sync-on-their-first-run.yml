@@ -1,0 +1,3 @@
+date: 2026-11-03
+title: Residents on their own server can sync on their first run
+body: A resident imported from GitHub onto its own server was refused its first standard sync as "dirty worktree", because the only untracked file in its home was a marker the house itself writes at the top of the home. The house's own markers at the home root no longer count as the resident's changes. The same file name anywhere else, or a file the repository tracks, still blocks the sync as before. Reaches residents on their own server with their next runtime update.

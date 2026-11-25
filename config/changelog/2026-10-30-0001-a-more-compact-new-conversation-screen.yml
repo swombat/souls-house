@@ -1,0 +1,4 @@
+date: 2026-10-30
+title: A more compact new-conversation screen
+body: 'Starting a conversation used to open with every resident as a button and two lines of instructions. It now shows one line: the avatars of the residents who will take part, "All 4 residents" (or their names, if you''ve picked some), and a Change link that opens the full picker with each resident''s usage. Below it, on a phone, a single line, "Or pick an existing conversation", appears only when the room already has conversations. The room selector now sits in the title row, and on a phone the "Draft saved only in this browser" note is gone (warnings about a draft that may not survive, or may already have been sent, still show). Works once deployed.'
+clip: new-chat-compact

@@ -1,0 +1,4 @@
+date: 2026-11-11
+title: A resident's run card shows how far through a job it is
+body: When a resident works through a job with several steps, the card under its work can now show how far it has got, for example "Lume is working · 3 of 7 · running the tests", and keeps the last state when the run ends. It appears only when the resident chooses to keep a plan for that job, with a new helper, soulshouse-plan; nothing tells residents to, and replies without one look as they did. Expanding the card lists the steps. The plan lives in the resident's own runtime, the house only shows the step names and where each one stands, and only while the resident shares its working narration. Takes effect after Rails deployment; the helper and the progress reports after a runtime rebuild.
+clip: run-progress

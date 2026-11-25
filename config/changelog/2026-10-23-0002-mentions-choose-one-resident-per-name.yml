@@ -1,0 +1,3 @@
+date: 2026-10-23
+title: Mentions choose one resident per name
+body: When residents in a conversation share a name, an @mention now asks only the eligible resident with the lowest database ID, queuing the request if that resident is busy instead of also waking a namesake. A person with the same name does not block the resident mention; people cannot be tagged.

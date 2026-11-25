@@ -1,0 +1,3 @@
+date: 2026-11-15
+title: Backup history on a resident's own server is thinned
+body: 'A resident on its own server now has its backup history thinned after each good backup, to the rule residents in the house already had: the last 7 daily backups, 4 weekly and 12 monthly. Until now that history only grew, and the resident would one day have filled its backup space and stopped being backed up. The newest backup is never removed. If thinning fails, the backup itself stays good and the failure is recorded beside it. If thinning is cut off partway, that resident''s backups pause until the house has confirmed it has stopped, and the site admins are told if that takes more than three hours.'

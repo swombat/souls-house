@@ -1,0 +1,4 @@
+date: 2026-11-14
+title: Billing codes for one size, or for a plan
+body: 'A billing code can now do one of three things: let an account buy residents at cost in every size (as before), let it buy one size at cost (Small, Medium or Large), or give it the Partners or Colleagues plan with nothing to pay. Site admins make them in Site Admin > Billing codes and owners enter them in the Billing tab, as before. A code for a free plan is refused while the account is paying for that plan or a lower one: move the account to Companions first, then enter the code, so nothing is charged twice. Withdrawing a code''s grant ends the plan it gave and stops new purchases at its rate; residents already bought keep their price. Takes effect after Rails deployment.'
+clip: billing-code-kinds

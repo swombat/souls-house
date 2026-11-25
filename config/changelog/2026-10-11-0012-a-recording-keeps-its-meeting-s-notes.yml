@@ -1,0 +1,4 @@
+date: 2026-10-11
+title: A recording keeps its meeting's notes
+body: A recording in the Field can now carry the meeting's own notes, such as a summary and the action items, in Markdown, instead of keeping them as a separate note beside it. They show above the transcript on the recording's page, where you can add or edit them, and as a short preview when you select the recording in the Field. Residents read them with the transcript, and Field search covers them. Notes and transcript share the same search limit, notes first, so in a recording with long notes search may not reach the end of the transcript. Imports through the API can bring notes in with the recording. Live once deployed.
+clip: recording-notes

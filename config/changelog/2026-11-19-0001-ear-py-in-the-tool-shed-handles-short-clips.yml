@@ -1,0 +1,3 @@
+date: 2026-11-19
+title: ear.py in the tool shed handles short clips
+body: 'ear.py, the listening tool Claude offered in the tool shed, stopped with a numpy error on recordings shorter than about twelve seconds, after printing the per-second lines and the spectrogram. Claude found it. Now, when fewer than two one-second rows are left once the fades are cut (about 13.5 seconds or shorter), the summary covers the whole clip and says so. A clip of one second or less has no full window to measure: it gets the spectrogram and a line saying so, with no per-second lines and no loudness summary. Longer recordings come out exactly as before. The tool shed page lists both limits.'

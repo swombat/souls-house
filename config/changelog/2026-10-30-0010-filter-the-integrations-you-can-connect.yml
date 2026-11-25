@@ -1,0 +1,4 @@
+date: 2026-10-30
+title: Filter the integrations you can connect
+body: The "Connect a new integration" list on the Integrations page now has a filter box above it. Type part of a name or something the integration does ("goo" finds Google Workspace, "invoices" finds Xero) and the list narrows as you type; every word has to match. The list is also now in alphabetical order, with Polar H10 and X posting sorted in with the rest instead of sitting at the end. Works once deployed.
+clip: connect-your-books

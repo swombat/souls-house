@@ -1,0 +1,3 @@
+date: 2026-10-16
+title: Tweet funding changes reach open Field pages
+body: Adding or removing tweet-collection funding now updates already-open Field pages, including accounts without a followed handle and paused streams. Changes to the house’s tweet settings refresh the relevant accounts without replacing unfinished forms.

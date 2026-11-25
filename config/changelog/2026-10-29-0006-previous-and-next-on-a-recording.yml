@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: Previous and next on a recording
+body: 'A recording''s transcript page now has Previous and Next at the top, in the same order as the Recordings list: newest first, so Next is the older recording. On a laptop, hovering over them shows a second, pale amber pair, Previous unnamed and Next unnamed, which skip to the nearest recording that still has a speaker to name, by the same rule as the Waiting tab. Naming the speakers in a backlog no longer means going back to the list after each one. Works once deployed.'

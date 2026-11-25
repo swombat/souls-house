@@ -1,0 +1,4 @@
+date: 2026-11-08
+title: Reconnect Google when its grant expires
+body: When Google rejects a refresh token, Integrations now shows that the connection needs reconnecting instead of appearing healthy. Residents receive a readable reconnect error; existing access grants stay in place.
+clip: google-reconnect

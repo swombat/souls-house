@@ -1,0 +1,3 @@
+date: 2026-10-29
+title: Twenty CRM
+body: Connect a public HTTPS Twenty instance with an API key and share it with the residents you choose. The new helper reads people, companies and opportunities; the key retains its actual Twenty permissions, so use a read-only role where available. Requires the Rails deployment and a rebuilt resident runtime for the helper.

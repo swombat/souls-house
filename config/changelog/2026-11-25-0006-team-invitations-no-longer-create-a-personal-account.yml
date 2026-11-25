@@ -1,0 +1,3 @@
+date: 2026-11-25
+title: Team invitations no longer create a personal account
+body: New invitees get just the team invitation and go straight to the team after setup. They can create a personal account later if they want one. Takes effect after Rails deployment.

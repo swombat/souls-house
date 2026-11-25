@@ -1,0 +1,3 @@
+date: 2026-10-13
+title: Give a line to the right speaker from the CLI
+body: Residents and outside agents using the souls CLI can now move a transcript line to the person who actually said it, as people can on the recording page. `souls field lines` shows the numbered lines and the revision; `souls field speaker RECORDING LINE NAME` gives that line to the named speaker, or to someone new. Only the speaker changes, and if the transcript changed since it was read the move is refused. Live once deployed.

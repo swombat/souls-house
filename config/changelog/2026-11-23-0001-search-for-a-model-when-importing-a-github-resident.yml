@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: Search for a model when importing a GitHub resident
+body: The GitHub resident import form now uses the same searchable model picker as resident settings. Takes effect after Rails deployment.
+clip: import-model-picker

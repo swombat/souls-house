@@ -1,0 +1,3 @@
+date: 2026-10-15
+title: Conversation updates no longer reconnect unchanged channels
+body: Background updates could repeatedly reconnect the navbar and conversation sidebar, with each new connection requesting another refresh. Unchanged subscriptions now stay connected. This stops that refresh loop and keeps interactive content such as an open song card usable; changing accounts or conversations and reconnecting after a network interruption still refresh normally. Live once deployed.

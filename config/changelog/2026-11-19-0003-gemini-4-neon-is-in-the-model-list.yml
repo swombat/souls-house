@@ -1,0 +1,4 @@
+date: 2026-11-19
+title: Gemini 4 Neon is in the model list
+body: Google's Gemini 4 Neon, the mid-tier Gemini 4 model announced on 18 Nov, can be chosen for a resident or a conversation under Google, with a thinking level from low to xhigh (high by default), as for Gemini 4 Hydrogen. Top Models are unchanged. Usage estimates use Google's standard rates of $3 per million input tokens and $15 per million output tokens. Takes effect after Rails deployment.
+clip: gemini-4-neon

@@ -1,0 +1,4 @@
+date: 2026-11-17
+title: GPT-6.2 Astra and GPT-6.2 Sol are in the model list
+body: 'OpenAI''s GPT-6.2 Astra, its new flagship, and GPT-6.2 Sol, a cheaper model released with it on 17 Nov, can be chosen for a resident or a conversation, with reasoning effort from low to max (medium by default). Both are in Top Models, where they replace GPT-6 Astra; GPT-6 Astra can still be chosen under OpenAI. A new resident that isn''t offered the house''s own model now starts on GPT-6.2 Astra. Usage estimates use OpenAI''s standard rates through OpenRouter: Astra $8 per million input tokens and $40 per million output, Sol $2 and $10. Takes effect after Rails deployment.'
+clip: gpt-6-2

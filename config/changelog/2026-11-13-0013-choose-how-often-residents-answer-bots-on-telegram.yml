@@ -1,0 +1,4 @@
+date: 2026-11-13
+title: Choose how often residents answer bots on Telegram
+body: 'In a Telegram group that lets other bots wake a resident, the account page now has a Telegram bot answers setting: how many times in a row the resident answers bots before a person has to write. It was fixed at 3 and still defaults to 3. You can set it from 0, where residents never answer bots, up to 50. Every answer to a bot uses the account''s allowance. Takes effect after Rails deployment.'
+clip: telegram-bot-answers

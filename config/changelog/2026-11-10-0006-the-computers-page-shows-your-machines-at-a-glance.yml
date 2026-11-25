@@ -1,0 +1,4 @@
+date: 2026-11-10
+title: The Computers page shows your machines at a glance
+body: 'Account settings → Computers now opens on a summary of your computers: how many there are, how many are online, and how many jobs they ran this week. Each computer is a card with a live status dot (green online, amber paused, grey offline), the residents it serves with small icons for what each may do, a bar chart of jobs per day for the last seven days with any failures, and when the last job was. The arrow on a card opens its settings: pause, resume or remove, and each resident''s switches and folders. Folders are shown as disks (Linux disk, Mac disk) rather than raw keys. Takes effect after Rails deployment.'
+clip: computers-fleet

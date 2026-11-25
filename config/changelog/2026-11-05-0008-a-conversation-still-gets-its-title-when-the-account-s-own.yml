@@ -1,0 +1,3 @@
+date: 2026-11-05
+title: A conversation still gets its title when the account's own key is refused
+body: When an account's own OpenRouter key was rejected or out of credit, the title request failed outright, and the conversation stayed "New Conversation" until the five-minute tidy-up caught it. Now a refused account key falls through to the house's key straight away, as a missing key already did. Takes effect after Rails deployment.

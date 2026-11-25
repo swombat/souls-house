@@ -1,0 +1,4 @@
+date: 2026-11-23
+title: Site admins choose where a GitHub import is made
+body: 'When a site admin brings a resident in from GitHub, the import form now asks where to create it: on the main server, or on its own server. It starts on the house''s setting, so leaving it alone changes nothing. Choosing its own server still needs the house to be able to order a server and back it up, and stays within the house''s server limit. The choice is saved with the import and used when the import is approved. Anyone else''s import follows the house''s setting, as before. Takes effect after Rails deployment.'
+clip: import-where

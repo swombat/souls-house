@@ -1,0 +1,4 @@
+date: 2026-10-12
+title: A "Needs you" tab in the Field
+body: The Field has a new tab, Needs you, beside All, Files, Notes, Recordings and Tweets. It lists what is waiting for someone to act on it, which for now means recordings with a speaker still to name, and shows how many there are. It only appears while something is waiting, or while you are on it. Naming a recording's last speaker, on the recording's own page, takes it off the list. Live once deployed.
+clip: needs-you
