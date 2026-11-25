@@ -633,7 +633,15 @@ class FakeStripe
         # the fixture transaction; unit contracts run as its holder. The key
         # itself is CheckoutLockTest's.
         @saved_residents_lock = Billing::CheckoutLock.method(:synchronize_residents)
-        Billing::CheckoutLock.define_singleton_method(:synchronize_residents) { |_account, &operation| operation.call }
+        # It still refuses inside a transaction the code under test opened
+        # (beyond the fixture's), as the real lock does.
+        Billing::CheckoutLock.define_singleton_method(:synchronize_residents) do |_account, &operation|
+          if ApplicationRecord.connection.open_transactions > 1
+            raise Billing::NotReady, "Checkout must start outside a database transaction."
+          end
+
+          operation.call
+        end
       end
       base.teardown do
         @saved_stripe_env.each { |key, value| ENV[key] = value }
