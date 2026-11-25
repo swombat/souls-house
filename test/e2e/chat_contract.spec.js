@@ -124,7 +124,7 @@ test.describe('browser contracts', () => {
     const run = await started.json();
     await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
     const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
-    await expect(card.getByText('is working')).toBeVisible();
+    await expect(card.getByTestId('runtime-stage-announcement')).toHaveText('E2E Researcher is working');
     // Let initial subscription reconciliation settle before losing notifications.
     await page.waitForLoadState('networkidle');
 
@@ -133,7 +133,7 @@ test.describe('browser contracts', () => {
       data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
     });
     expect(completed.ok()).toBe(true);
-    await expect(card.getByText('finished', { exact: true })).toBeVisible();
+    await expect(card.getByTestId('runtime-stage-announcement')).toHaveText('E2E Researcher finished');
     await expect(card.getByText(/1 reply posted/)).toBeVisible();
     // A finished card is not enough: the actual posted message must converge too.
     await expect(page.getByText('Synthetic work is complete.', { exact: true })).toBeVisible();

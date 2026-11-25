@@ -45,14 +45,14 @@ for (const mobile of [false, true]) {
       await expect(page.getByText('Synthetic progress update.')).toBeVisible();
       await update({ complete: true, quiet_complete: true });
       await expect(card.getByRole('status')).toHaveCount(0);
-      await expect(card.getByText('finished', { exact: true })).toBeVisible();
+      await expect(card.getByTestId('runtime-stage-announcement')).toHaveText(/ finished$/);
       runId = null;
       await update({ silence_seconds: 125, hide_helpers: true });
       const privateCard = page.locator(`[data-run-id="${runId}"]`);
       await expect(privateCard).toBeVisible();
       await expect(privateCard.getByRole('status')).toHaveCount(0);
       await update({ complete: true, quiet_complete: true });
-      await expect(privateCard.getByText('finished', { exact: true })).toBeVisible();
+      await expect(privateCard.getByTestId('runtime-stage-announcement')).toHaveText(/ finished$/);
       await expect(privateCard.getByRole('status')).toHaveCount(0);
     } finally {
       await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
