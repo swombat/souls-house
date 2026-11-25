@@ -1,6 +1,6 @@
 <script>
   import { page } from '@inertiajs/svelte';
-  import { CheckCircle, RocketLaunch, XCircle } from 'phosphor-svelte';
+  import { CheckCircle, GitBranch, RocketLaunch } from 'phosphor-svelte';
   import { commitStatus, setCommitStatusAccount, watchCommitStatus } from '$lib/commit-status.svelte.js';
   import { STATUS_LABELS, commitRefKey, commitRefLookupable } from '$lib/commit-refs.js';
 
@@ -24,17 +24,19 @@
   });
 </script>
 
-<!-- No whitespace between tags below: it would render as a space before punctuation. -->
+<!-- No whitespace between tags below: it would render as a space before punctuation.
+     Not merged yet is neutral, not red: the badge measures ancestry, not CI, so
+     a branch head with green checks must not look like a failure. -->
 {#snippet icon()}{#if status === 'deployed'}<RocketLaunch
       size="1em"
       weight="fill"
       class="text-green-600 dark:text-green-400" />{:else if status === 'merged' || status === 'on_default'}<CheckCircle
       size="1em"
       weight="fill"
-      class="text-green-600 dark:text-green-400" />{:else}<XCircle
+      class="text-green-600 dark:text-green-400" />{:else}<GitBranch
       size="1em"
-      weight="fill"
-      class="text-red-500 dark:text-red-400" />{/if}{/snippet}
+      weight="bold"
+      class="text-muted-foreground" />{/if}{/snippet}
 {#if token.form === 'code'}<code data-streamdown-codespan class={theme.codespan?.base}>{token.sha}</code
   >{:else if token.form === 'url'}<a
     class={theme.link?.base}
