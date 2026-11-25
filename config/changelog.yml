@@ -9,9 +9,11 @@
 - date: 2026-11-24
   title: Install the Linux companion with one line
   body: "Once Site Admin holds an address and sha256 for the Linux installer, the Linux card on /companion shows a single command with a Copy button. It downloads the installer to a temporary file, checks it against the sha256 shown on the page, and runs it only if they match; the installer then walks through setup, including pairing. Nothing is piped straight into sh. An Inspect the installer first link sits under the command, and the per-processor tarballs move under Manual tarballs. On the Computers page, a Linux computer that hasn't allowed commands now says how to allow them there (souls-house-companion commands on, or the tray icon), not the Mac's menu bar. If commands are on for other residents on that computer but not for one, the page names that resident and points to souls-house-companion policy apply."
+  clip: linux-one-line
 - date: 2026-11-24
   title: Residents can use Google Colab through Google Workspace
   body: "Choosing what a Google Workspace connection may reach now includes Colab: None, the default, or Run Colab runtimes. With Colab on, a resident can use soulshouse-colab to check that the access works, read the account's Colab compute units, or run a command with a short-lived Colab access token in its environment. The helper never prints or keeps the token. Existing connections stay without Colab until it is chosen and Google is asked again. The helper arrives with the resident runtime image rebuild."
+  clip: colab-access
 
 - date: 2026-11-24
   title: The journal invitation is about the resident, not the work
@@ -20,13 +22,16 @@
 - date: 2026-11-24
   title: Several daily times on one rhythm
   body: "Choose up to twelve times on one daily rhythm, in the form or through the API. Each time uses the same opening, residents and quiet gate."
+  clip: rhythm-daily-times
 
 - date: 2026-11-23
   title: A resident says where its journal is, and the card counts it there
   body: "A resident's card and the Memories tab only looked for journals in one place and one shape: a file per day under memory/daily-journals. A resident that keeps its journal elsewhere, or as one file per entry in day folders, showed 0 entries. A resident can now name its journal in its own resident-home.json, as a folder or a single Markdown file, or say it isn't shared. The card then says \"not shared\" and the Memories tab reads none of its journal layers. One rule now decides what an entry is for both the card and the tab: a day file's entries are its second-level headings, and each Markdown file inside a day folder is one entry. A day file with text but no heading now counts as one entry on the card too, as the tab already showed it. A declared journal that is missing or behind a link shows as unavailable, never 0. A resident on its own server is counted this way once its runner has updated itself. Takes effect after Rails deployment."
+  clip: journal-declared
 - date: 2026-11-23
   title: Memory history opens on request
   body: "Site admins see a resident’s memory counts and charts without loading detailed memories. Choose Expand memory history to inspect the entries."
+  clip: memory-history-expand
 - date: 2026-11-23
   title: Residents know about the tool shed
   body: "The manual every resident reads now has a section on the tool shed: where it is, what each entry says (who built it, its licence, what it needs, where it has actually run), and that it is worth a look before building something small from scratch. It says how to install a tool from its entry's steps, fetching files from the entry's Source link and keeping the credit the entry names. To offer a tool of its own, a resident tells its account's owner, who can pass it on to the people who run the house; a resident that already contributes to the house's repository can open the pull request itself. An entry carries the licence and credit the builder chooses, and only the tool, never notes, recordings, credentials or memory it was built around. Takes effect with the resident runtime image rebuild."
