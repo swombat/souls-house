@@ -140,14 +140,16 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     end
   end
 
-  test "a declaration overrides the admin's chosen file; without one the chosen file is read" do
+  test "only the home's declaration names the journal; a path passed from outside is never read" do
     with_home do |home, script|
       home.join("memory/growth.md").write("## one\n## two\n## three\n")
       home.join("journal").mkpath
       home.join("journal/2026-11-20.md").write("## one\n")
-      assert_equal 3, read(script, "memory/growth.md")
+      assert_equal 0, read(script, "memory/growth.md")
       declare(home, { "path" => "journal" })
       assert_equal 1, read(script, "memory/growth.md")
+      declare(home, { "path" => "memory/growth.md" })
+      assert_equal 3, read(script)
     end
   end
 
@@ -299,60 +301,6 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     end
   end
 
-  # A chosen journal (JqRaEY): one file under memory/, named as argv, read
-  # only when the home declares nothing.
-  def with_identity
-    with_home do |identity, script|
-      identity.join("memory/daily-journals/2026-11-20.md").write("## 09:00 daily\n")
-      yield identity, script
-    end
-  end
-
-  test "a chosen journal file is counted alone, fence-aware, and only the number comes back" do
-    with_identity do |identity, script|
-      identity.join("memory/growth-journal.md")
-        .write("# Growth\n\n## one\nprivate prose\n```\n## fenced\n```\n## two\n### sub\n## three\n")
-      identity.join("memory/notes").mkpath
-      identity.join("memory/notes/deep.md").write("## a\n")
-      assert_equal 1, read(script)
-      assert_equal 3, read(script, "memory/growth-journal.md")
-      assert_equal 1, read(script, "memory/notes/deep.md")
-      stdout, = Open3.capture3("python3", "-c", script, "memory/growth-journal.md")
-      assert_not_includes stdout, "private prose"
-    end
-  end
-
-  test "a chosen journal that is missing, linked or outside memory/ is unavailable, never zero" do
-    with_identity do |identity, script|
-      identity.join("memory/real.md").write("## one\n")
-      File.symlink(identity.join("memory/real.md"), identity.join("memory/linked.md"))
-      identity.join("memory/real-dir").mkpath
-      identity.join("memory/real-dir/x.md").write("## one\n")
-      File.symlink(identity.join("memory/real-dir"), identity.join("memory/linked-dir"))
-      identity.join("other.md").write("## one\n")
-      File.mkfifo(identity.join("memory/pipe.md"))
-      [ "memory/missing.md", "memory/linked.md", "memory/linked-dir/x.md", "memory/../other.md", "other.md",
-        "memory/real-dir", "memory/a b.md", "memory//real.md", "/memory/real.md", "memory/.md/..", "memory/....md/",
-        "memory/pipe.md" ].each do |source|
-        assert_equal :failed, read(script, source), source
-      end
-      assert_equal 1, read(script, "memory/real.md")
-    end
-  end
-
-  test "the local reader passes the chosen journal as one argv value" do
-    @agent.update!(journal_source: "memory/growth-journal.md")
-    argv = nil
-    popen = lambda do |*args, **|
-      argv = args
-      { ok: true, stdout: '{"count":5,"storage_bytes":null}' }
-    end
-    Agents::Resources.stub(:new, @resources) do
-      Open3.stub(:popen3, popen) { assert_equal 5, @service.call[:count] }
-    end
-    assert_equal [ "python3", "-c", Agents::JournalEntryStats::SCRIPT, "memory/growth-journal.md" ], argv.last(4)
-  end
-
   test "runner versions: only a runner that reads the home's declaration is asked for a count" do
     asked = []
     relay = lambda do |_agent, _kind, payload, **|
@@ -370,11 +318,8 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
       end
       enrollment.update!(last_facts: { "home_stats" => 4 })
       assert_equal 7, @service.call[:count]
-      @agent.update!(journal_source: "memory/growth-journal.md")
-      assert_equal 7, @service.call[:count]
     end
-    assert_equal [ { "container_name" => "test-resident" },
-                   { "container_name" => "test-resident", "journal_source" => "memory/growth-journal.md" } ], asked
+    assert_equal [ { "container_name" => "test-resident" } ], asked
   end
 
   test "a VM runner's not shared reaches the card" do
@@ -382,38 +327,6 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     Agents::RemoteRuntime.stub(:relay!, ->(*, **) { { "status" => "not_shared" } }) do
       assert_equal "not_shared", @service.call[:status]
     end
-  end
-
-  test "the chosen-journal rule is one rule" do
-    %w[memory/growth-journal.md memory/a/b_c-1.md memory/.hidden.md].each do |source|
-      assert Agent.valid_journal_source?(source), source
-    end
-    [ nil, "", "growth.md", "memory/x.txt", "memory/../x.md", "memory/./x.md", "memory//x.md", "/memory/x.md",
-      "memory/x y.md", "memory/...md/..", "memory/#{"a" * 200}.md", "memory/x.md\n" ].each do |source|
-      assert_not Agent.valid_journal_source?(source), source.inspect
-    end
-    @agent.journal_source = "   "
-    assert_nil @agent.journal_source
-    @agent.journal_source = "memory/../x.md"
-    assert_not @agent.valid?
-    assert @agent.errors[:journal_source].any?
-  end
-
-  test "changing the chosen journal clears the count measured from the old one" do
-    @agent.update!(journal_entry_stats: { "count" => 0, "status" => "measured" })
-    @agent.update!(name: @agent.name)
-    assert_equal 0, @agent.reload.journal_entry_stats["count"]
-    @agent.update!(journal_source: "memory/growth-journal.md")
-    assert_equal({}, @agent.reload.journal_entry_stats)
-  end
-
-  test "a count the old job wrote after the admin loaded the resident is still cleared by the source change" do
-    @agent.update_columns(journal_entry_stats: {})
-    stale = Agent.find(@agent.id)
-    Agent.find(@agent.id).update!(journal_entry_stats: { "count" => 0, "status" => "measured" })
-    stale.update!(journal_source: "memory/growth-journal.md")
-    assert_equal({}, @agent.reload.journal_entry_stats)
-    assert_equal "memory/growth-journal.md", @agent.journal_source
   end
 
 end

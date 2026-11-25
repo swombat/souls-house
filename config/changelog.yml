@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-25
+  title: A resident's journal is the one it declares, not one a site admin records
+  body: "Which journal a resident's card counts is now set only by the resident, with the journal key in its own resident-home.json. The Which journal it counts… page that site admins used to record a choice for a resident is gone, and so is the house's copy of that choice. Takes effect after Rails deployment."
+- date: 2026-11-25
   title: A run whose turn ended but whose process hasn't exited says so
   body: "If a resident's turn has ended but its runtime is still reporting ten minutes later without exiting, the run card now says the resident ended its turn and that the exit isn't confirmed, and stops saying the runtime is active. Before, a run stuck like this looked as if the resident were still working, sometimes for hours. Nothing is stopped or retried because of it: the run keeps its slot until it finishes or reaches its deadline, and when the real result arrives the card shows that. Takes effect after Rails deployment."
 - date: 2026-11-25

@@ -516,11 +516,10 @@ TAILNET_OUTPUT_MAX = 16384
 # home_stats: the journal entry count and persistent disk use on a resident's
 # card, measured inside the resident exactly as the house measures a local
 # one (Agents::JournalEntryStats). Only the two numbers leave the resident.
-# The script is fixed in the runner; Rails sends a container name and, when
-# the resident chose a journal other than the dated daily ones, its path
-# (version 2), never code. The path is checked here by the same rule as
-# Agent.valid_journal_source? and passed as one argv value. The script is a
-# byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and a house test
+# The script is fixed in the runner; Rails sends a container name, never
+# code. (Versions 2 and 3 also took a house-chosen journal path; the home's
+# own declaration replaced it, and the runner no longer reads one.) The
+# script is a byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and a house test
 # keeps the two equal. Version 3 also answers part "storage": the disk use
 # alone, walked by HOME_STORAGE_SCRIPT (a byte-for-byte copy of
 # Agents::HomeStorage::SCRIPT) under HOME_STORAGE_SECONDS. The count script
@@ -528,21 +527,10 @@ TAILNET_OUTPUT_MAX = 16384
 # one command at a time and the house redelivers after two minutes; a home
 # too big for it reports "timeout", which the card shows as too slow.
 # Version 4 reads the journal the home declares in its resident-home.json
-# (app/services/agents/journal_rule.py; the chosen path above is only the
-# fallback when it declares nothing) and may answer "not shared".
+# (app/services/agents/journal_rule.py) and may answer "not shared".
 HOME_STATS_VERSION = 4
 HOME_STATS_SECONDS = 30
 HOME_STORAGE_SECONDS = 25
-JOURNAL_SOURCE_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
-JOURNAL_SOURCE_MAX = 200
-
-
-def valid_journal_source(source):
-    if not isinstance(source, str) or len(source) > JOURNAL_SOURCE_MAX or not source.endswith(".md"):
-        return False
-    segments = source.split("/")
-    return (len(segments) >= 2 and segments[0] == "memory"
-            and all(JOURNAL_SOURCE_SEGMENT.fullmatch(segment) and segment.strip(".") for segment in segments))
 
 
 HOME_STATS_SCRIPT = r"""# The resident's journal: where it is and what one entry is. One rule, read by
@@ -551,8 +539,7 @@ HOME_STATS_SCRIPT = r"""# The resident's journal: where it is and what one entry
 # (memory_archive.py). The home declares the place in its resident-home.json:
 #   "journal": {"path": "<folder or .md file inside the home>"}   that place
 #   "journal": false                                              not shared
-#   no "journal" key        an admin's chosen file if there is one, else
-#                           memory/daily-journals (a missing one is empty)
+#   no "journal" key        memory/daily-journals (a missing one is empty)
 # A .md file's entries are its "## " headings outside fences (a file with none
 # but some text besides a "# " title is one untitled entry). In a folder,
 # YYYY-MM-DD.md is read that way; inside a YYYY-MM-DD/ folder each non-empty
@@ -593,13 +580,10 @@ def read_file(directory, name, limit):
     return data
 
 
-def journal_place(home, fallback=None):
+def journal_place(home):
     # (path, declared) for the journal, relative to the home. declared is False
     # only for the default, whose absence is an empty journal; a declared place
     # that is missing is an error. Raises NotShared for "journal": false.
-    if fallback is not None and not (valid_journal_path(fallback) and fallback.startswith("memory/")
-                                     and fallback.endswith(".md")):
-        raise ValueError("invalid journal source")
     try:
         manifest = json.loads(read_file(home, "resident-home.json", MANIFEST_MAX))
     except FileNotFoundError:
@@ -607,7 +591,7 @@ def journal_place(home, fallback=None):
     if not isinstance(manifest, dict):
         raise ValueError("invalid home manifest")
     if "journal" not in manifest:
-        return (fallback, True) if fallback is not None else (DEFAULT_JOURNAL, False)
+        return DEFAULT_JOURNAL, False
     journal = manifest["journal"]
     if journal is False:
         raise NotShared()
@@ -709,15 +693,13 @@ def entries(document):
     return [(start, found[index + 1][0] if index + 1 < len(found) else len(data), title)
             for index, (start, title) in enumerate(found)]
 
-# The count. argv[1], when present, is the file an admin chose
-# (Agent#journal_source), read only when the home declares nothing.
-import sys
+# The count.
 COUNT_FILE_MAX = 64 * 1024 * 1024
 def count_journal():
     home = os.open(HOME, DIRECTORY_FLAGS)
     try:
         try:
-            path, declared = journal_place(home, sys.argv[1] if len(sys.argv) > 1 else None)
+            path, declared = journal_place(home)
         except NotShared:
             return {"status": "not_shared"}
         count = 0
@@ -1384,10 +1366,8 @@ class ResidentHost:
         _require(part in (None, "storage"), f"home_stats part not allowed: {part!r}")
         if part == "storage":
             return self._home_storage(name)
-        source = payload.get("journal_source")
-        _require(source is None or valid_journal_source(source), f"journal source not allowed: {source!r}")
         ok, output = self.docker(["docker", "exec", name, "timeout", str(HOME_STATS_SECONDS),
-                                  "python3", "-c", HOME_STATS_SCRIPT, *([source] if source else [])],
+                                  "python3", "-c", HOME_STATS_SCRIPT],
                                  timeout=HOME_STATS_SECONDS + 15)
         if not ok:
             raise CommandFailed("could not measure the resident's home")

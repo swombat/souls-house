@@ -4,8 +4,7 @@
 # (memory_archive.py). The home declares the place in its resident-home.json:
 #   "journal": {"path": "<folder or .md file inside the home>"}   that place
 #   "journal": false                                              not shared
-#   no "journal" key        an admin's chosen file if there is one, else
-#                           memory/daily-journals (a missing one is empty)
+#   no "journal" key        memory/daily-journals (a missing one is empty)
 # A .md file's entries are its "## " headings outside fences (a file with none
 # but some text besides a "# " title is one untitled entry). In a folder,
 # YYYY-MM-DD.md is read that way; inside a YYYY-MM-DD/ folder each non-empty
@@ -46,13 +45,10 @@ def read_file(directory, name, limit):
     return data
 
 
-def journal_place(home, fallback=None):
+def journal_place(home):
     # (path, declared) for the journal, relative to the home. declared is False
     # only for the default, whose absence is an empty journal; a declared place
     # that is missing is an error. Raises NotShared for "journal": false.
-    if fallback is not None and not (valid_journal_path(fallback) and fallback.startswith("memory/")
-                                     and fallback.endswith(".md")):
-        raise ValueError("invalid journal source")
     try:
         manifest = json.loads(read_file(home, "resident-home.json", MANIFEST_MAX))
     except FileNotFoundError:
@@ -60,7 +56,7 @@ def journal_place(home, fallback=None):
     if not isinstance(manifest, dict):
         raise ValueError("invalid home manifest")
     if "journal" not in manifest:
-        return (fallback, True) if fallback is not None else (DEFAULT_JOURNAL, False)
+        return DEFAULT_JOURNAL, False
     journal = manifest["journal"]
     if journal is False:
         raise NotShared()

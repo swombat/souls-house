@@ -58,7 +58,7 @@ module Agents
       raise ReadError if @agent.container_name.blank?
       raise ReadError if @agent.sandbox_host.present? && @agent.sandbox_host != Config.sandbox_host
       Agents::Resources.new(@agent).verify_existing!
-      JSON.parse(capture(SCRIPT, { mode: mode, journal_source: @agent.journal_source, **arguments }.to_json))
+      JSON.parse(capture(SCRIPT, { mode: mode, **arguments }.to_json))
     rescue Agents::Resources::OwnershipError, Timeout::Error, SystemCallError, JSON::ParserError
       raise ReadError
     end

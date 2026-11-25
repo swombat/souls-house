@@ -20,7 +20,7 @@ module Agents
     # trust check (host-runner RUNTIME_TRUST_CHECK_VERSION).
     RUNTIME_TRUST_CHECK_VERSION = 1
     # The runner fact that says it can measure a resident's card numbers.
-    # 2 also counts a journal the resident chose (Agent#journal_source); a
+    # 2 also counted a journal the house chose for the resident (gone); a
     # runner on 1 still measures the dated daily journals.
     # 3 also walks the resident's disk use on its own, as part "storage"
     # (Agents::HomeStorage); before 3 the walk rode along with the count.
@@ -619,15 +619,12 @@ module Agents
 
     def home_stats!(agent, wait: HOME_STATS_WAIT, poll: 1)
       enrollment = live_enrollment!(agent)
-      source = agent.journal_source
       version = enrollment.reload.last_facts.to_h["home_stats"]
       unless version.is_a?(Integer) && version.between?(HOME_STATS_JOURNAL_DECLARATION_VERSION, HOME_STATS_VERSION)
         raise RunnerTooOld, "its server's runner can't measure its home yet; it updates itself"
       end
 
-      payload = { "container_name" => agent.container_name }
-      payload["journal_source"] = source if source
-      relay!(agent, "home_stats", payload, wait:, poll:, abandon_on_timeout: true)
+      relay!(agent, "home_stats", { "container_name" => agent.container_name }, wait:, poll:, abandon_on_timeout: true)
     end
 
     # The disk use on a VM resident's card, walked inside it by the runner's

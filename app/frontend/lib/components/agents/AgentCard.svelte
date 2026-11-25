@@ -139,12 +139,6 @@
               class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
               data-testid="resident-migration-link">Move to its own server…</a>
           {/if}
-          {#if admin && !agent.deprecated}
-            <a
-              href={`/admin/agents/${agent.id}/journal_source`}
-              class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              data-testid="resident-journal-source-link">Which journal it counts…</a>
-          {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="This resident has been retired. History is preserved.">

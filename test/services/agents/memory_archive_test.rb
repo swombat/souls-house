@@ -182,14 +182,6 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     end
   end
 
-  test "an admin's chosen file is the journal only when the home declares nothing" do
-    write("growth.md", "## one\n## two\n")
-    write("daily-journals/2026-11-20.md", "## daily\n")
-    assert_equal 2, run_reader(mode: "overview", journal_source: "memory/growth.md")["count"]
-    declare({ "path" => "memory/daily-journals" })
-    assert_equal 1, run_reader(mode: "overview", journal_source: "memory/growth.md")["count"]
-  end
-
   # Mira, #1113: a cached overview or catalog must not outlive "journal": false.
   test "the current declaration gates a cached overview and catalog" do
     write("daily-journals/2026-11-20.md", "## 09:00 private title\nbody\n")
