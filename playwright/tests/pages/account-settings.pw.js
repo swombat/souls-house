@@ -24,7 +24,7 @@ test.describe('Account settings', () => {
 
     await expect(component.getByRole('heading', { name: 'Model API keys', exact: true })).toBeVisible();
     await expect(component.getByText('Test Team · Account settings', { exact: true })).toBeVisible();
-    await expect(component.getByRole('link', { name: 'Model API keys', exact: true })).toHaveAttribute(
+    await expect(component.getByRole('link', { name: 'Model keys', exact: true })).toHaveAttribute(
       'href',
       '/accounts/2/agent_api_keys'
     );

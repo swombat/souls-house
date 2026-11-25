@@ -47,18 +47,10 @@ test('open account settings reconcile pristine values and retain drafts across l
     await expect(page.getByLabel('Account name', { exact: true })).toHaveValue('Live account name');
     await expect(page.getByTestId('nav-account-name')).toHaveText('Live account name');
 
-    const cap = page.getByTestId('resident-handoff-cap');
-    await editor.getByTestId('resident-handoff-cap').fill('11');
-    await editor.getByTestId('resident-handoff-cap').locator('xpath=ancestor::form').getByRole('button').click();
-    await expect(cap).toHaveValue('11');
-
     await page.getByLabel('Account name', { exact: true }).fill('Unfinished local name');
-    await cap.fill('13');
     await saveName('Remote account name');
     await expect(page.getByTestId('nav-account-name')).toHaveText('Remote account name');
     await expect(page.getByLabel('Account name', { exact: true })).toHaveValue('Unfinished local name');
-    await expect(cap).toHaveValue('13');
-    expect(partials.some((props) => props.includes('resident_handoff_cap'))).toBe(true);
 
     drop = true;
     await saveName('Missed account name');
@@ -66,11 +58,27 @@ test('open account settings reconcile pristine values and retain drafts across l
     await expect(page.getByTestId('nav-account-name')).toHaveText('Missed account name', { timeout: 20_000 });
     drop = false;
     await expect(page.getByLabel('Account name', { exact: true })).toHaveValue('Unfinished local name');
-    await expect(cap).toHaveValue('13');
     await page.screenshot({ path: testInfo.outputPath('account-config-drafts.png'), fullPage: true });
 
+    // The limits moved to Features; their drafts survive live updates there too.
+    await page.goto(`${base}/features`);
+    await editor.goto(`${base}/features`);
+    const cap = page.getByTestId('resident-handoff-cap');
+    const saveCap = async (value) => {
+      await editor.getByTestId('resident-handoff-cap').fill(value);
+      await editor.getByTestId('resident-handoff-cap').locator('xpath=ancestor::form').getByRole('button').click();
+    };
+    await saveCap('11');
+    await expect(cap).toHaveValue('11');
+    await cap.fill('13');
+    await saveCap('12');
+    await expect(editor.getByTestId('resident-handoff-cap')).toHaveValue('12');
+    await expect.poll(() => partials.some((props) => props.includes('resident_handoff_cap'))).toBe(true);
+    await expect(cap).toHaveValue('13');
+    await editor.goto(base);
+
     // The same existing Account marker refreshes titles on the other settings pages.
-    for (const path of ['interface', 'rooms']) {
+    for (const path of ['tags', 'rooms']) {
       await page.goto(`${base}/${path}`);
       await saveName(`Updated on ${path}`);
       await expect(page.getByTestId('nav-account-name')).toHaveText(`Updated on ${path}`);

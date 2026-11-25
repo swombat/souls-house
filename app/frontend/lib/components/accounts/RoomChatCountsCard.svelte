@@ -3,6 +3,7 @@
   import * as Card from '$lib/components/shadcn/card';
   import { Switch } from '$lib/components/shadcn/switch';
   import { accountPath } from '@/routes';
+  import FeatureClip from './FeatureClip.svelte';
 
   let { accountId, enabled, canManage = false } = $props();
 
@@ -22,10 +23,8 @@
 <Card.Root>
   <Card.Header>
     <Card.Title>Conversations per room</Card.Title>
-    <Card.Description>
-      With this on, the room menus show how many conversations each room holds, in faint text to the left of its name.
-      Archived and hidden conversations aren't counted.
-    </Card.Description>
+    <Card.Description
+      >The room menus show how many conversations each room holds, faintly, beside its name.</Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
     {#if canManage}
@@ -45,5 +44,6 @@
           : "The room menus don't show how many conversations each room holds."}
       </p>
     {/if}
+    <FeatureClip name="room-counts" label="Room menus showing how many conversations each room holds" />
   </Card.Content>
 </Card.Root>

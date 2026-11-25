@@ -9,10 +9,10 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
   end
 
-  test "confirmed ordinary member sees interface contract and edits account palette" do
-    get account_interface_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+  test "confirmed ordinary member sees the Tags contract and edits account palette" do
+    get account_tags_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
     assert_response :success
-    assert_equal "accounts/interface", inertia_component
+    assert_equal "accounts/tags", inertia_component
     assert_equal true, inertia_shared_props["can_manage"]
     assert_equal [ @tag.as_json.merge("conversation_count" => 0) ], inertia_shared_props["visual_tags"]
     assert_equal VisualTag::ICON_OPTIONS, inertia_shared_props["icon_options"]
@@ -23,16 +23,16 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
         visual_tag: { label: "Care", icon: "Heart", colour: "rose", account_id: accounts(:other).id }
       }
     end
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert_equal @account, VisualTag.last.account
 
     patch account_visual_tag_path(@account, @tag), params: { visual_tag: { label: "Revised", colour: "blue" } }
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert_equal "Revised", @tag.reload.label
     assert_equal "blue", @tag.colour
 
     delete account_visual_tag_path(@account, @tag)
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert_not VisualTag.exists?(@tag.id)
   end
 
@@ -41,7 +41,7 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     chat = @account.chats.create!(title: "Pinned", model_id: "openrouter/auto", visual_tag: pin)
 
     patch account_visual_tag_path(@account, pin), params: { visual_tag: { colour: "rose", icon: "Heart", pinned: false } }
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert_equal [ "Pin", "Heart", "rose", true ], pin.reload.values_at(:label, :icon, :colour, :pinned)
 
     patch account_visual_tag_path(@account, pin), params: { visual_tag: { label: "Top" } }
@@ -53,7 +53,7 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert_no_difference "VisualTag.count" do
       delete account_visual_tag_path(@account, pin)
     end
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert_equal pin, chat.reload.visual_tag
   end
 
@@ -63,12 +63,12 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
         visual_tag: { label: "", icon: "unsafe", colour: "unsafe" }
       }
     end
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     follow_redirect!
     assert inertia_shared_props.fetch("errors").fetch("label").present?
 
     patch account_visual_tag_path(@account, @tag), params: { visual_tag: { colour: "unsafe" } }
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert_equal "green", @tag.reload.colour
   end
 
@@ -83,7 +83,7 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
       popular.as_json.merge("conversation_count" => 1), @tag.as_json.merge("conversation_count" => 0) ]
     headers = { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
 
-    get account_interface_path(@account), headers: headers
+    get account_tags_path(@account), headers: headers
     assert_response :success
     assert_equal expected, inertia_shared_props["visual_tags"]
     get account_chats_path(@account), headers: headers
@@ -118,7 +118,7 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
         delete account_visual_tag_path(@account, @tag)
       end
     end
-    assert_redirected_to account_interface_path(@account)
+    assert_redirected_to account_tags_path(@account)
     assert VisualTag.exists?(@tag.id)
     follow_redirect!
     assert_match "Please try again", inertia_shared_props.fetch("errors").fetch("visual_tag")
@@ -126,13 +126,13 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
 
   test "pending members have no interface access" do
     memberships(:team_member).update_columns(confirmed_at: nil)
-    get account_interface_path(@account)
+    get account_tags_path(@account)
     assert_response :not_found
   end
 
   test "anonymous requests require sign in" do
     delete logout_path
-    get account_interface_path(@account)
+    get account_tags_path(@account)
     assert_redirected_to login_path
   end
 

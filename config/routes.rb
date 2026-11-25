@@ -185,7 +185,12 @@ Rails.application.routes.draw do
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
     resource :users, only: :show, module: :accounts
+    # Visual tags live at /tags; /interface keeps answering (it redirects there),
+    # and its PATCH still sets the logo colour, which now sits on General.
     resource :interface, only: %i[show update], module: :accounts
+    resource :tags, only: :show, module: :accounts, controller: :tags
+    # The account's feature switches: what changes in its conversations (JQvGmY).
+    resource :features, only: :show, module: :accounts, controller: :features
     # Computers enrolled through the companion app, and the owner's switches.
     resources :companion_devices, path: "computers", only: %i[index update], module: :accounts
     # Adding a computer by the code it shows (CompanionPairing).
