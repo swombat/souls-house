@@ -10,6 +10,7 @@
   import AdminXPostingCard from './AdminXPostingCard.svelte';
   import AdminElevenLabsCard from './AdminElevenLabsCard.svelte';
   import AdminAccountSwitch from './AdminAccountSwitch.svelte';
+  import AdminAccountPlanCard from './AdminAccountPlanCard.svelte';
 
   let { account, formatDate } = $props();
   let teamName = $state(account.name || '');
@@ -181,6 +182,8 @@
       {/if}
     </CardContent>
   </Card>
+
+  <AdminAccountPlanCard {account} />
 
   <Card class="mb-8">
     <CardHeader>
