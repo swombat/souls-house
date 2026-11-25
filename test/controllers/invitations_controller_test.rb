@@ -21,7 +21,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Invitation sent to newmember@example.com", flash[:notice]
   end
 
@@ -36,7 +36,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_match /already a member/, flash[:alert]
   end
 
@@ -48,7 +48,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       post resend_account_invitation_path(@account, invitation)
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Invitation resent", flash[:notice]
   end
 
@@ -63,7 +63,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Invitation sent to member-invited@example.com", flash[:notice]
   end
 
@@ -77,7 +77,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Only an owner can invite someone as owner", flash[:alert]
   end
 
@@ -89,7 +89,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       role: "owner"
     }
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Invitation sent to co-owner@example.com", flash[:notice]
     invited = @account.memberships.joins(:user).find_by!(users: { email_address: "co-owner@example.com" })
     assert invited.owner?
@@ -120,7 +120,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to account_path(personal_account)
+    assert_redirected_to account_users_path(personal_account)
     # role=owner so the role rule passes and the one-user rule is what refuses.
     assert_match /Personal accounts can only have one user/, flash[:alert]
   end

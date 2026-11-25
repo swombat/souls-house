@@ -228,8 +228,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     get account_path(@team_single_user)
     assert_response :success
     assert_equal false, inertia_shared_props.fetch("can_be_personal")
-    assert_equal 2, inertia_shared_props.fetch("members").length
-    assert_equal 1, inertia_shared_props.fetch("members").count { |member| member["invitation_pending"] }
+    assert_equal 2, inertia_shared_props.fetch("members_count")
 
     get edit_account_path(@team_single_user, convert: true)
     @inertia_props = nil

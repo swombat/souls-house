@@ -4,15 +4,18 @@
   import { Switch } from '$lib/components/shadcn/switch';
   import { accountPath } from '@/routes';
 
-  // siteScope is the site's reflexes scope (#520): under 'disabled' or
-  // 'enabled' the site overrides this switch, which keeps its value.
+  // siteScope is the site's reflexes scope (#520): under 'disabled' the site
+  // overrides this switch while keeping its value; under 'enabled' reflexes are
+  // enforced for every account, so the per-account switch is hidden.
   let { accountId, enabled, canManage = false, siteScope = 'account_choice' } = $props();
+
+  let enforcedForAll = $derived(siteScope === 'enabled');
 
   let override = $derived(
     siteScope === 'disabled'
       ? 'The site has reflexes off for every account, so this switch has no effect for now. Its setting is kept for when the site leaves it to each account.'
-      : siteScope === 'enabled'
-        ? "The site has reflexes on for every account, so residents' posts are checked whatever this switch says. Its setting is kept for when the site leaves it to each account."
+      : enforcedForAll
+        ? "The site has reflexes on for every account, so residents' posts are checked automatically."
         : null
   );
 
@@ -39,20 +42,22 @@
     </Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
-    {#if canManage}
-      <label class="flex items-center justify-between gap-3 text-sm">
-        <span>Reflexes</span>
-        <Switch
-          aria-label="Reflexes"
-          data-testid="reflexes-enabled"
-          checked={enabled}
-          disabled={saving}
-          onCheckedChange={toggle} />
-      </label>
-    {:else}
-      <p class="text-sm" data-testid="reflexes-enabled-readonly">
-        {enabled ? 'Reflexes are on for this account.' : 'Reflexes are off for this account.'}
-      </p>
+    {#if !enforcedForAll}
+      {#if canManage}
+        <label class="flex items-center justify-between gap-3 text-sm">
+          <span>Reflexes</span>
+          <Switch
+            aria-label="Reflexes"
+            data-testid="reflexes-enabled"
+            checked={enabled}
+            disabled={saving}
+            onCheckedChange={toggle} />
+        </label>
+      {:else}
+        <p class="text-sm" data-testid="reflexes-enabled-readonly">
+          {enabled ? 'Reflexes are on for this account.' : 'Reflexes are off for this account.'}
+        </p>
+      {/if}
     {/if}
     {#if override}
       <p class="text-sm text-muted-foreground" data-testid="reflexes-site-override">{override}</p>

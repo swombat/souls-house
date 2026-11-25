@@ -116,7 +116,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to account_path(account)
+    assert_redirected_to account_users_path(account)
     assert_match /Invitation sent/, flash[:notice]
   end
 
@@ -130,7 +130,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
       delete account_member_path(account, memberships(:team_admin_member))
     end
 
-    assert_redirected_to account_path(account)
+    assert_redirected_to account_users_path(account)
     assert_match /Member removed successfully/, flash[:notice]
   end
 
@@ -145,7 +145,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
       post resend_account_invitation_path(account, invitation)
     end
 
-    assert_redirected_to account_path(account)
+    assert_redirected_to account_users_path(account)
     assert_match /Invitation resent/, flash[:notice]
   end
 
@@ -160,7 +160,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
       role: "member"
     }
 
-    assert_redirected_to account_path(personal_account)
+    assert_redirected_to account_users_path(personal_account)
     assert_match /Personal accounts can only have one user/, flash[:alert]
   end
 
@@ -177,7 +177,7 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
       delete account_member_path(account, owner_membership)
     end
 
-    assert_redirected_to account_path(account)
+    assert_redirected_to account_users_path(account)
     assert_match /Cannot remove the last owner/, flash[:alert]
   end
 

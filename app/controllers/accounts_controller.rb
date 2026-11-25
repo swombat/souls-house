@@ -48,10 +48,8 @@ class AccountsController < ApplicationController
     {
       account: @account,
       can_be_personal: @account.can_be_personal?,
-      members: -> { account_members_json },
+      members_count: @account.personal? ? 1 : @account.memberships.count,
       can_manage: @account.manageable_by?(Current.user),
-      can_invite_owner: @account.owned_by?(Current.user),
-      current_user_id: Current.user.id,
       resident_handoff_cap: @account.resident_handoff_cap,
       telegram_bot_wake_limit: @account.telegram_bot_wake_limit,
       reflexes_enabled: @account.reflexes_enabled,
@@ -76,12 +74,6 @@ class AccountsController < ApplicationController
       can_be_personal: @account.can_be_personal?,
       members_count: @account.personal? ? 1 : @account.memberships.count
     }
-  end
-
-  def account_members_json
-    return [] if @account.personal?
-
-    @account.members_with_details.map { |member| member.as_json(current_user: Current.user) }
   end
 
   def handle_account_conversion

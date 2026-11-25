@@ -17,7 +17,7 @@ class AccountMembersControllerTest < ActionDispatch::IntegrationTest
       delete account_member_path(@account, member)
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Member removed successfully", flash[:notice]
   end
 
@@ -33,7 +33,7 @@ class AccountMembersControllerTest < ActionDispatch::IntegrationTest
       delete account_member_path(single_account, owner_membership)
     end
 
-    assert_redirected_to account_path(single_account)
+    assert_redirected_to account_users_path(single_account)
     assert_match /Cannot remove the last owner/, flash[:alert]
   end
 
@@ -53,7 +53,7 @@ class AccountMembersControllerTest < ActionDispatch::IntegrationTest
       delete account_member_path(@account, memberships(:team_admin_member))
     end
 
-    assert_redirected_to account_path(@account)
+    assert_redirected_to account_users_path(@account)
     assert_equal "Member removed successfully", flash[:notice]
   end
 

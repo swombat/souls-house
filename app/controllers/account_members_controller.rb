@@ -7,7 +7,7 @@ class AccountMembersController < ApplicationController
   def destroy
     @member = @account.memberships.find(params[:id])
     if (refusal = @member.removal_refusal_for(Current.user))
-      redirect_to account_path(@account), alert: refusal
+      redirect_to account_users_path(@account), alert: refusal
       return
     end
 
@@ -18,10 +18,10 @@ class AccountMembersController < ApplicationController
       audit(:remove_member, nil,
             removed_email: member_email,
             removed_role: member_role)
-      redirect_to account_path(@account),
+      redirect_to account_users_path(@account),
         notice: "Member removed successfully"
     else
-      redirect_to account_path(@account),
+      redirect_to account_users_path(@account),
         alert: @member.errors.full_messages.to_sentence
     end
   end

@@ -4,6 +4,12 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-25
+  title: Reflexes switch is hidden when enforced site-wide
+  body: "When site settings enforce reflexes for every account, Account Settings no longer shows the per-account Reflexes switch and instead notes that reflexes are on for every account."
+- date: 2026-11-25
+  title: Users has its own tab in Account Settings
+  body: "Team members and pending invitations now live on a dedicated Users tab in Account Settings instead of at the bottom of General. Inviting, resending, and removing members keep you on the Users tab; on personal accounts, the tab explains that only you belong to the account and offers a button to convert to a team account."
+- date: 2026-11-25
   title: Team invitations no longer create a personal account
   body: "New invitees get just the team invitation and go straight to the team after setup. They can create a personal account later if they want one. Takes effect after Rails deployment."
 - date: 2026-11-25

@@ -38,12 +38,12 @@ class InvitationsController < ApplicationController
   end
 
   def redirect_with_invitation_success
-    redirect_to account_path(@account),
+    redirect_to account_users_path(@account),
       notice: "Invitation sent to #{invitation_params[:email]}"
   end
 
   def redirect_with_invitation_errors
-    redirect_to account_path(@account),
+    redirect_to account_users_path(@account),
       alert: @invitation.errors.full_messages.to_sentence
   end
 
@@ -67,11 +67,11 @@ class InvitationsController < ApplicationController
   end
 
   def redirect_with_resend_success
-    redirect_to account_path(@account), notice: "Invitation resent"
+    redirect_to account_users_path(@account), notice: "Invitation resent"
   end
 
   def redirect_with_resend_error
-    redirect_to account_path(@account), alert: "Could not resend invitation"
+    redirect_to account_users_path(@account), alert: "Could not resend invitation"
   end
 
   def set_account

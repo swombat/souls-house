@@ -7,8 +7,6 @@
   import { accountPath, editAccountPath } from '@/routes';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import AccountTypeCard from '$lib/components/accounts/AccountTypeCard.svelte';
-  import PendingInvitationsCard from '$lib/components/accounts/PendingInvitationsCard.svelte';
-  import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
   import TelegramBotWakeLimitCard from '$lib/components/accounts/TelegramBotWakeLimitCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
@@ -24,10 +22,8 @@
   let {
     account,
     can_be_personal,
-    members = [],
+    members_count = 1,
     can_manage = false,
-    can_invite_owner = false,
-    current_user_id,
     resident_handoff_cap = 6,
     telegram_bot_wake_limit = 3,
     reflexes_enabled = false,
@@ -50,10 +46,9 @@
     updateSync({
       [`Account:${account.id}`]: [
         'account',
-        'members',
         'can_be_personal',
+        'members_count',
         'can_manage',
-        'can_invite_owner',
         'resident_handoff_cap',
         'telegram_bot_wake_limit',
         'reflexes_enabled',
@@ -69,7 +64,6 @@
     });
   });
 
-  let showInviteForm = $state(false);
   const nameDraft = createAccountSettingDraft(
     () => account.id,
     () => account.name
@@ -97,33 +91,6 @@
   function goToConvertConfirmation() {
     router.visit(editAccountPath(account.id) + '?convert=true');
   }
-
-  function removeMember(member) {
-    if (confirm(`Remove ${member.display_name} from ${account.name}?`)) {
-      router.delete(`/accounts/${account.id}/members/${member.id}`);
-    }
-  }
-
-  function resendInvitation(member) {
-    router.post(`/accounts/${account.id}/invitations/${member.id}/resend`);
-  }
-
-  function handleInvite(event) {
-    const { email, role } = event.detail;
-    router.post(`/accounts/${account.id}/invitations`, { email, role });
-    showInviteForm = false;
-  }
-
-  let inviteAccount = account.id;
-  $effect(() => {
-    if (inviteAccount !== account.id) {
-      inviteAccount = account.id;
-      showInviteForm = false;
-    }
-  });
-
-  const pendingInvitations = $derived(members.filter((m) => m.invitation_pending));
-  const activeMembers = $derived(members.filter((m) => !m.invitation_pending));
 </script>
 
 <svelte:head>
@@ -200,27 +167,6 @@
   <AccountTypeCard
     {account}
     canBePersonal={can_be_personal}
-    membersCount={members.length || 1}
+    membersCount={members_count}
     onConvert={goToConvertConfirmation} />
-
-  {#if !account.personal}
-    <TeamMembersCard
-      members={activeMembers}
-      canManage={can_manage}
-      canInviteOwner={can_invite_owner}
-      currentUserId={current_user_id}
-      bind:showInviteForm
-      {formatDate}
-      onInvite={handleInvite}
-      onRemoveMember={removeMember} />
-
-    {#if pendingInvitations.length > 0}
-      <PendingInvitationsCard
-        invitations={pendingInvitations}
-        canManage={can_manage}
-        {formatDate}
-        onResendInvitation={resendInvitation}
-        onRemoveMember={removeMember} />
-    {/if}
-  {/if}
 </AccountSettingsLayout>
