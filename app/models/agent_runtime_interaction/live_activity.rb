@@ -184,12 +184,14 @@ module AgentRuntimeInteraction::LiveActivity
   # A rhythm tidy wake (RhythmTidyCheckJob) starts only while the run is
   # still nobody's: no person has spoken, nothing was tagged or flagged and
   # nothing else is running or owed a wake since it was reserved, and the
-  # resident isn't paused or past its allowance brake (never essential). Otherwise it is cancelled, not deferred: the
+  # resident isn't paused or past its allowance brake (never essential), and
+  # it is still within RhythmTidy::CACHE_WINDOW of the turn it continues. Otherwise it is cancelled, not deferred: the
   # question is asked once. Lock order: chat, agent, then this interaction.
   def claim_rhythm_tidy!(occurrence)
     chat.with_lock do
       agent.with_lock do
-        refused = agent.paused? || RhythmTidy.new(occurrence).refusal_reason(except: self) ||
+        tidy = RhythmTidy.new(occurrence)
+        refused = agent.paused? || tidy.refusal_reason(except: self) || tidy.past_cache_window? ||
           Agents::AllowanceBrake.interaction_reason(self)
         next claim_dispatch_unchecked! unless refused
 
