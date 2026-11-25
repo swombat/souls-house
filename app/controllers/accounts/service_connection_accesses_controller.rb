@@ -7,8 +7,8 @@ class Accounts::ServiceConnectionAccessesController < ApplicationController
 
   def show
     connection = visible_connections.find_by_public_id!(params[:service_connection_id])
-    agents = current_account.agents.by_name.to_a
-    guests = current_account.guest_agents.includes(:account).by_name.to_a
+    agents = current_account.agents.includes(avatar_attachment: :blob).by_name.to_a
+    guests = current_account.guest_agents.includes(:account, avatar_attachment: :blob).by_name.to_a
 
     render inertia: "accounts/connection_access", props: {
       account: current_account.as_json,
