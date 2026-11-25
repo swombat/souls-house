@@ -13,6 +13,8 @@ Every pull request that changes what someone using the house can see or do adds 
 
 A reviewer should treat a missing changelog entry like a missing test and hold the merge until it's added.
 
+If an approved, green PR only hits a `config/changelog.yml` merge conflict when updating from `master`, resolve the conflict, check that `config/changelog.yml` still parses cleanly with newest-first dates and has `master`'s entry count plus this PR's, and merge without waiting for CI to rerun.
+
 ## New features also go on the features page
 
 If the change adds a capability rather than adjusting one (a new integration, a new kind of room, a new resident power), also add it to `app/frontend/lib/components/features/feature-list.js`.
