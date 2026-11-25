@@ -161,11 +161,11 @@ class ExternalAgentResponseRequest
     # A queued resident turn (202) is acknowledged by ResidentTurnCompletion.
     SafeguardRoll.acknowledge_conversation!(@safeguard_roll.completion_context, result) if @safeguard_roll
     if provider == "kimi"
-      if (text = KimiCodeNotice.text(result.dig(:body, "error_kind")))
+      if (text = KimiCodeNotice.text(ModelRefusal.error_kind(result[:body])))
         chat.messages.create!(role: "assistant", agent: agent, content: "_#{text}_")
       end
     elsif auth_mode == "oauth_account"
-      case result.dig(:body, "error_kind")
+      case ModelRefusal.error_kind(result[:body])
       when "auth_expired"
         surface_subscription_auth_failure!
       when "subscription_limit"

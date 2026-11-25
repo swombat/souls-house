@@ -659,8 +659,8 @@ class AgentRuntimeInteraction < ApplicationRecord
     if category.in?(SELECTION_REFUSALS) && (detail = selection_refusal_text(category))
       cause = "#{cause} (#{detail})"
     end
-    # The CLI's refusal, when the runtime carried one; with none, the
-    # category alone. Being on the list is no evidence of why (#1118).
+    # The CLI's refusal as the runtime recorded it: the category is only
+    # given when that text shows the refusal (ModelRefusal, #1118).
     if category == "model_unavailable" && (said = runtime_failure_text)
       cause = "#{cause} (runtime said: #{said})"
     end

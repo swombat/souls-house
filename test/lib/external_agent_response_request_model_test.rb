@@ -196,7 +196,7 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     # #1118: the run carries the cause, and its line names the list and the model.
     assert_equal "model_not_on_list", interaction.response_body["error_kind"]
     assert_equal "model_not_on_list", interaction.failure_category
-    assert_equal "the model selected for it here is no longer on its list of models for conversations (Claude Fable 5.1)",
+    assert_equal "the model selected for that conversation is no longer on its list of models for conversations (Claude Fable 5.1)",
       interaction.failure_reason
     assert_includes line.content, "is not on #{@agent.name}'s list of models for conversations"
     refute_match(/subscription/, line.content)
@@ -240,7 +240,7 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
       assert_equal "failed", interaction.execution_state
       # On the list, refused by the house's own check: that check's reason, never a provider refusal.
       assert_equal "model_selection_refused", interaction.failure_category
-      assert_includes interaction.failure_reason, "the house couldn't use the model selected for it here (Claude Fable 5.1 is from a different provider"
+      assert_includes interaction.failure_reason, "the house couldn't use the model selected for that conversation (Claude Fable 5.1 is from a different provider"
     end
 
     unknown = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)

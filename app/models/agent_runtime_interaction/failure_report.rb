@@ -113,7 +113,9 @@ module AgentRuntimeInteraction::FailureReport
     return "runtime_unavailable" if runtime_status.nil? && transport_status.in?(UNAVAILABLE_TRANSPORT_STATUSES)
     # The runtime's own structured classification (trigger_shim.py
     # classify_provider_error): the CLI refused the model before any request.
-    return "model_unavailable" if error_kind == "model_unavailable"
+    # Only when the runtime's failure text shows the refusal (ModelRefusal,
+    # #1118); a bare tag falls through to a cause that claims nothing.
+    return "model_unavailable" if ModelRefusal.evidenced?(response_body)
     # Ahead of authentication_error: Claude Code words a Cloudflare challenge
     # as "Failed to authenticate. API Error: 403 ..." (eOyrdJ).
     return error_kind if error_kind.in?(PROVIDER_EDGE_CATEGORIES)

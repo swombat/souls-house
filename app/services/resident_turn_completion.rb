@@ -41,9 +41,9 @@ class ResidentTurnCompletion
     interaction = @turn.agent_runtime_interaction
     body = @result["body"]
     if interaction.provider == "kimi"
-      text = KimiCodeNotice.text(body["error_kind"])
+      text = KimiCodeNotice.text(ModelRefusal.error_kind(body))
     elsif interaction.provider_auth_mode == "oauth_account"
-      case body["error_kind"]
+      case ModelRefusal.error_kind(body)
       when "auth_expired"
         provider = JSON.parse(@turn.payload)["provider"]
         @turn.agent.mark_provider_connection_status!(provider, "expired")

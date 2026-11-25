@@ -48,7 +48,8 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
 
   test "a model the subscription doesn't offer is its own category, from the runtime's structured kind" do
     refused = live_run("failed", runtime_status: "error", runtime_returncode: 1,
-      response_body: { "status" => "error", "error_kind" => "model_unavailable" })
+      response_body: { "status" => "error", "error_kind" => "model_unavailable",
+        "runtime_failure" => { "code" => "runtime_error", "message" => "Invalid model selection: gemini-4-argon" } })
     assert_equal "model_unavailable", refused.failure_category
     # The CLI's words in stdout are not the evidence; the runtime's classification is.
     assert_equal "runtime_error", live_run("failed", runtime_status: "error", runtime_returncode: 1,
@@ -58,7 +59,8 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
   test "the card says why when every failure in the streak was a refused model" do
     2.times do
       live_run("failed", runtime_status: "error", runtime_returncode: 1,
-        response_body: { "status" => "error", "error_kind" => "model_unavailable" })
+        response_body: { "status" => "error", "error_kind" => "model_unavailable",
+        "runtime_failure" => { "code" => "runtime_error", "message" => "Invalid model selection: gemini-4-argon" } })
     end
     card = Agents::RunFailureStreak.call(@agent).as_card_json
     assert_equal 2, card[:count]
@@ -156,21 +158,29 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_nil Agents::RunFailureStreak.call(@agent).as_card_json[:cause]
   end
 
-  test "a model refusal names its reason only when the runtime gave one, and a bare failure stays unknown (#1118)" do
+  test "a model refusal is named only when the runtime's own failure shows it (#1118)" do
     said = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable",
-      "runtime_failure" => { "code" => "model_not_found", "message" => "Model gpt-6.1-sol is not available on your plan" } })
+      "runtime_failure" => { "code" => "runtime_error", "message" => "Invalid model selection: gemini-4-argon" } })
     assert_equal "model_unavailable", said.failure_category
-    assert_equal "its model isn't available on its subscription (runtime said: model_not_found: Model gpt-6.1-sol is not available on your plan)",
+    assert_equal "its model isn't available on its subscription (runtime said: runtime_error: Invalid model selection: gemini-4-argon)",
       said.failure_reason
 
-    silent = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable" })
-    assert_equal "its model isn't available on its subscription", silent.failure_reason
+    # The tag alone (the shim can set it from stdout): no subscription diagnosis.
+    tag_only = live_run("failed", response_body: { "status" => "error", "error_kind" => "model_unavailable" })
+    assert_equal "unknown", tag_only.failure_category
+    assert_equal "the run failed and the cause isn't identified", tag_only.failure_reason
+
+    # The tag plus an unrelated runtime failure: that failure, never the refusal.
+    unrelated = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "model_unavailable",
+        "runtime_failure" => { "code" => "runtime_error", "message" => "tool call exceeded its deadline" } })
+    assert_equal "runtime_error", unrelated.failure_category
+    refute_includes unrelated.failure_reason, "subscription"
 
     # A run on a model the house would still allow that failed with nothing
     # structured: no refusal is inferred from the model or the list.
     bare = live_run("failed", response_body: { "status" => "error" }, model: @agent.model_id)
     assert_equal "unknown", bare.failure_category
-    assert_equal "the run failed and the cause isn't identified", bare.failure_reason
   end
 
   test "every category has a cause line" do

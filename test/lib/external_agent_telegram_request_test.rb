@@ -372,7 +372,8 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     )
     stub_request(:post, "https://agent.example.com/trigger").to_return(
       status: 500,
-      body: { status: "error", returncode: 1, error_kind: "model_unavailable" }.to_json
+      body: { status: "error", returncode: 1, error_kind: "model_unavailable",
+        runtime_failure: { code: "antigravity_runtime_failed", message: "Invalid model selection: gemini-4-argon" } }.to_json
     )
     sent = []
 

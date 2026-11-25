@@ -534,7 +534,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
         status: "error",
         returncode: 1,
         stdout: "invalid model selection: model gemini-4-argon-medium is not recognized",
-        error_kind: "model_unavailable"
+        error_kind: "model_unavailable",
+        runtime_failure: { code: "antigravity_runtime_failed", message: "invalid model selection: model gemini-4-argon-medium is not recognized" }
       }.to_json
     )
 
@@ -550,6 +551,37 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes message.content, Rails.application.routes.url_helpers.edit_account_agent_path(agent.account, agent, tab: "settings")
     assert_not_includes message.content, "not recognized"
     assert_equal "connected", agent.reload.provider_connection("gemini").fetch("status")
+  end
+
+  test "a model_unavailable tag the runtime's own failure doesn't bear out names no subscription (#1118)" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "google/gemini-4-argon", title: "Tag only")
+    agent.update!(
+      model_id: "google/gemini-4-argon", runtime: "external", uuid: SecureRandom.uuid_v7,
+      endpoint_url: "https://agent.example.com", trigger_bearer_token: "tr_valid", health_state: "healthy",
+      provider_auth_modes: { "gemini" => "oauth_account" },
+      provider_connections: { "gemini" => { "status" => "connected" } }
+    )
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Hello")
+    # The refusal words are only in stdout, which can quote the conversation;
+    # the runtime's recorded failure is something else.
+    stub_request(:post, "https://agent.example.com/trigger").to_return(
+      status: 500,
+      body: {
+        status: "error", returncode: 1, error_kind: "model_unavailable",
+        stdout: "invalid model selection: model gemini-4-argon-medium is not recognized",
+        runtime_failure: { code: "runtime_error", message: "tool call exceeded its deadline" }
+      }.to_json
+    )
+    chat.agents << agent unless chat.agents.exists?(agent.id)
+    chat.update!(manual_responses: true)
+
+    ExternalAgentResponseRequest.new(agent:, chat:).call
+
+    refute chat.messages.where(role: "assistant").any? { |message| message.content.include?("subscription") }
+    run = chat.agent_runtime_interactions.order(:id).last
+    assert_not_equal "model_unavailable", run.failure_category
+    refute_includes run.failure_reason.to_s, "subscription"
   end
 
   test "Kimi key rejection surfaces Code Console guidance without raw provider errors" do
