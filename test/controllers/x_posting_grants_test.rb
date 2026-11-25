@@ -18,6 +18,11 @@ class XPostingGrantsTest < ActionDispatch::IntegrationTest
   end
 
   test "the Integrations page lists X with a switch per resident" do
+    @granted.update!(colour: "violet", icon: "Moon")
+    @granted.avatar.attach(
+      io: file_fixture("test_avatar.png").open, filename: "avatar.png", content_type: "image/png"
+    )
+    @ungranted.update!(colour: "blue", icon: "Code")
     sign_in @owner
 
     get account_integrations_path(@account)
@@ -31,6 +36,14 @@ class XPostingGrantsTest < ActionDispatch::IntegrationTest
     residents = x["residents"].index_by { |resident| resident["id"] }
     assert residents[@granted.to_param]["enabled"]
     assert_not residents[@ungranted.to_param]["enabled"]
+    assert_equal @granted.avatar_url, residents.fetch(@granted.to_param).fetch("avatar_url")
+    assert_equal "violet", residents.fetch(@granted.to_param).fetch("colour")
+    assert_equal "Moon", residents.fetch(@granted.to_param).fetch("icon")
+    assert_nil residents.fetch(@ungranted.to_param).fetch("avatar_url")
+    assert_equal "blue", residents.fetch(@ungranted.to_param).fetch("colour")
+    assert_equal "Code", residents.fetch(@ungranted.to_param).fetch("icon")
+    assert_not x.key?("access_token")
+    assert_not x.key?("client_secret")
   end
 
   test "an account that has not started on X has no X row" do

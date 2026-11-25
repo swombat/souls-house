@@ -14,6 +14,7 @@
 
   let {
     account,
+    user = null,
     services = [],
     connections = [],
     focused_service: focusedService = null,
@@ -21,6 +22,32 @@
     // X posting is its own record, not a connection; null until the account starts on X.
     x_posting: xPosting = null,
   } = $props();
+
+  const viewKey = (user) => (user?.id ? `integrations:view:${user.id}` : null);
+  function readView(user) {
+    const key = viewKey(user);
+    try {
+      return Boolean(key && localStorage.getItem(key) === 'expanded');
+    } catch {
+      return false;
+    }
+  }
+
+  let expanded = $state(untrack(() => readView(user)));
+  $effect(() => {
+    expanded = readView(user);
+  });
+
+  function selectView(value) {
+    expanded = value;
+    const key = viewKey(user);
+    if (!key) return;
+    try {
+      localStorage.setItem(key, value ? 'expanded' : 'compact');
+    } catch {
+      // The current page still works when browser storage is unavailable.
+    }
+  }
 
   // The X row opens when something needs doing, like the others.
   let xOpen = $state(null);
@@ -128,20 +155,41 @@
     </div>
   {:else}
     <section class="space-y-6" aria-labelledby="existing-heading">
-      <div class="flex items-end justify-between gap-4 border-b pb-3">
+      <div class="flex flex-wrap items-end justify-between gap-3 border-b pb-3">
         <div>
           <h2 id="existing-heading" class="text-xl font-semibold">Your integrations</h2>
           <p class="text-sm text-muted-foreground">
             Everything already connected, and which residents can use it. Tap one to change it.
           </p>
         </div>
-        {#if connections.length > 1}
-          <button
-            type="button"
-            class="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            onclick={() => setAll(!allOpen)}>
-            {allOpen ? 'Close all' : 'Open all'}
-          </button>
+        <a
+          href="#connect-new"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+          <Plus size={16} /> Add an integration
+        </a>
+        {#if connections.length > 0 || xPosting}
+          <div class="flex w-full flex-wrap items-center justify-between gap-2">
+            <div class="inline-flex rounded-lg border bg-muted p-0.5" role="group" aria-label="Integration view">
+              {#each ['Compact', 'Expanded'] as label, index (label)}
+                {@const selected = expanded === Boolean(index)}
+                <button
+                  type="button"
+                  class={`rounded-md px-2.5 py-1 text-sm ${selected ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  aria-pressed={selected}
+                  onclick={() => selectView(Boolean(index))}>
+                  {label}
+                </button>
+              {/each}
+            </div>
+            {#if expanded && connections.length > 1}
+              <button
+                type="button"
+                class="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                onclick={() => setAll(!allOpen)}>
+                {allOpen ? 'Close all' : 'Open all'}
+              </button>
+            {/if}
+          </div>
         {/if}
       </div>
       {#if connections.length === 0 && !xPosting}
@@ -162,13 +210,18 @@
               <p class="text-sm text-muted-foreground">{group.hint}</p>
             </div>
             {#if group.key === 'account' && xPosting}
-              <XPostingConnection x={xPosting} open={xRowOpen} onToggle={() => (xOpen = !xRowOpen)} />
+              <XPostingConnection
+                x={xPosting}
+                compact={!expanded}
+                open={xRowOpen}
+                onToggle={() => (xOpen = !xRowOpen)} />
             {/if}
             {#each group.connections as connection (connection.id)}
               <IntegrationConnection
                 {connection}
                 {account}
                 {services}
+                compact={!expanded}
                 open={isOpen(connection)}
                 onToggle={() => toggle(connection)} />
             {/each}
@@ -179,6 +232,7 @@
 
     <section
       id="connect-new"
+      tabindex="-1"
       aria-labelledby="connect-new-heading"
       class="space-y-4 rounded-2xl border border-dashed bg-muted/30 p-5 sm:p-6">
       <div>

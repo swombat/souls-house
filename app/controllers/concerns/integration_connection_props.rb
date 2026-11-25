@@ -47,6 +47,9 @@ module IntegrationConnectionProps
         resident = {
           id: agent.to_param,
           name: agent.name,
+          avatar_url: agent.avatar_url,
+          colour: agent.colour,
+          icon: agent.icon,
           active: agent.active?,
           enabled: access&.enabled? || false,
           provisioning_status: access&.provisioning_status,
@@ -68,6 +71,9 @@ module IntegrationConnectionProps
         resident = {
           id: agent.to_param,
           name: agent.name,
+          avatar_url: agent.avatar_url,
+          colour: agent.colour,
+          icon: agent.icon,
           active: agent.active?,
           guest: true,
           home_account_name: agent.account.name,

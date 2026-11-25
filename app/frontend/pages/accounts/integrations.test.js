@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import Integrations from './integrations.svelte';
 
 afterEach(cleanup);
+afterEach(() => localStorage.clear());
 
 describe('device integrations entry point', () => {
   it('links to the selected account with a native navigation, including for ordinary members', () => {
@@ -27,6 +28,7 @@ describe('device integrations entry point', () => {
     });
     expect(screen.getByRole('heading', { name: 'Connect a new integration' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Your integrations' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Add an integration' })).toHaveAttribute('href', '#connect-new');
     expect(screen.getByRole('link', { name: /^GitHub/ })).toHaveAttribute(
       'href',
       '/accounts/selected-house/integrations?connect=github'
@@ -82,7 +84,7 @@ describe('the X posting row', () => {
     page_url: '/x_integration?account_id=h',
     grant_url: '/x_integration/grant?account_id=h',
     residents: [
-      { id: 'lume', name: 'Lume', active: true, enabled: true },
+      { id: 'lume', name: 'Lume', active: true, enabled: true, avatar_url: '/avatar/lume.png' },
       { id: 'mira', name: 'Mira', active: true, enabled: false },
     ],
   };
@@ -90,8 +92,11 @@ describe('the X posting row', () => {
   it('appears under Your integrations with who can post, and switches per resident when opened', async () => {
     render(Integrations, { account: { id: 'h' }, x_posting: xPosting });
     expect(screen.queryByText('Nothing connected yet')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '@househandle' })).toBeInTheDocument();
-    expect(screen.getByTestId('x-posting-summary')).toHaveTextContent('Lume can post');
+    expect(screen.getByRole('button', { name: 'Compact' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: /X · @househandle/ })).toBeInTheDocument();
+    expect(screen.getByTitle('Lume')).toHaveAttribute('src', '/avatar/lume.png');
+    expect(screen.queryByTitle('Mira')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('compact-integration-warning')).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: /@househandle/ }));
     expect(screen.getByLabelText('Lume')).toBeChecked();
@@ -104,7 +109,7 @@ describe('the X posting row', () => {
 
   it('starts open and says so when X needs reconnecting for media', () => {
     render(Integrations, { account: { id: 'h' }, x_posting: { ...xPosting, media_scope_granted: false } });
-    expect(screen.getByTestId('x-posting-attention')).toHaveTextContent('Reconnect X to post media');
+    expect(screen.getByTestId('compact-integration-warning')).toHaveAttribute('title', 'Reconnect X to post media');
     expect(screen.getByLabelText('Lume')).toBeInTheDocument();
   });
 
@@ -120,5 +125,18 @@ describe('the X posting row', () => {
   it('is absent until the account starts on X', () => {
     render(Integrations, { account: { id: 'h' } });
     expect(screen.queryByTestId('x-posting-connection')).not.toBeInTheDocument();
+  });
+
+  it('remembers Expanded for this person only, including after leaving the page', async () => {
+    const props = { account: { id: 'h' }, x_posting: xPosting };
+    const first = render(Integrations, { ...props, user: { id: 1 } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Expanded' }));
+    expect(screen.getByTestId('x-posting-summary')).toHaveTextContent('Lume can post');
+    first.unmount();
+    const second = render(Integrations, { ...props, user: { id: 2 } });
+    expect(screen.getByRole('button', { name: 'Compact' })).toHaveAttribute('aria-pressed', 'true');
+    second.unmount();
+    render(Integrations, { ...props, user: { id: 1 } });
+    expect(screen.getByRole('button', { name: 'Expanded' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
