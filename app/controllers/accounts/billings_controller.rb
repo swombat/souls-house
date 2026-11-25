@@ -207,7 +207,7 @@ class Accounts::BillingsController < ApplicationController
 
   # The quote moved: the same change is proposed again and shown again.
   def requote(change, panel, error)
-    fresh = reconcile.propose(change.ops, by: Current.user)
+    fresh = reconcile.propose(Billing::Reconcile.intent(change.ops), by: Current.user)
     redirect_to account_billing_path(current_account, panel => fresh.id), alert: error.message
   rescue *BILL_ERRORS => again
     redirect_to account_billing_path(current_account), alert: billing_error_message(again)

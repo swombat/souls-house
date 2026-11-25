@@ -359,6 +359,47 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_empty @stripe.subscription_updates
   end
 
+  test "a past-due bill can still take off a plan when that makes the bill smaller" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: PARTNERS_PRICE, status: "past_due")
+    change = reconcile.propose_end_plan
+    assert_equal [ { "op" => "plan" }, { "op" => "demote", "agent_id" => @a.id, "price" => CONVERSATION_PRICE } ], change.ops
+    assert reconcile.confirm(change, digest: change.digest).applied?
+    assert_equal({ CONVERSATION_PRICE => 1 }, remote, "$29.99 + $0 became $24.99")
+  end
+
+  test "a grant given after the quote stops the demotion it no longer needs: nothing is sent, and the quote is made again" do
+    bill!(@a => LIFE_INCLUDED_PRICE, plan: PARTNERS_PRICE)
+    change = reconcile.propose_end_plan
+    assert change.ops.any? { |op| op["op"] == "demote" }
+    @account.update!(granted_plan: "companions")
+
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+    assert_equal [ { "op" => "plan" } ], reconcile.propose(Billing::Reconcile.intent(change.ops)).ops
+  end
+
+  test "a grant withdrawn after the quote needs the demotion it didn't have: nothing is sent, and the quote is made again" do
+    @account.update!(granted_plan: "companions")
+    bill!(@a => LIFE_INCLUDED_PRICE, plan: PARTNERS_PRICE)
+    change = reconcile.propose_end_plan
+    assert_equal [ { "op" => "plan" } ], change.ops
+    @account.update!(granted_plan: nil)
+
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+    assert_equal [ { "op" => "plan" }, { "op" => "demote", "agent_id" => @a.id, "price" => LIFE_PRICE } ],
+      reconcile.propose(Billing::Reconcile.intent(change.ops)).ops
+  end
+
+  test "what a change asked for, without what the house worked out with it" do
+    assert_equal [ { "op" => "end_plan" } ], Billing::Reconcile.intent([ { "op" => "plan" }, { "op" => "demote", "agent_id" => 1 } ])
+    assert_equal [ { "op" => "end_plan" } ], Billing::Reconcile.intent([ { "op" => "end_bill" } ])
+    assert_equal [ { "op" => "end_resident", "agent_id" => 1 } ],
+      Billing::Reconcile.intent([ { "op" => "end", "agent_id" => 1 }, { "op" => "promote", "agent_id" => 2 } ])
+    assert_equal [ { "op" => "plan", "price" => PARTNERS_PRICE } ],
+      Billing::Reconcile.intent([ { "op" => "plan", "price" => PARTNERS_PRICE }, { "op" => "promote", "agent_id" => 2 } ])
+  end
+
   test "ending a resident is decided on the bill as it is after earlier work lands: a plan added meanwhile stays" do
     bill!(@a => CONVERSATION_PRICE)
     addition = reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ])

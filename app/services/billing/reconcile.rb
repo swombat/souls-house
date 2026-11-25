@@ -65,13 +65,11 @@ module Billing
         # plan is decided on the bill as it now is (Mira, #1148).
         parent = parent!(ops)
         ops = with_demotion(with_promotion(with_successor(ending(ops, parent))), parent)
-        # A plan line leaving can grow the bill: its included resident goes
-        # back to its size (Reed, #1148).
-        fit!(parent) if ops.any? { |op| op["op"] == "demote" }
         base = BillSync.remote_lines(parent, client: @client)
         raise NotReady, "#{DRIFTED} Contact #{Billing.contact_email}." unless base == BillSync.house_lines(parent.id)
 
         lines = after(base, ops, parent)
+        fit_if_demotion_grows!(parent, base, lines, ops)
         params = params_for(parent, base, lines, ops)
         BillChange.create!(account: @account, requested_by: by, stripe_subscription_id: parent.id,
           idempotency_key: "souls-house-bill-#{SecureRandom.uuid}", ops:, base:, lines:, params:,
@@ -162,6 +160,37 @@ module Billing
         !change.ends_bill? && !change.keeps_bill?
       change.abandon!("Stripe never applied it.", now: @now) if untouched
       change
+    end
+
+    # What a stored change asked for, before the house worked out what goes
+    # with it: the included resident moving (promote, demote) is derived
+    # again from the bill as it is, and an ending is decided again. A quote
+    # that moved is proposed again from this (requote).
+    def self.intent(ops)
+      ops = ops.map { |op| op.to_h.stringify_keys }.reject { |op| op["op"].in?(%w[promote demote]) }
+      return ops unless ops.one?
+
+      op = ops.first
+      return [ { "op" => "end_resident", "agent_id" => op["agent_id"] } ] if op["op"].in?(%w[end end_bill]) && op["agent_id"]
+      return [ { "op" => "end_plan" } ] if (op["op"] == "plan" && op["price"].blank?) || (op["op"] == "end_bill" && !op["agent_id"])
+
+      ops
+    end
+
+    # A plan line leaving puts its included resident back at its size. When
+    # that makes the bill bigger (Companions off a Small: $9.99 → $24.99) the
+    # bill must be fit to carry it on credit (Reed, #1148); when it makes it
+    # smaller (Partners off a Small: $29.99 → $24.99) it needn't be, so a
+    # past-due bill can still end its plan (Mira, #1148). Measured on the
+    # lines' own Stripe amounts, retired prices included.
+    def fit_if_demotion_grows!(parent, base, lines, ops)
+      return unless ops.any? { |op| op["op"] == "demote" }
+
+      fit!(parent) if monthly(lines) > monthly(base)
+    end
+
+    def monthly(lines)
+      lines.sum { |price, quantity| @client.v1.prices.retrieve(price).unit_amount.to_i * quantity.to_i }
     end
 
     # Ending a resident or the account's plan, decided under the lock on the
@@ -260,7 +289,7 @@ module Billing
       # Only what can grow the bill must be fit to carry it on credit (a plan
       # line leaving that demotes its resident is checked once the ops are
       # worked out, in propose).
-      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize demote]) || (op["op"] == "plan" && op["price"].present?) }
+      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize]) || (op["op"] == "plan" && op["price"].present?) }
       parent
     end
 
@@ -499,6 +528,11 @@ module Billing
       return false unless parent.id == change.stripe_subscription_id
       return false unless BillSync.remote_lines(parent, client: @client) == base
       return false unless after(base, change.ops, parent) == change.wanted
+      # Who goes back to its size still follows from the plan the house
+      # gives now: a grant added or withdrawn since the quote changes it.
+      ops = change.ops.map(&:to_h)
+      return false unless with_demotion(ops.reject { |op| op["op"] == "demote" }, parent) == ops
+      fit_if_demotion_grows!(parent, base, change.wanted, ops)
 
       quote(parent, change.params.deep_symbolize_keys, change.lines).except("next_at") == change.quote.except("next_at")
     rescue Refused, NotReady, NotEligible, NotConfigured, AlreadySubscribed, ActiveRecord::RecordNotFound
