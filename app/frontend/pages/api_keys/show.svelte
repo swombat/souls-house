@@ -4,7 +4,7 @@
   import { accountApiKeysPath } from '@/routes';
   import { siteName } from '$lib/branding';
 
-  let { account, api_key, raw_token } = $props();
+  let { account, api_key, raw_token, return_url = null } = $props();
   let copied = $state(false);
 
   async function copyToken() {
@@ -36,6 +36,6 @@
       <p class="text-sm text-green-600 mb-4 dark:text-green-400">Copied to clipboard!</p>
     {/if}
 
-    <Button href={accountApiKeysPath(account.id)} variant="outline" class="w-full">Done</Button>
+    <Button href={return_url ?? accountApiKeysPath(account.id)} variant="outline" class="w-full">Done</Button>
   </div>
 </div>
