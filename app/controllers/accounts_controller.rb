@@ -102,12 +102,14 @@ class AccountsController < ApplicationController
     eleven_labs_api_key plan_offer_enabled show_chat_codes show_room_chat_counts
   ].freeze
 
-  # A Features switch goes back to Features rather than to General, where
-  # only the name is edited now.
+  # A Features change goes back to Features rather than to General, where
+  # only the name is edited now. Only fields this person may change count, so
+  # an ignored Features field from a non-manager doesn't pick the page.
   def settings_return_path
     submitted = params[:account]
-    feature_change = submitted.respond_to?(:keys) && submitted.keys.map(&:to_s).intersect?(FEATURE_SETTINGS)
-    feature_change ? account_features_path(@account) : account_path(@account)
+    return account_path(@account) unless submitted.respond_to?(:keys) && @account.manageable_by?(Current.user)
+
+    submitted.keys.map(&:to_s).intersect?(FEATURE_SETTINGS) ? account_features_path(@account) : account_path(@account)
   end
 
   def account_has_meaningful_changes?

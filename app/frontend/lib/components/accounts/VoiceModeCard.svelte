@@ -16,7 +16,7 @@
     siteScope === 'disabled'
       ? 'The site has voice mode off for every account, so this switch has no effect for now. Its setting is kept for when the site leaves it to each account.'
       : siteScope === 'enabled'
-        ? 'The site has voice mode on for every account, so conversations offer it whatever this switch says. Its setting is kept for when the site leaves it to each account.'
+        ? 'The site has voice mode on for every account.'
         : null
   );
 
@@ -41,7 +41,8 @@
       as a message, hands free, until you end it.</Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
-    {#if canManage}
+    <!-- On the Features tab this card shows under 'enabled' only to explain where the audio goes; there is no switch to show. -->
+    {#if siteScope === 'enabled'}{:else if canManage}
       <label class="flex items-center justify-between gap-3 text-sm">
         <span>Voice mode</span>
         <Switch

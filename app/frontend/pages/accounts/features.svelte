@@ -14,7 +14,8 @@
 
   // What changes in this account's conversations. A switch the site has
   // fixed for everyone isn't shown: it would do nothing here. A choice the
-  // account still has stays (JQvGmY).
+  // account still has stays (JQvGmY). Voice mode the site has on for everyone
+  // keeps its card, without the switch, so where the audio goes stays findable.
   let {
     account,
     can_manage = false,
@@ -57,7 +58,7 @@
   });
 
   const showReflexes = $derived(reflexes_site_scope === 'account_choice');
-  const showVoiceMode = $derived(voice_mode_site_scope === 'account_choice');
+  const showVoiceMode = $derived(voice_mode_site_scope !== 'disabled');
   const showSpeechEngine = $derived(speech_engine_site_scope === 'account_choice');
   const showPlans = $derived(plan_offer_available || plan_offer_enabled);
 </script>

@@ -177,9 +177,12 @@ test('voice mode and voice engine show only while the site leaves them to the ac
   expect(screen.getByRole('heading', { name: 'Voice' })).toBeVisible();
   expect(screen.getByTestId('voice-mode-enabled')).toBeVisible();
 
-  await view.rerender({ ...props, voice_mode_site_scope: 'enabled', speech_engine_site_scope: 'account_choice' });
+  await view.rerender({ ...props, voice_mode_site_scope: 'enabled', speech_engine_site_scope: 'disabled' });
   expect(screen.queryByTestId('voice-mode-enabled')).toBeNull();
-  expect(screen.getByRole('heading', { name: 'Voice' })).toBeVisible();
+  expect(screen.queryByTestId('voice-mode-enabled-readonly')).toBeNull();
+  expect(screen.getByTestId('voice-mode-site-override')).toHaveTextContent('on for every account');
+  expect(screen.getByTestId('voice-mode-audio-path')).toBeInTheDocument();
+  expect(screen.queryByTestId('speech-engine-phonon')).toBeNull();
 
   await view.rerender({ ...props, voice_mode_site_scope: 'disabled', speech_engine_site_scope: 'disabled' });
   expect(screen.queryByRole('heading', { name: 'Voice' })).toBeNull();
