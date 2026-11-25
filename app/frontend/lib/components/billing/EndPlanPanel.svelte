@@ -46,12 +46,24 @@
     <p class="font-medium">End the {planName} plan</p>
     {#if immediate}
       <p>
-        The {planName} plan comes off the bill now. Every resident stays; the one it included goes back to its size.
+        The {planName} plan comes off the bill now. Every resident stays{pending.demoted_name
+          ? `; ${pending.demoted_name}, the one it included, goes back to its size's full price`
+          : ''}.
       </p>
-      <p>
-        Your next bill{pending.next_at ? ` on ${date(pending.next_at)}` : ''} is {money(pending.next_total_cents)}, the
-        unused part of this period off as credit. Credit stays on the account's bill. It isn't a refund to your card.
-      </p>
+      {#if (pending.next_change_cents ?? 0) > 0}
+        <p>
+          Your next bill{pending.next_at ? ` on ${date(pending.next_at)}` : ''} goes up by {money(
+            pending.next_change_cents
+          )}, to {money(pending.next_total_cents)}: the plan's unused part comes off as credit, and {pending.demoted_name ??
+            'the resident it included'} costs more than it did.
+        </p>
+      {:else}
+        <p>
+          Your next bill{pending.next_at ? ` on ${date(pending.next_at)}` : ''} is {money(pending.next_total_cents)},
+          the unused part of this period off as credit. Credit stays on the account's bill. It isn't a refund to your
+          card.
+        </p>
+      {/if}
       <p>After that the account pays {money(pending.recurring_cents)} a month.</p>
     {:else}
       <p>

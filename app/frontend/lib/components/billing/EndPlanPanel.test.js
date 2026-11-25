@@ -44,13 +44,27 @@ describe('EndPlanPanel', () => {
     expect(screen.getByRole('button', { name: "Don't renew the Partners plan" })).toBeInTheDocument();
   });
 
+  it('says when taking the plan off puts its resident back at full price and the bill goes up', () => {
+    render(EndPlanPanel, {
+      account,
+      pending: { ...del, kind: 'plan', plan: 'Companions', demoted_name: 'Aria', next_change_cents: 1500 },
+    });
+    const panel = screen.getByTestId('billing-end-confirm');
+    expect(panel).toHaveTextContent(
+      "Every resident stays; Aria, the one it included, goes back to its size's full price."
+    );
+    expect(panel).toHaveTextContent('goes up by $15, to $40');
+    expect(panel).not.toHaveTextContent('goes down');
+  });
+
   it('words taking the account plan off a bill with residents: they stay, and what still recurs', () => {
     render(EndPlanPanel, {
       account,
       pending: { ...del, kind: 'plan', plan: 'Partners', resident_name: 'The account' },
     });
     const panel = screen.getByTestId('billing-end-confirm');
-    expect(panel).toHaveTextContent('Every resident stays; the one it included goes back to its size.');
+    expect(panel).toHaveTextContent('Every resident stays.');
+    expect(panel).not.toHaveTextContent('full price');
     expect(panel).toHaveTextContent('After that the account pays $55 a month.');
     expect(screen.getByRole('button', { name: 'End the Partners plan now' })).toBeInTheDocument();
   });

@@ -352,6 +352,24 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_equal [ { "op" => "plan" } ], reconcile.propose_end_plan.ops
   end
 
+  test "taking the plan off a bill that can't carry more is refused when it would put its resident back at full size" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE, status: "past_due")
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose_end_plan }
+    assert_match(/last payment/, error.message)
+    assert_empty @stripe.subscription_updates
+  end
+
+  test "ending a resident is decided on the bill as it is after earlier work lands: a plan added meanwhile stays" do
+    bill!(@a => CONVERSATION_PRICE)
+    addition = reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ])
+    @stripe.fail_next_subscription_update(applied: true)
+    assert_raises(Billing::Reconcile::Uncertain) { reconcile.confirm(addition, digest: addition.digest) }
+
+    change = reconcile.propose_end(@a)
+    assert addition.reload.applied?
+    assert_equal [ { "op" => "end", "agent_id" => @a.id } ], change.ops, "the plan is on the bill now: only the resident goes"
+  end
+
   test "a timeout after Stripe applied the change: the retry replays the same key and nothing is added twice" do
     bill!(@a => CONVERSATION_PRICE)
     change = reconcile.propose([ add(@b, CONVERSATION_PRICE) ])

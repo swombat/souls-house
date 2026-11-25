@@ -64,7 +64,10 @@ module Billing
         # out, so a change that landed while settling is seen: ending the
         # plan is decided on the bill as it now is (Mira, #1148).
         parent = parent!(ops)
-        ops = with_demotion(with_promotion(with_successor(ending_plan(ops, parent))))
+        ops = with_demotion(with_promotion(with_successor(ending(ops, parent))), parent)
+        # A plan line leaving can grow the bill: its included resident goes
+        # back to its size (Reed, #1148).
+        fit!(parent) if ops.any? { |op| op["op"] == "demote" }
         base = BillSync.remote_lines(parent, client: @client)
         raise NotReady, "#{DRIFTED} Contact #{Billing.contact_email}." unless base == BillSync.house_lines(parent.id)
 
@@ -82,13 +85,7 @@ module Billing
     def propose_end(agent, by: nil)
       row = ResidentSubscription.live.find_by(agent:, account: @account) ||
         raise(Refused, "#{agent.name} has no plan on this account's bill.")
-      # Alone: nothing else on the bill, neither a resident nor a plan line.
-      # A free trial's plan line is the trial's, not bought for itself: it
-      # ends with the trial's resident, as before.
-      alone = !ResidentSubscription.live.where(stripe_subscription_id: row.stripe_subscription_id)
-        .where.not(id: row.id).exists? &&
-        (row.stripe_status == "trialing" || !AccountSubscription.live.exists?(stripe_subscription_id: row.stripe_subscription_id))
-      propose([ alone ? { op: "end_bill", agent_id: agent.id } : { op: "end", agent_id: agent.id } ], by:)
+      propose([ { op: "end_resident", agent_id: row.agent_id } ], by:)
     end
 
     # Ending the account's plan (a plan stands alone on a bill: bought before
@@ -167,15 +164,27 @@ module Billing
       change
     end
 
-    # Ending the account's plan, decided under the lock on the synced bill:
-    # the whole bill at the period's end when the plan is all it carries,
-    # otherwise the plan line off now.
-    def ending_plan(ops, parent)
-      return ops unless ops.any? { |op| op["op"] == "end_plan" }
-      raise Refused, "Ending the plan is a change of its own." unless ops.one?
-      raise Refused, "This account has no plan on its bill." unless AccountSubscription.live.exists?(stripe_subscription_id: parent.id)
+    # Ending a resident or the account's plan, decided under the lock on the
+    # synced bill (Mira, Reed, #1148): the whole bill at the period's end
+    # when what ends is all it carries, otherwise that line off now.
+    def ending(ops, parent)
+      marker = ops.find { |op| op["op"].in?(%w[end_plan end_resident]) }
+      return ops unless marker
+      raise Refused, "Ending is a change of its own." unless ops.one?
 
-      [ ResidentSubscription.live.exists?(stripe_subscription_id: parent.id) ? { "op" => "plan" } : { "op" => "end_bill" } ]
+      residents = ResidentSubscription.live.where(stripe_subscription_id: parent.id)
+      plan = AccountSubscription.live.exists?(stripe_subscription_id: parent.id)
+      if marker["op"] == "end_plan"
+        raise Refused, "This account has no plan on its bill." unless plan
+
+        return [ residents.exists? ? { "op" => "plan" } : { "op" => "end_bill" } ]
+      end
+
+      row = row!(marker)
+      # Alone: nothing else on the bill. A free trial's plan line is the
+      # trial's, not bought for itself: it ends with the trial's resident.
+      alone = !residents.where.not(id: row.id).exists? && (parent.status == "trialing" || !plan)
+      [ alone ? { "op" => "end_bill", "agent_id" => row.agent_id } : { "op" => "end", "agent_id" => row.agent_id } ]
     end
 
     # When the included resident ends, the oldest standard-rate resident
@@ -223,12 +232,12 @@ module Billing
     # resident goes back to its size (a demote op), since there is no plan
     # left to include it. A plan the house gives (Account#given_plan) still
     # includes it (Billing::Included), so then it stays.
-    def with_demotion(ops)
+    def with_demotion(ops, parent)
       return ops unless ops.any? { |op| op["op"] == "plan" && op["price"].blank? }
       return ops if ops.any? { |op| op["op"] == "demote" } || @account.given_plan
 
       leaving = ops.select { |op| op["op"] == "end" }.map { |op| op["agent_id"] }
-      ResidentSubscription.live.where(account: @account, rate: "included").where.not(agent_id: leaving)
+      ResidentSubscription.live.where(stripe_subscription_id: parent.id, rate: "included").where.not(agent_id: leaving)
         .order(:created_at, :id).each_with_object(ops.dup) do |row, all|
           all << { "op" => "demote", "agent_id" => row.agent_id, "price" => row.offer.tier.offer("standard").price_id }
         end
@@ -248,14 +257,15 @@ module Billing
         raise Refused, "The plan can't change while the account's free trial runs."
       end
 
-      # Only what can grow the bill must be fit to carry it on credit; a plan
-      # line leaving with its resident shrinks it.
-      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize]) || (op["op"] == "plan" && op["price"].present?) }
+      # Only what can grow the bill must be fit to carry it on credit (a plan
+      # line leaving that demotes its resident is checked once the ops are
+      # worked out, in propose).
+      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize demote]) || (op["op"] == "plan" && op["price"].present?) }
       parent
     end
 
     def subscription_of(op)
-      if op["op"].in?(%w[end resize promote demote end_bill keep_bill]) && op["agent_id"]
+      if op["op"].in?(%w[end end_resident resize promote demote end_bill keep_bill]) && op["agent_id"]
         return row!(op).stripe_subscription_id
       end
 

@@ -302,11 +302,17 @@ describe('adding a resident to the account subscription', () => {
   });
 
   it('words a plan added to the bill as a plan, and confirms it the same way', async () => {
-    const plan = { ...pendingAdd, kind: 'plan', resident_name: 'the Partners plan', plan: 'Partners', added_cents: 2000 };
+    const plan = {
+      ...pendingAdd,
+      kind: 'plan',
+      resident_name: 'the Partners plan',
+      plan: 'Partners',
+      added_cents: 2000,
+    };
     render(Billing, props({ pending_add: plan }));
 
     const panel = screen.getByTestId('billing-add-confirm');
-    expect(panel).toHaveTextContent("Add the Partners plan to the account's subscription?");
+    expect(panel).toHaveTextContent("Add the Partners plan to the account's bill?");
     expect(panel).not.toHaveTextContent('on Partners');
     expect(panel).toHaveTextContent('goes up by about $20.00 for the Partners plan');
     expect(panel).toHaveTextContent('a month for its plan and residents together');
@@ -316,6 +322,43 @@ describe('adding a resident to the account subscription', () => {
       '/accounts/home/billing/add_resident',
       { attempt_id: 7, digest: 'abc' },
       expect.any(Object)
+    );
+  });
+
+  it('words a move down to a smaller plan as a move, with the credit', async () => {
+    const plan = {
+      ...pendingAdd,
+      kind: 'plan',
+      move: true,
+      resident_name: 'the Partners plan',
+      plan: 'Partners',
+      added_cents: -4500,
+    };
+    render(Billing, props({ pending_add: plan }));
+    const panel = screen.getByTestId('billing-add-confirm');
+    expect(panel).toHaveTextContent('Move the account to the Partners plan?');
+    expect(panel).toHaveTextContent('goes down by about $45.00');
+    expect(panel).not.toHaveTextContent('goes up');
+    expect(panel).not.toHaveTextContent('-$');
+    await fireEvent.click(screen.getByRole('button', { name: 'Move to Partners' }));
+    expect(router.post).toHaveBeenCalledWith(
+      '/accounts/home/billing/add_resident',
+      { attempt_id: 7, digest: 'abc' },
+      expect.any(Object)
+    );
+  });
+
+  it('names the resident a first plan makes its included one', () => {
+    const plan = {
+      ...pendingAdd,
+      kind: 'plan',
+      resident_name: 'the Companions plan',
+      plan: 'Companions',
+      promoted_name: 'Aria',
+    };
+    render(Billing, props({ pending_add: plan }));
+    expect(screen.getByTestId('billing-add-promoted')).toHaveTextContent(
+      "Aria becomes the plan's included resident, at the included price, in the same change."
     );
   });
 

@@ -230,7 +230,12 @@ class Accounts::BillingsController < ApplicationController
     quote = change.quote
     offer = Billing::Offer.for_price(change.ops.first["price"])
     plan = change.ops.first["op"] == "plan"
-    { attempt_id: change.id, digest: change.digest, kind: plan ? "plan" : "resident",
+    # move: the bill already carries a plan line, so this changes it.
+    # promoted: who becomes the plan's included resident with it.
+    move = plan && change.base.keys.any? { |price| Billing::AccountPlan.for_price(price) }
+    promoted = change.ops.find { |op| op["op"] == "promote" }
+    { attempt_id: change.id, digest: change.digest, kind: plan ? "plan" : "resident", move: move ? true : false,
+      promoted_name: promoted && current_account.agents.find(promoted["agent_id"]).name,
       resident_name: plan ? "the #{bought_in(change)} plan" : subject_of(change), plan: bought_in(change),
       rate: offer&.rate || "standard", currency: quote["currency"], added_cents: quote["added_next"],
       next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
@@ -244,7 +249,9 @@ class Accounts::BillingsController < ApplicationController
     quote = change.quote
     at = ->(key) { quote[key] && Time.zone.at(quote[key]).to_date.iso8601 }
     plan = change.ops.first["agent_id"] ? nil : current_account.live_plan_subscription
+    demoted = change.ops.find { |op| op["op"] == "demote" }
     { attempt_id: change.id, digest: change.digest, kind: plan ? "plan" : "resident", plan: plan&.plan_record&.name,
+      demoted_name: demoted && current_account.agents.find(demoted["agent_id"]).name,
       resident_name: subject_of(change), operation: end_operation(change),
       currency: quote["currency"], ends_at: change.ends_bill? ? at.("next_at") : nil, next_at: at.("next_at"),
       next_change_cents: quote["added_next"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],

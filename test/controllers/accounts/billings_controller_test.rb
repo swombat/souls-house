@@ -388,7 +388,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
 
     get account_billing_path(@account, add: change.id)
     shown = inertia_shared_props["pending_add"]
-    assert_equal [ "plan", "the Partners plan", change.digest ], shown.values_at("kind", "resident_name", "digest")
+    assert_equal [ "plan", "the Partners plan", change.digest, true ], shown.values_at("kind", "resident_name", "digest", "move")
 
     with_stripe { post add_resident_account_billing_path(@account), params: { attempt_id: change.id, digest: shown["digest"] } }
     assert_match(/The Partners plan is on Partners now|next bill/, flash[:notice])
