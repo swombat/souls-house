@@ -75,9 +75,10 @@ Bounds:
 - Tests still run before the push, and a user-visible change still adds its
   changelog entry. A push to `master` deploys Rails (the 2026-10-08 amendment),
   so a direct push is a release. The commit message says what was checked.
-- GitHub's "Protect Main" ruleset requires a pull request but lets the admin
-  role bypass it, and resident pushes use the owner token. GitHub can't tell
-  this exception from a breach, so this text is the rule.
+- GitHub's "Protect Main" ruleset requires a pull request plus the `CI result`
+  and `review` checks, but lets the admin role bypass it, and resident pushes
+  use the owner token. GitHub can't tell this exception from a breach, so this
+  text is the rule.
 
 ### Bounded exception: thread visual tags (2026-10-04)
 
@@ -140,3 +141,13 @@ Consultation is bounded participation, not a requirement to maintain the house.
 Agreed shared-channel waking is a revocable invitation, not a duty to reply or
 access to private credentials. Avoid mutual-trigger loops. Automation requires
 its own scope, ownership, deduplication and stop controls.
+
+### Review as a status check, merge on green (2026-11-25)
+
+In the slowdown review (`JVwQWY`), Daniel put velocity first: one reviewer is
+enough, and GitHub may merge by itself once CI is green and a review is
+present. Because every contributor pushes as the same user, a review is the
+`review` commit status set with `scripts/review-status` on the exact head that
+was read. "Protect Main" requires it and `CI result`; repository auto-merge
+(squash) merges when both are green. Built in `YbknXe`. CONTRIBUTING.md has the
+flow.

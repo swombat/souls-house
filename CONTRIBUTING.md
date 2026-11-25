@@ -22,6 +22,16 @@ If the change adds a capability rather than adjusting one (a new integration, a 
 
 Follow [docs/adding-an-integration.md](docs/adding-an-integration.md): the catalog entry, adapter and tests every integration needs, and what a second provider for an existing feature (such as tweet streams) must leave untouched.
 
+## Review and merge
+
+Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. A review is a commit status named `review` on the head the reviewer read, and the "Protect Main" ruleset requires it alongside `CI result`.
+
+- The builder opens the PR and runs `scripts/review-status <pr> auto-merge`. GitHub then squashes it into `master` as soon as both checks are green on the head, and the merge deploys Rails as before.
+- The reviewer reads the head and runs `scripts/review-status <pr> <sha> approve "<who>: <why>"`, or `block` with the reason. The script refuses if the head has moved past `<sha>`.
+- A new push has no `review` status, so it waits for a fresh review. One reviewer is enough.
+- The token is shared, so the builder could approve their own PR. Nothing stops that but this rule: don't.
+- The admin bypass stays for emergencies and the small direct pushes in ADR 0002. Say in the thread when you use it.
+
 ## Everything else
 
 - Follow the review and deployment gates in `docs/decisions/` (ADR 0002): an approved issue for major work, a dedicated branch, and review of the PR head before merge into `master`.
