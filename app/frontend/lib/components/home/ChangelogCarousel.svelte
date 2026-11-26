@@ -33,7 +33,10 @@
         <time datetime={entry.date} class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {formatDate(entry.date)}
         </time>
-        <h3 class="mt-2 font-semibold tracking-tight">{entry.title}</h3>
+        <h3 class="mt-2 font-semibold tracking-tight">
+          <a href={`/changelog/${entry.slug}`} class="hover:underline underline-offset-4" data-testid="changelog-carousel-link"
+            >{entry.title}</a>
+        </h3>
         <p class="mt-2 line-clamp-5 text-sm leading-relaxed text-muted-foreground">{entry.body}</p>
       </div>
     </article>
