@@ -17,6 +17,23 @@
 # isn't identified yet and that investigating is ours.
 class ResidentHealthMailer < ApplicationMailer
 
+  # StaleRhythmPinNotice: a rhythm's pin left the resident's list and no
+  # successor is on it, so its occurrences are refused. Once per seat and model.
+  def rhythm_model_pin_stale(row)
+    seat = row.auditable
+    agent = seat.agent
+    rhythm = seat.rhythm
+    model = Agent.label_for_model(row.data["model_id"])
+    mail(to: rhythm.account.owner.email_address, subject: "#{agent.name}'s rhythm \"#{rhythm.title}\" can't run on #{model}",
+      body: "The rhythm \"#{rhythm.title}\" runs #{agent.name} on #{model}, which is no longer on #{agent.name}'s list of " \
+        "models for conversations, and no newer model of that line is on the list. Its occurrences are refused until " \
+        "the rhythm's model for #{agent.name} is changed, or #{model} is added back to the list.\n\n" \
+        "Change the rhythm: #{account_rhythm_url(rhythm.account, rhythm)}\n" \
+        "Or #{agent.name}'s list of models: #{edit_account_agent_url(rhythm.account, agent, tab: "settings")}\n\n" \
+        "This is sent once for this rhythm and model.",
+      content_type: "text/plain")
+  end
+
   def allowance_braked(notice)
     agent = notice.agent
     mail(to: agent.account.owner.email_address, subject: "#{agent.name}'s scheduled work is allowance-braked",

@@ -7,8 +7,10 @@
 #
 # Only a model on the resident's list for conversations can be a room default;
 # the resident's own default model means "no room default" and is not stored.
-# A default that later stops being valid (the list changed) is skipped when a
-# seat is created, and reported on the Rooms page.
+# A default that later stops being valid (the list changed) seeds new seats
+# with its successor when the list carries one (Agents::ModelSuccession), and
+# is skipped otherwise; either way the row stays as it was set and the Rooms
+# page reports it, so whoever set it decides what it becomes.
 class RoomModelDefault < ApplicationRecord
 
   belongs_to :account
@@ -21,10 +23,14 @@ class RoomModelDefault < ApplicationRecord
   validate :agent_is_a_resident_of_account
   validate :model_is_selectable
 
-  # The room's model for this resident, when there is one it can still use.
+  # The room's model for this resident, when there is one it can still use:
+  # the default itself, or the successor of one that has left the list.
   def self.model_for(account_id:, room_id:, agent:)
     default = find_by(account_id: account_id, room_id: room_id, agent_id: agent.id)
-    default.model_id if default && default.problem.nil?
+    return unless default
+
+    model_id = Agents::ModelSuccession.effective_model_id(agent, default.model_id)
+    model_id if agent.model_selection_problem(model_id).nil?
   end
 
   # Set the room default, or clear it with nil, "default" or the resident's

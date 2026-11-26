@@ -43,6 +43,10 @@ class ExternalAgentResponseRequest
 
   def call
     agent.reload.require_conversation_runtime!
+    # A pin that has left the resident's list moves to its successor before
+    # anything resolves this turn's model, so the brake, the dispatch and the
+    # model facts all name the same one.
+    Agents::ModelSuccession.repair!(agent, chat: chat) unless fallback?
     if @interaction && (@interaction.message_dispatch&.rhythm? || @interaction.wake_source_kinds == [ "scheduled" ])
       Agents::AllowanceBrake.prepare(agent, model_id: Agents::ModelSelection.for(agent, chat: chat).model_id)
     end
@@ -259,6 +263,9 @@ class ExternalAgentResponseRequest
       @interaction&.update!(failure_notice_message: notice, response_body: model_unavailable_body)
       @interaction&.finish_execution!("failed")
     end
+    # The occurrence line reaches nobody when no one reads the rhythm's
+    # threads; its owner is told once (JlRlKe).
+    StaleRhythmPinNotice.observe!(agent: agent, chat: chat, model_id: selection.model_id) if selection.off_list?
     { status: 409, error: "selected model unavailable", body: { "status" => "model_unavailable" } }
   end
 

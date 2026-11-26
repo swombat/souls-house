@@ -16,6 +16,9 @@ class Agents::AllowanceBrake
   def self.check(agent, model_id: nil, essential: false, refresh: true, notify: true)
     return Result.new(status: "disabled") if agent.allowance_brake_threshold_percent.nil?
     return Result.new(status: "essential") if essential
+    # Never runs, so never measured: the turn's structured refusal is the
+    # visible outcome, and a brake skip here would hide it from everyone.
+    return Result.new(status: "unresolvable") if Agents::ModelSuccession.unresolvable?(agent, model_id)
     new(agent, model_id: model_id).check(essential: essential, refresh: refresh, notify: notify)
   rescue KeyError, ArgumentError
     Result.new(status: "unavailable")
@@ -75,6 +78,7 @@ class Agents::AllowanceBrake
   # Later claim checks never call this. A failed probe retains the last evidence.
   def self.prepare(agent, model_id: nil, essential: false)
     return if essential || agent.allowance_brake_threshold_percent.nil?
+    return if Agents::ModelSuccession.unresolvable?(agent, model_id)
     policy = new(agent, model_id: model_id)
     return unless agent.provider_auth_mode(policy.provider) == "oauth_account"
     reading = AllowanceBrakeReading.create_or_find_by!(agent: agent, provider: policy.provider, model: policy.model)
@@ -89,8 +93,11 @@ class Agents::AllowanceBrake
 
   attr_reader :provider, :model
 
+  # A pin that has left the resident's list is measured as the successor its
+  # turn will move to (Agents::ModelSuccession), not as the retired model.
   def initialize(agent, model_id: nil)
     @agent = agent
+    model_id = Agents::ModelSuccession.effective_model_id(agent, model_id)
     selection = Agents::Sandbox.chaos_selection_for(agent, model_id: model_id.presence || agent.model_id)
     @provider, @model = selection.values_at(:provider, :model)
   end

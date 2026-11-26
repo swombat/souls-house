@@ -23,6 +23,20 @@ class ConversationModelEvent
     )
   end
 
+  # Agents::ModelSuccession moved a pin that had left the resident's list to
+  # its successor. Written in the same transaction as the move, so the line
+  # exists exactly when the move does.
+  def self.moved_forward!(seat:, from_model_id:, to_model_id:, rhythm: nil)
+    agent = seat.agent
+    from = Agent.label_for_model(from_model_id)
+    to = Agent.label_for_model(to_model_id)
+    content = "#{agent.name}'s model in this conversation moved from #{from} to #{to}, " \
+      "because #{from} is no longer on #{agent.name}'s list of models for conversations."
+    content += " The rhythm \"#{rhythm.title}\" will use #{to} from now on too." if rhythm
+    content += " Choose another from #{agent.name}'s button to change it."
+    seat.chat.messages.create!(role: "system", content: content)
+  end
+
   def self.actor_label(by)
     case by
     when Agent then "#{by.name} (the resident)"
