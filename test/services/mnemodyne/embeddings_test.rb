@@ -211,7 +211,7 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     with_endpoint do |endpoint|
       endpoint.to_timeout
       error = assert_unavailable(:timeout, error_class: "Net::OpenTimeout") { Mnemodyne::Embeddings.embed("Synthetic text") }
-      assert_equal "Mnemodyne embeddings unavailable: timeout (Net::OpenTimeout)", error.message
+      assert_match(/\AMnemodyne embeddings unavailable: timeout \(Net::OpenTimeout\) \[phase connected, attempt 1, connect \d+ ms, elapsed \d+ ms\]\z/, error.message)
       endpoint.to_raise(Net::ReadTimeout)
       assert_unavailable(:timeout, error_class: "Net::ReadTimeout") { Mnemodyne::Embeddings.embed("Synthetic text") }
       endpoint.to_return(->(_request) { sleep 0.5; { body: VECTOR } })
@@ -358,6 +358,102 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
       assert_equal reason, error.reason
       assert_nil error.cause, reason.to_s
       assert_not_includes error.full_message, "outer-private-detail", reason.to_s
+    end
+  end
+
+  test "a timeout says where the call had got to: connected, no answer yet" do
+    with_endpoint do |endpoint|
+      endpoint.to_return(->(_request) { sleep 0.5; { body: VECTOR } })
+      error = assert_unavailable(:timeout) { Mnemodyne::Embeddings.embed_many([ "Synthetic text" ], seconds: 0.2) }
+      timing = error.timing
+      assert_equal :connected, timing[:phase]
+      assert_equal 1, timing[:attempts]
+      assert_kind_of Integer, timing[:connect_ms]
+      assert_nil timing[:response_ms], "no headers were read, so no response time"
+      assert_includes 150..600, timing[:elapsed_ms]
+      assert_equal timing.merge(reason: :timeout), error.context
+      assert_match(/ \[phase connected, attempt 1, connect \d+ ms, elapsed \d+ ms\]\z/, error.message)
+    end
+  end
+
+  test "a connection that never opens stays in connecting with no connect time" do
+    with_endpoint do |_endpoint|
+      Net::HTTP.stub(:start, ->(*, **) { raise Net::OpenTimeout }) do
+        error = assert_unavailable(:timeout, error_class: "Net::OpenTimeout") { Mnemodyne::Embeddings.embed("Synthetic text") }
+        assert_equal :connecting, error.timing[:phase]
+        assert_nil error.timing[:connect_ms]
+        assert_nil error.timing[:response_ms]
+        assert_kind_of Integer, error.timing[:elapsed_ms]
+      end
+    end
+  end
+
+  test "a network failure carries the phase too" do
+    with_endpoint do |endpoint|
+      endpoint.to_raise(Errno::ECONNRESET)
+      error = assert_unavailable(:network, error_class: "Errno::ECONNRESET") { Mnemodyne::Embeddings.embed("Synthetic text") }
+      assert_equal :connected, error.timing[:phase]
+      assert_equal :connected, error.context[:phase]
+    end
+  end
+
+  test "a retried call reports the second attempt's times and both attempts" do
+    with_endpoint do |endpoint|
+      endpoint.to_return({ status: 503, body: "{}" }, ->(_request) { sleep 2; { body: VECTOR } })
+      error = assert_unavailable(:timeout) { Mnemodyne::Embeddings.embed("Synthetic text") }
+      assert_equal 2, error.timing[:attempts]
+      assert_equal :connected, error.timing[:phase]
+      assert_nil error.timing[:response_ms]
+    end
+  end
+
+  test "the trace records response time once headers are read and resets per attempt" do
+    trace = Mnemodyne::Embeddings::Trace.new
+    assert_equal [ :elapsed_ms ], trace.to_h.keys
+    trace.attempt!
+    trace.connected!
+    trace.response!
+    assert_equal %i[phase attempts connect_ms response_ms elapsed_ms], trace.to_h.keys
+    assert_equal :response, trace.phase
+    trace.attempt!
+    assert_equal({ phase: :connecting, attempts: 2 }, trace.to_h.except(:elapsed_ms))
+  end
+
+  test "a deadline inside the next attempt's clock read leaves the previous snapshot whole" do
+    trace = Mnemodyne::Embeddings::Trace.new
+    trace.attempt!
+    trace.connected!
+    trace.response!
+    before = trace.to_h.except(:elapsed_ms)
+    interrupted = Class.new(StandardError)
+    Process.stub(:clock_gettime, ->(*) { raise interrupted }) do
+      assert_raises(interrupted) { trace.attempt! }
+      assert_raises(interrupted) { trace.connected! }
+      assert_raises(interrupted) { trace.response! }
+    end
+    assert_equal before, trace.to_h.except(:elapsed_ms)
+    assert_equal 1, before[:attempts]
+    assert_equal :response, before[:phase]
+    trace.attempt!
+    assert_equal({ phase: :connecting, attempts: 2 }, trace.to_h.except(:elapsed_ms))
+  end
+
+  test "only a known phase and non-negative integers survive into the timing" do
+    error = Mnemodyne::Embeddings::Unavailable.new(:timeout, timing: {
+      phase: :somewhere, attempts: 1, connect_ms: -3, response_ms: 1.5, elapsed_ms: "2001", host: "x.invalid"
+    })
+    assert_equal({ attempts: 1 }, error.timing)
+    assert_equal "Mnemodyne embeddings unavailable: timeout [attempt 1]", error.message
+    assert_nil Mnemodyne::Embeddings::Unavailable.new(:timeout, timing: { phase: "connected" }).timing
+    assert_nil Mnemodyne::Embeddings::Unavailable.new(:timeout, timing: "phase connected").timing
+  end
+
+  test "reasons other than timeout and network carry no timing" do
+    with_endpoint do |endpoint|
+      endpoint.to_return(status: 500, body: "{}")
+      error = assert_unavailable(:http_status, status: 500) { Mnemodyne::Embeddings.embed("Synthetic text") }
+      assert_nil error.timing
+      assert_equal "Mnemodyne embeddings unavailable: http_status (500)", error.message
     end
   end
 

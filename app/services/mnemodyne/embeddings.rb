@@ -6,27 +6,108 @@ class Mnemodyne::Embeddings
 
   # Why an embedding could not be had, from a closed set, so a failed job or
   # an error report can say Voyage from us. It carries only the reason, an
-  # integer HTTP status and an exception class name: never a URL, host,
-  # response body, query text or exception message.
+  # integer HTTP status, an exception class name and, for a timeout or a
+  # network failure, where the call had got to (a phase from a closed set and
+  # integer milliseconds): never a URL, host, header, response body, query
+  # text or exception message.
   class Unavailable < StandardError
 
     REASONS = %i[
       not_configured timeout rate_limited http_status body_too_large
       invalid_response bad_endpoint network unexpected
     ].freeze
+    TIMING_KEYS = %i[attempts connect_ms response_ms elapsed_ms].freeze
 
-    attr_reader :reason, :status, :error_class
+    attr_reader :reason, :status, :error_class, :timing
 
-    def initialize(reason = :unexpected, status: nil, error_class: nil)
+    def initialize(reason = :unexpected, status: nil, error_class: nil, timing: nil)
       @reason = REASONS.include?(reason) ? reason : :unexpected
       @status = status if status.is_a?(Integer)
       @error_class = error_class if error_class.is_a?(String) && error_class.match?(/\A[A-Z][A-Za-z0-9_:]*\z/)
+      @timing = self.class.clean_timing(timing)
       detail = [ @status, @error_class ].compact.join(", ")
-      super("Mnemodyne embeddings unavailable: #{@reason}#{" (#{detail})" if detail.present?}")
+      super("Mnemodyne embeddings unavailable: #{@reason}#{" (#{detail})" if detail.present?}#{self.class.timing_suffix(@timing)}")
     end
 
     def context
-      { reason: reason, status: status, error_class: error_class }.compact
+      { reason: reason, status: status, error_class: error_class, **timing.to_h }.compact
+    end
+
+    # Only a phase from Trace::PHASES and non-negative integers survive.
+    def self.clean_timing(timing)
+      return unless timing.is_a?(Hash)
+      cleaned = {}
+      cleaned[:phase] = timing[:phase] if Trace::PHASES.include?(timing[:phase])
+      TIMING_KEYS.each { |key| cleaned[key] = timing[key] if timing[key].is_a?(Integer) && !timing[key].negative? }
+      cleaned.presence
+    end
+
+    def self.timing_suffix(timing)
+      return "" unless timing
+      parts = []
+      parts << "phase #{timing[:phase]}" if timing[:phase]
+      parts << "attempt #{timing[:attempts]}" if timing[:attempts]
+      parts << "connect #{timing[:connect_ms]} ms" if timing[:connect_ms]
+      parts << "response #{timing[:response_ms]} ms" if timing[:response_ms]
+      parts << "elapsed #{timing[:elapsed_ms]} ms" if timing[:elapsed_ms]
+      " [#{parts.join(", ")}]"
+    end
+
+  end
+
+  # Where one call had got to when it stopped, observed with the monotonic
+  # clock. The phase is the last one actually reached: :connecting until the
+  # connection (TCP and TLS) is open, :connected while the request is written
+  # and the answer awaited, :response once the status line and headers have
+  # been read. connect_ms and response_ms are measured from the start of the
+  # latest attempt and stay absent when that point was never reached; a
+  # response time is when the headers were parsed, not when the first byte
+  # arrived. elapsed_ms runs from the start of the whole call.
+  #
+  # The outer deadline can interrupt anywhere, so each step builds the next
+  # state first and publishes it with one assignment: a deadline sees either
+  # the previous snapshot or the new one, never one attempt's count beside
+  # another attempt's phase and times.
+  class Trace
+
+    PHASES = %i[connecting connected response].freeze
+
+    def initialize
+      @started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @state = { attempts: 0 }.freeze
+    end
+
+    def phase = @state[:phase]
+    def attempts = @state[:attempts]
+    def connect_ms = @state[:connect_ms]
+    def response_ms = @state[:response_ms]
+
+    def attempt!
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @state = { attempts: @state[:attempts] + 1, phase: :connecting, attempt_started: now }.freeze
+    end
+
+    def connected!
+      ms = since(@state[:attempt_started])
+      @state = @state.merge(phase: :connected, connect_ms: ms).freeze
+    end
+
+    def response!
+      ms = since(@state[:attempt_started])
+      @state = @state.merge(phase: :response, response_ms: ms).freeze
+    end
+
+    def to_h
+      state = @state
+      { phase: state[:phase], attempts: (state[:attempts] if state[:attempts].positive?), connect_ms: state[:connect_ms],
+        response_ms: state[:response_ms], elapsed_ms: since(@started) }.compact
+    end
+
+    private
+
+    def since(start)
+      return unless start
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start) * 1000).round
     end
 
   end
@@ -100,18 +181,18 @@ class Mnemodyne::Embeddings
     uri, request = voyage? ? voyage_request(texts, input_type) : accessory_request(texts.first)
     limit = MAXIMUM_BODY_BYTES * texts.length
     deadline = monotonic + seconds
+    trace = Trace.new
     body = nil
     Timeout.timeout(seconds, Deadline) do
-      attempts = 0
       begin
-        attempts += 1
-        body = fetch(uri, request, limit, read_timeout: [ seconds - 0.1, 1.9 ].max)
+        trace.attempt!
+        body = fetch(uri, request, limit, read_timeout: [ seconds - 0.1, 1.9 ].max, trace: trace)
       rescue Busy => busy
         # One best-effort retry inside the same budget: a wake burst can land
         # while the server's single slot is taken (#804), or Voyage can rate
         # limit. Never a third try, never past the deadline, and not at all
         # when too little is left.
-        raise Unavailable.new(:rate_limited, status: busy.status), cause: nil if attempts > 1
+        raise Unavailable.new(:rate_limited, status: busy.status), cause: nil if trace.attempts > 1
         pause = rand(RETRY_JITTER)
         raise Unavailable.new(:rate_limited, status: busy.status), cause: nil if deadline - monotonic < pause + MINIMUM_RETRY_SECONDS
         sleep(pause)
@@ -124,15 +205,16 @@ class Mnemodyne::Embeddings
   rescue Unavailable
     raise
   # Do not expose provider responses, URLs, query text or network error
-  # details: only the reason and the class name travel, and never the cause.
+  # details: only the reason, the class name and where the call had got to
+  # travel, and never the cause. trace is nil if the request was never built.
   rescue Deadline, Timeout::Error => error
-    raise Unavailable.new(:timeout, error_class: (error.class.name unless error.is_a?(Deadline))), cause: nil
+    raise Unavailable.new(:timeout, error_class: (error.class.name unless error.is_a?(Deadline)), timing: trace&.to_h), cause: nil
   rescue JSON::ParserError => error
     raise Unavailable.new(:invalid_response, error_class: error.class.name), cause: nil
   rescue URI::Error => error
     raise Unavailable.new(:bad_endpoint, error_class: error.class.name), cause: nil
   rescue *NETWORK_ERRORS => error
-    raise Unavailable.new(:network, error_class: error.class.name), cause: nil
+    raise Unavailable.new(:network, error_class: error.class.name, timing: trace&.to_h), cause: nil
   rescue StandardError => error
     raise Unavailable.new(:unexpected, error_class: error.class.name), cause: nil
   end
@@ -173,14 +255,16 @@ class Mnemodyne::Embeddings
   end
   private_class_method :parse_vectors
 
-  def self.fetch(uri, request, limit = MAXIMUM_BODY_BYTES, read_timeout: 1.9)
+  def self.fetch(uri, request, limit = MAXIMUM_BODY_BYTES, read_timeout: 1.9, trace: nil)
     body = +""
     busy = nil
     # The server waits up to 1.5 s for its one slot before inferring, so the
     # read timeout covers that wait; the outer cap still bounds the whole call.
     Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https",
       open_timeout: 0.5, read_timeout: read_timeout, write_timeout: 1) do |http|
+      trace&.connected!
       http.request(request) do |response|
+        trace&.response!
         if response.is_a?(Net::HTTPServiceUnavailable) || response.is_a?(Net::HTTPTooManyRequests)
           busy = response.code.to_i
           # Drain the 503/429 so the connection closes cleanly, under the same size cap.
