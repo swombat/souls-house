@@ -26,9 +26,8 @@
   let progress = $state(null);
   let take = $state(null); // { file, url, startedAt, durationMs }
   let ended = $state('');
-  // The upload already made for this take, kept so a retry re-sends the same
-  // blob: the server refuses a blob that is already a recording, so a retry
-  // after a POST we never heard back from can't make a second one.
+  // The upload made for this take, kept so a retry re-sends the same blob: the
+  // server refuses a blob already attached, so a retry can't make a second one.
   let uploaded = null;
   let unconfirmed = $state(false);
 
@@ -37,9 +36,7 @@
   let ticker = null;
   let attempt = null;
   let releaseHold = null;
-  // The POST in flight. Its callbacks act only while it is still this one:
-  // unmount or a cleared dialog drops it, so a late answer can't hold the page
-  // for a dialog that has gone.
+  // The POST in flight; unmount drops it so a late answer can't hold the page.
   let posting = null;
   const CANCELLED = Symbol('cancelled');
 
@@ -177,9 +174,7 @@
           phase = 'review';
           progress = null;
           const reason = errors.recorded_at || errors.audio;
-          // A refusal after an unconfirmed save doesn't tell us whether the
-          // first one landed (an expired upload is refused the same way), so
-          // the uncertainty stays until something succeeds.
+          // A refused retry can't tell us whether the first save landed: stay unsure.
           if (retrying) {
             error = `We still can't confirm the first save${reason ? ` (${reason})` : ''}. Check Recordings in the Field before starting another upload.`;
           } else {
