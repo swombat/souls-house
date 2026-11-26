@@ -10,6 +10,7 @@ class Accounts::FeaturesController < ApplicationController
       account: account,
       can_manage: account.manageable_by?(Current.user),
       resident_handoff_cap: account.resident_handoff_cap,
+      stalled_thread_wake_cap: account.stalled_thread_wake_cap,
       telegram_bot_wake_limit: account.telegram_bot_wake_limit,
       reflexes_enabled: account.reflexes_enabled,
       reflexes_site_scope: settings.reflexes_scope,

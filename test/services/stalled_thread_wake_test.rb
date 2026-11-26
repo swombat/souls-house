@@ -24,6 +24,7 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
     assert_equal [ [ @lume.id ], [ @lume.id ] ], [ sweep.would_wake_agent_ids, sweep.woken_agent_ids ]
     assert_match "Stalled-thread check", @chat.messages.order(:id).last.content
     assert_match "grants no new permissions", sweep.nudge_text
+    assert_match "at most 3 times", sweep.nudge_text
   end
 
   test "shadow mode records the verdict and wakes nobody" do
@@ -61,12 +62,39 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
 
   # The stop
 
-  test "the same chain is not woken twice; the stop is told once and holds for everyone" do
+  test "by default a resident can be woken up to three times in a chain; the fourth stops the chain" do
+    assert_equal 3, @lume.account.stalled_thread_wake_cap
+    3.times do |i|
+      assert_difference(-> { AgentRuntimeInteraction.count }, 1) { sweep(lume: 0.9) }
+      finish_runs
+      post(@lume, "Still waiting on CI (#{i + 1}).", at: (i + 1).seconds.from_now)
+    end
+    assert_equal 0, stop_notices
+
+    assert_no_difference(-> { AgentRuntimeInteraction.count }) { sweep(lume: 0.9, mira: 0.9) }
+    assert_equal 1, stop_notices
+    assert_match "already woken 3 times", @chat.messages.order(:id).last.content
+    assert_equal [ [ @lume.id, "already_woken_in_chain" ], [ @mira.id, "chain_stopped" ] ],
+      StalledThreadSweep.order(:id).last.held.map { |h| h.values_at("agent_id", "reason") }
+
+    post(@lume, "Hm.", at: 5.seconds.from_now)
+    assert_no_difference(-> { AgentRuntimeInteraction.count }) { sweep(mira: 0.9) }
+    assert_equal 1, stop_notices, "a stopped chain stays stopped, for a different resident too"
+
+    post(@person, "Any news?", at: 7.seconds.from_now)
+    post(@lume, "Looking.", at: 9.seconds.from_now)
+    assert_difference(-> { AgentRuntimeInteraction.count }, 1) { sweep(lume: 0.9) }
+  end
+
+  test "with a wake cap of one, the same chain is not woken twice; the stop is told once and holds for everyone" do
+    @lume.account.update!(stalled_thread_wake_cap: 1)
     sweep(lume: 0.9)
+    assert_match "will not wake you again", StalledThreadSweep.sole.nudge_text
     finish_runs
     post(@lume, "Still waiting on CI.", at: 1.second.from_now)
     assert_no_difference(-> { AgentRuntimeInteraction.count }) { sweep(lume: 0.9, mira: 0.9) }
     assert_equal 1, stop_notices
+    assert_match "already woken once", @chat.messages.order(:id).last.content
     assert_equal [ [ @lume.id, "already_woken_in_chain" ], [ @mira.id, "chain_stopped" ] ],
       StalledThreadSweep.order(:id).last.held.map { |h| h.values_at("agent_id", "reason") }
 
@@ -79,7 +107,23 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
     assert_difference(-> { AgentRuntimeInteraction.count }, 1) { sweep(lume: 0.9) }
   end
 
+  test "with a wake cap of zero, nobody is woken and no stop notice is posted; lowering to zero cancels reserved runs" do
+    @lume.account.update!(stalled_thread_wake_cap: 0)
+    assert_no_difference(-> { AgentRuntimeInteraction.count }) { sweep(lume: 0.9) }
+    assert_equal 0, stop_notices
+    assert_equal [ "wake_cap_zero" ], StalledThreadSweep.sole.held.pluck("reason")
+
+    @lume.account.update!(stalled_thread_wake_cap: 3)
+    post(@lume, "Checking again.", at: 1.second.from_now)
+    sweep(lume: 0.9)
+    run = @chat.agent_runtime_interactions.sole
+    @lume.account.update!(stalled_thread_wake_cap: 0)
+    assert_not run.claim_dispatch!
+    assert_equal "cancelled", run.reload.execution_state
+  end
+
   test "two already-woken residents produce one stop notice" do
+    @lume.account.update!(stalled_thread_wake_cap: 1)
     sweep(lume: 0.9, mira: 0.85)
     finish_runs
     post(@lume, "Hm.", at: 1.second.from_now)
@@ -108,6 +152,7 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
   end
 
   test "a repeat verdict after waking was switched off posts no stop notice and stops nothing" do
+    @lume.account.update!(stalled_thread_wake_cap: 1)
     sweep(lume: 0.9)
     finish_runs
     post(@lume, "Still waiting on CI.", at: 1.second.from_now)

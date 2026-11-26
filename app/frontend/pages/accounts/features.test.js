@@ -11,9 +11,11 @@ const props = {
   account: { id: 'first', name: 'First', personal: false, created_at: '2026-01-01' },
   can_manage: true,
   resident_handoff_cap: 6,
+  stalled_thread_wake_cap: 3,
   reflexes_enabled: false,
 };
 const cap = () => screen.getByTestId('resident-handoff-cap');
+const wakeCap = () => screen.getByTestId('stalled-thread-wake-cap');
 const input = (element, value) => fireEvent.input(element, { target: { value: String(value) } });
 const submit = (element) => fireEvent.submit(element.closest('form'));
 const response = (value, limit, id = 'first') => ({
@@ -26,6 +28,7 @@ test('Features follows pristine baselines and keeps subscriptions stable', async
     'account',
     'can_manage',
     'resident_handoff_cap',
+    'stalled_thread_wake_cap',
     'telegram_bot_wake_limit',
     'reflexes_enabled',
     'show_chat_codes',
@@ -99,6 +102,32 @@ test('handoff limits retain range validation and follow later baselines after an
   await view.rerender({ ...props, resident_handoff_cap: 0 });
   await view.rerender({ ...props, resident_handoff_cap: 10 });
   expect(cap()).toHaveValue(10);
+});
+
+test('stalled-thread wake cap validates range, saves, and renders readonly copy', async () => {
+  const view = render(Features, props);
+  expect(wakeCap()).toHaveValue(3);
+  for (const value of ['', -1, 51, 1.5]) {
+    await input(wakeCap(), value);
+    await submit(wakeCap());
+    expect(router.put).not.toHaveBeenCalled();
+  }
+  await input(wakeCap(), 5);
+  await submit(wakeCap());
+  const [path, data, options] = router.put.mock.calls.at(-1);
+  expect(path).toBe('/accounts/first');
+  expect(data).toEqual({ account: { stalled_thread_wake_cap: 5 } });
+  options.onSuccess({ props: { stalled_thread_wake_cap: 5 } });
+  options.onFinish();
+  await view.rerender({ ...props, stalled_thread_wake_cap: 5 });
+  expect(wakeCap()).toHaveValue(5);
+
+  await view.rerender({ ...props, can_manage: false, stalled_thread_wake_cap: 0 });
+  expect(screen.getByTestId('stalled-thread-wake-cap-readonly')).toHaveTextContent('Stalled-thread wakes are off.');
+  await view.rerender({ ...props, can_manage: false, stalled_thread_wake_cap: 1 });
+  expect(screen.getByTestId('stalled-thread-wake-cap-readonly')).toHaveTextContent('Up to 1 wake per resident.');
+  await view.rerender({ ...props, can_manage: false, stalled_thread_wake_cap: 3 });
+  expect(screen.getByTestId('stalled-thread-wake-cap-readonly')).toHaveTextContent('Up to 3 wakes per resident.');
 });
 
 test.each([['cap', cap, 7]])('%s redirect-alert refusals keep the submitted draft', async (kind, field, value) => {

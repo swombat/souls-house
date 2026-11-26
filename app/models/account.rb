@@ -105,6 +105,7 @@ class Account < ApplicationRecord
   validates :account_type, presence: true
   validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
   validate :resident_handoff_cap_in_range
+  validate :stalled_thread_wake_cap_in_range
   validate :telegram_bot_wake_limit_in_range
   validate :plan_offer_allowed_by_plan, if: -> { plan_offer_enabled? && plan_offer_enabled_changed? }
   validate :resident_room_belongs_to_account
@@ -180,6 +181,12 @@ class Account < ApplicationRecord
   # from a person (MessageHandoff). Stored in settings; 0 turns handoffs off.
   RESIDENT_HANDOFF_CAP_DEFAULT = 6
   RESIDENT_HANDOFF_CAP_RANGE = 0..50
+
+  # How many times the stalled-thread check may wake a resident in a conversation
+  # between messages from a person (StalledThreadWake). Stored in settings; 0 turns
+  # stalled-thread wakes off for this account.
+  STALLED_THREAD_WAKE_CAP_DEFAULT = 3
+  STALLED_THREAD_WAKE_CAP_RANGE = 0..50
 
   # How many times in a row a resident in a Telegram group may answer other
   # bots before a message from a person (TelegramSubscription#bot_wake_streak).
@@ -319,6 +326,15 @@ class Account < ApplicationRecord
 
   def resident_handoff_cap=(value)
     self.settings = (settings || {}).merge("resident_handoff_cap" => Integer(value.to_s, exception: false) || value)
+  end
+
+  def stalled_thread_wake_cap
+    value = (settings || {})["stalled_thread_wake_cap"]
+    value.is_a?(Integer) ? value : STALLED_THREAD_WAKE_CAP_DEFAULT
+  end
+
+  def stalled_thread_wake_cap=(value)
+    self.settings = (settings || {}).merge("stalled_thread_wake_cap" => Integer(value.to_s, exception: false) || value)
   end
 
   def telegram_bot_wake_limit
@@ -744,6 +760,13 @@ class Account < ApplicationRecord
     return if value.nil? || (value.is_a?(Integer) && RESIDENT_HANDOFF_CAP_RANGE.cover?(value))
 
     errors.add(:resident_handoff_cap, "must be a whole number from #{RESIDENT_HANDOFF_CAP_RANGE.min} to #{RESIDENT_HANDOFF_CAP_RANGE.max}")
+  end
+
+  def stalled_thread_wake_cap_in_range
+    value = (settings || {})["stalled_thread_wake_cap"]
+    return if value.nil? || (value.is_a?(Integer) && STALLED_THREAD_WAKE_CAP_RANGE.cover?(value))
+
+    errors.add(:stalled_thread_wake_cap, "must be a whole number from #{STALLED_THREAD_WAKE_CAP_RANGE.min} to #{STALLED_THREAD_WAKE_CAP_RANGE.max}")
   end
 
   def telegram_bot_wake_limit_in_range
