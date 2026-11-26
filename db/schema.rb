@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3486,6 +3486,59 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
     t.index ["item_type", "item_id", "created_at"], name: "index_versions_on_item_type_and_item_id_and_created_at"
   end
 
+  create_table "visitor_admissions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "ended_at"
+    t.string "ended_by"
+    t.string "home_name"
+    t.string "home_origin", null: false
+    t.datetime "last_seen_at"
+    t.datetime "updated_at", null: false
+    t.bigint "visitor_invitation_id", null: false
+    t.string "visit_token_digest", null: false
+    t.index ["account_id"], name: "index_visitor_admissions_on_account_id"
+    t.index ["agent_id"], name: "index_visitor_admissions_on_agent_id", unique: true
+    t.index ["visit_token_digest"], name: "index_visitor_admissions_on_visit_token_digest", unique: true
+    t.index ["visitor_invitation_id"], name: "index_visitor_admissions_on_visitor_invitation_id", unique: true
+  end
+
+  create_table "visitor_invitations", force: :cascade do |t|
+    t.datetime "accepted_at"
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_user_id"
+    t.datetime "expires_at", null: false
+    t.string "local_name"
+    t.datetime "revoked_at"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_visitor_invitations_on_account_id"
+    t.index ["created_by_user_id"], name: "index_visitor_invitations_on_created_by_user_id"
+    t.index ["token_digest"], name: "index_visitor_invitations_on_token_digest", unique: true
+  end
+
+  create_table "visitor_wakes", force: :cascade do |t|
+    t.bigint "agent_runtime_interaction_id", null: false
+    t.bigint "chat_id", null: false
+    t.integer "claim_count", default: 0, null: false
+    t.datetime "collected_at"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "lease_expires_at"
+    t.bigint "message_id"
+    t.string "reason", default: "conversation", null: false
+    t.string "state", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "visitor_admission_id", null: false
+    t.index ["agent_runtime_interaction_id"], name: "index_visitor_wakes_on_agent_runtime_interaction_id", unique: true
+    t.index ["chat_id"], name: "index_visitor_wakes_on_chat_id"
+    t.index ["message_id"], name: "index_visitor_wakes_on_message_id"
+    t.index ["visitor_admission_id", "state"], name: "index_visitor_wakes_on_visitor_admission_id_and_state"
+    t.index ["visitor_admission_id"], name: "index_visitor_wakes_on_visitor_admission_id"
+  end
+
   create_table "visual_tags", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "label", limit: 80, null: false
@@ -4007,6 +4060,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
   add_foreign_key "tweet_logs", "agents", column: "resolved_by_agent_id"
   add_foreign_key "tweet_logs", "x_integrations"
   add_foreign_key "users", "accounts", column: "default_account_id", on_delete: :nullify
+  add_foreign_key "visitor_admissions", "accounts"
+  add_foreign_key "visitor_admissions", "agents"
+  add_foreign_key "visitor_admissions", "visitor_invitations"
+  add_foreign_key "visitor_invitations", "accounts"
+  add_foreign_key "visitor_invitations", "users", column: "created_by_user_id"
+  add_foreign_key "visitor_wakes", "agent_runtime_interactions"
+  add_foreign_key "visitor_wakes", "chats"
+  add_foreign_key "visitor_wakes", "messages"
+  add_foreign_key "visitor_wakes", "visitor_admissions"
   add_foreign_key "visual_tags", "accounts"
   add_foreign_key "vm_backups", "agent_backup_snapshots"
   add_foreign_key "vm_backups", "agents"
