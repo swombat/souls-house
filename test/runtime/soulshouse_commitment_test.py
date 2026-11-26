@@ -16,12 +16,25 @@ NOW = datetime.datetime(2026, 11, 2, 7, 30, 15, 999, tzinfo=datetime.timezone.ut
 
 def args(**overrides):
     base = dict(conversation=None, text="Check it", text_file=None, at=None, within="30m",
-                source_message=None, new_conversation=False, room=None, room_id=None, summary=None)
+                source_message=None, new_conversation=False, room=None, room_id=None, summary=None, every=None)
     base.update(overrides)
     return argparse.Namespace(**base)
 
 
 class CommitmentTests(unittest.TestCase):
+    def test_every_is_fixed_or_a_range_in_minutes_or_hours(self):
+        self.assertEqual({"recur_every_minutes": 90}, cli.recurrence("90m"))
+        self.assertEqual({"recur_every_minutes": 120}, cli.recurrence("2h"))
+        self.assertEqual({"recur_min_minutes": 60, "recur_max_minutes": 90}, cli.recurrence("60-90m"))
+        self.assertEqual({"recur_every_minutes": 45}, cli.recurrence("45"))
+        with self.assertRaises(ValueError):
+            cli.recurrence("hourly")
+
+    def test_add_carries_the_recurrence(self):
+        payload = cli.build_add_payload(args(every="60-90m"), {"SOULSHOUSE_RUNTIME_CHAT_ID": "JrBDwJ"})
+        self.assertEqual((60, 90), (payload["recur_min_minutes"], payload["recur_max_minutes"]))
+        self.assertNotIn("recur_min_minutes", cli.build_add_payload(args(), {"SOULSHOUSE_RUNTIME_CHAT_ID": "JrBDwJ"}))
+
     def test_in_is_relative_to_now_in_utc(self):
         self.assertEqual("2026-11-02T08:00:15Z", cli.due_at(within="30m", now=NOW))
         self.assertEqual("2026-11-03T07:30:15Z", cli.due_at(within="1d", now=NOW))

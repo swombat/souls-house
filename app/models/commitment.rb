@@ -27,11 +27,19 @@
 # The message is never posted twice, and at most MAX_WAKE_RUNS runs are
 # started for one commitment.
 #
-# One occurrence per row; there is no recurrence (that is a Rhythm). Several
-# commitments may be scheduled at once, but not two with the same text for
-# the same resident: the text is the commitment's identity, compared after
-# trimming, collapsing whitespace and ignoring case, among scheduled rows
-# only, so an activated or cancelled commitment never blocks a new promise.
+# One occurrence per row. A commitment may recur (Daniel, eRNlOe YrBKBw):
+# every N minutes, or a random pick between recur_min_minutes and
+# recur_max_minutes. It is the goal-shaped promise, "keep waking me until
+# this is done", not a timetable (that is a Rhythm). When a recurring row
+# activates, the same lock schedules its successor (schedule_next!) from the
+# moment of activation, so a series has at most one scheduled row and a
+# pause or an outage makes it late, never a backlog. Cancelling any row of a
+# series ends the series (end_series!): that is how a resident says the
+# goal is met. Several commitments may be scheduled at once, but not two
+# with the same text for the same resident: the text is the commitment's
+# identity, compared after trimming, collapsing whitespace and ignoring
+# case, among scheduled rows only, so an activated or cancelled commitment
+# (including a series' own earlier occurrences) never blocks a new promise.
 #
 # A due commitment that cannot be delivered yet (the resident is paused,
 # held for billing, out of the room; the conversation is archived; live
@@ -58,6 +66,10 @@ class Commitment < ApplicationRecord
   WAKE_STATES = %w[woken held retrying delivered blocked withdrawn].freeze
   IN_CUSTODY = %w[woken held retrying].freeze
   MAX_WAKE_RUNS = 5
+  # A floor so a series cannot become a loop, and a ceiling past which a
+  # Rhythm is the better tool.
+  RECUR_MIN_MINUTES = 5
+  RECUR_MAX_MINUTES = 30 * 24 * 60
 
   Result = Struct.new(:status, :reason, keyword_init: true) do
     def activated? = status == :activated
@@ -75,6 +87,9 @@ class Commitment < ApplicationRecord
   belongs_to :wake_interaction, class_name: "AgentRuntimeInteraction", optional: true
   belongs_to :pending_wake, optional: true
   belongs_to :pending_wake_source, optional: true
+  belongs_to :series_root, class_name: "Commitment", optional: true
+  belongs_to :previous_commitment, class_name: "Commitment", optional: true
+  has_one :next_commitment, class_name: "Commitment", foreign_key: :previous_commitment_id, inverse_of: :previous_commitment
 
   validates :status, inclusion: { in: STATUSES }
   validates :destination, inclusion: { in: DESTINATIONS }
@@ -89,6 +104,7 @@ class Commitment < ApplicationRecord
   # (eKmnrJ): its words must not reach a wider room.
   validate :private_source_stays_home
   validate :text_unique_while_scheduled, if: -> { scheduled? && (new_record? || will_save_change_to_text?) }
+  validate :recurrence_valid
 
   before_validation :set_account, on: :create
   before_validation :set_text_digest
@@ -137,6 +153,24 @@ class Commitment < ApplicationRecord
   def activated? = status == "activated"
   def cancelled? = status == "cancelled"
   def new_conversation? = destination == "new_conversation"
+  def recurring? = recur_min_minutes.present?
+
+  # The id every occurrence of a series shares: the first row's.
+  def series_key
+    series_root_id || id
+  end
+
+  def series_scope
+    Commitment.where(id: series_key).or(Commitment.where(series_root_id: series_key))
+  end
+
+  # "every 60 minutes" or "every 60–90 minutes".
+  def recurrence_phrase
+    return unless recurring?
+
+    span = recur_min_minutes == recur_max_minutes ? recur_min_minutes.to_s : "#{recur_min_minutes}–#{recur_max_minutes}"
+    "every #{span} minutes"
+  end
 
   # A person may cancel or reschedule when they own the house the
   # commitment lives in or the resident's own house.
@@ -171,15 +205,51 @@ class Commitment < ApplicationRecord
   # carries theirs, and a run not yet claimed is refused at claim
   # (claim_refusal_reason). A run already claimed cannot be recalled.
   def cancel!(by:)
-    with_lock do
-      next Result.new(status: :not_cancellable) unless cancellable?
+    with_series_lock do
+      ended = recurring? ? end_series!(by: by, reason: "cancelled") : 0
+      next Result.new(status: ended.positive? ? :series_ended : :not_cancellable) unless cancellable?
 
       in_custody = activated?
       withdraw_wake_source! if in_custody
       update!(status: "cancelled", cancelled_at: Time.current,
               wake_state: in_custody ? "withdrawn" : wake_state,
-              cancelled_by_user: by.is_a?(User) ? by : nil, cancelled_by_agent: by.is_a?(Agent) ? by : nil)
+              cancelled_by_user: by.is_a?(User) ? by : nil, cancelled_by_agent: by.is_a?(Agent) ? by : nil,
+              series_ended_reason: recurring? ? "cancelled" : series_ended_reason)
       Result.new(status: :cancelled)
+    end
+  end
+
+  # The series' scheduled occurrence other than this one, if the series is
+  # still live (at most one exists).
+  def live_successor
+    return unless recurring?
+
+    series_scope.scheduled.where.not(id: id).order(:due_at).first
+  end
+
+  # Why the series ended, read from the whole series: cancellation writes
+  # only the rows it stops.
+  def series_end_reason
+    return unless recurring?
+    return if scheduled? || live_successor
+
+    series_scope.where.not(series_ended_reason: nil).order(:id).last&.series_ended_reason || "ended"
+  end
+
+  # Cancel the series' scheduled occurrences other than this one. Returns how
+  # many. The caller holds the series lock (with_series_lock), which
+  # activation also takes before its own row, so a successor inserted by a
+  # concurrent activation is either committed before this query runs or
+  # never inserted.
+  def end_series!(by:, reason:)
+    series_scope.scheduled.where.not(id: id).order(:id).to_a.count do |other|
+      other.with_lock do
+        next false unless other.scheduled?
+
+        other.update!(status: "cancelled", cancelled_at: Time.current, series_ended_reason: reason,
+                      cancelled_by_user: by.is_a?(User) ? by : nil, cancelled_by_agent: by.is_a?(Agent) ? by : nil)
+        true
+      end
     end
   end
 
@@ -202,7 +272,7 @@ class Commitment < ApplicationRecord
   # The sweep's work for one row. Idempotent: anything but a scheduled row
   # that is due returns without effect.
   def activate!(now: Time.current)
-    with_lock do
+    with_series_lock do
       next Result.new(status: :not_scheduled) unless scheduled?
       next Result.new(status: :not_due) if due_at > now
 
@@ -211,10 +281,23 @@ class Commitment < ApplicationRecord
         next Result.new(status: :waiting, reason: reason)
       end
 
+      # One wake owed per series: while an earlier occurrence's wake is still
+      # in the house's custody (woken, held, retrying), this one posts
+      # nothing and moves a full interval on, so a resident busy in the
+      # destination never builds up a queue of held wakes.
+      if recurring? && series_scope.wake_in_custody.where.not(id: id).exists?
+        update!(due_at: now + next_interval_minutes.minutes, waiting_reason: "previous_occurrence_in_progress",
+                last_attempted_at: now)
+        next Result.new(status: :waiting, reason: "previous_occurrence_in_progress")
+      end
+
       chat = new_conversation? ? open_conversation! : source_chat
-      message = chat.messages.create!(role: "system", content: activation_text(chat, now), suppress_automatic_dispatch: true)
-      update!(status: "activated", activated_at: now, activation_chat: chat, activation_message: message,
-              waiting_reason: nil, last_attempted_at: now)
+      # Activated before the successor exists: the unique index allows one
+      # scheduled row per text, and the successor carries the same text.
+      update!(status: "activated", activated_at: now, activation_chat: chat, waiting_reason: nil, last_attempted_at: now)
+      successor = schedule_next!(now) if recurring?
+      message = chat.messages.create!(role: "system", content: activation_text(chat, now, successor), suppress_automatic_dispatch: true)
+      update!(activation_message: message)
       wake!
       Result.new(status: :activated)
     end
@@ -250,7 +333,24 @@ class Commitment < ApplicationRecord
     "Commitment due: you committed to this for #{due_local.strftime('%-d %b %Y %H:%M')} #{timezone}. " \
       "The house posted its headline (\"#{headline}\") in this conversation as message " \
       "#{activation_message&.to_param}; the full text you wrote is here, not in that message.\n\n#{quoted}\n\n" \
-      "This returns it to your attention; it is not an order. Check the current state and decide what makes sense now."
+      "This returns it to your attention; it is not an order. Check the current state and decide what makes sense now." +
+      recurrence_cue
+  end
+
+  def recurrence_cue
+    return "" unless recurring?
+
+    upcoming = live_successor
+    if upcoming
+      next_local = upcoming.due_at.in_time_zone(timezone)
+      "\n\nThis commitment recurs #{recurrence_phrase} (this is occurrence #{occurrence}). The next is commitment " \
+        "#{upcoming.to_param}, due #{next_local.strftime('%-d %b %H:%M')} #{timezone}. If what it is for is done, " \
+        "end the series: `soulshouse-commitment cancel #{upcoming.to_param}`. Otherwise do nothing and it comes back."
+    else
+      reason = series_end_reason
+      "\n\nThis commitment recurred #{recurrence_phrase} (this is occurrence #{occurrence}); the series has ended" \
+        "#{reason && reason != 'ended' ? " (#{reason.tr('_', ' ')})" : ''}, so nothing follows it."
+    end
   end
 
   def as_json(*)
@@ -286,6 +386,13 @@ class Commitment < ApplicationRecord
       cancelled_by: cancelled_by_agent&.name || cancelled_by_user&.full_name.presence,
       cancellable: cancellable?,
       reschedule_count: reschedule_count,
+      recurrence: recurring? ? { min_minutes: recur_min_minutes, max_minutes: recur_max_minutes, phrase: recurrence_phrase } : nil,
+      occurrence: occurrence,
+      series_id: recurring? ? Commitment.new(id: series_key).to_param : nil,
+      previous_commitment_id: previous_commitment&.to_param,
+      next_commitment_id: next_commitment&.to_param,
+      series_next_commitment_id: live_successor&.to_param,
+      series_ended_reason: series_end_reason,
       created_at: created_at&.iso8601
     }
   end
@@ -295,7 +402,8 @@ class Commitment < ApplicationRecord
     where = new_conversation? ? "a new conversation in #{destination_room&.name || 'Main'}" : "this conversation"
     local = due_at.in_time_zone(timezone)
     "Commitment #{to_param} scheduled for #{local.strftime('%-d %b %Y %H:%M')} #{timezone} " \
-      "(#{due_at.utc.iso8601}), in #{where}."
+      "(#{due_at.utc.iso8601}), in #{where}." +
+      (recurring? ? " It recurs #{recurrence_phrase} after each delivery until you cancel it." : "")
   end
 
   # A house line in the conversation the commitment was made in, so the
@@ -325,11 +433,66 @@ class Commitment < ApplicationRecord
   def announcement_text
     local = due_at.in_time_zone(timezone)
     text = "#{agent.name} made a commitment: #{headline} · due #{local.strftime('%a %-d %b %H:%M')} #{timezone}"
+    text += " · recurs #{recurrence_phrase}" if recurring?
     text += " · will open a new conversation in #{destination_room&.name || 'Main'}" if new_conversation?
     text
   end
 
   private
+
+  # The next occurrence of a recurring series, due a fixed or random number
+  # of minutes after this one activates. Built from this row's own (already
+  # valid) attributes and saved without re-running the create validations:
+  # if the resident has since left the source conversation or the room was
+  # archived, the successor still exists and waits with that reason, as any
+  # commitment does, rather than silently ending the series. Inside a
+  # savepoint so a failure ends the series with a reason and never undoes
+  # the activation.
+  def schedule_next!(now)
+    minutes = next_interval_minutes
+    successor = Commitment.new(
+      account: account, agent: agent, source_chat: source_chat, source_message: source_message,
+      text: text, summary: summary, destination: destination, room: room, essential: essential,
+      recur_min_minutes: recur_min_minutes, recur_max_minutes: recur_max_minutes,
+      series_root_id: series_key, previous_commitment: self, occurrence: occurrence + 1,
+      due_at: now + minutes.minutes
+    )
+    Commitment.transaction(requires_new: true) { successor.save!(validate: false) }
+    successor
+  rescue ActiveRecord::ActiveRecordError => error
+    Rails.logger.warn("[Commitment#schedule_next!] #{to_param}: #{error.class}: #{error.message}")
+    self.series_ended_reason = "next_occurrence_failed"
+    nil
+  end
+
+  def next_interval_minutes
+    recur_min_minutes == recur_max_minutes ? recur_min_minutes : rand(recur_min_minutes..recur_max_minutes)
+  end
+
+  # The series lock is the first row's lock, taken before this row's. Every
+  # recurring activation and every cancel takes it, so they serialise per
+  # series (Mira, #1176 P1). A one-shot commitment, and the first row
+  # itself, just lock their own row.
+  def with_series_lock(&block)
+    return with_lock(&block) unless recurring? && series_root_id
+
+    Commitment.transaction do
+      Commitment.lock.find_by(id: series_root_id)
+      with_lock(&block)
+    end
+  end
+
+  def recurrence_valid
+    return if recur_min_minutes.nil? && recur_max_minutes.nil?
+
+    if recur_min_minutes.nil? || recur_max_minutes.nil?
+      errors.add(:base, "A recurrence needs both a minimum and a maximum (equal for a fixed interval)")
+    elsif recur_min_minutes < RECUR_MIN_MINUTES || recur_max_minutes > RECUR_MAX_MINUTES
+      errors.add(:base, "A recurrence must be between #{RECUR_MIN_MINUTES} minutes and #{RECUR_MAX_MINUTES / 1440} days")
+    elsif recur_min_minutes > recur_max_minutes
+      errors.add(:base, "A recurrence's minimum cannot be more than its maximum")
+    end
+  end
 
   def sidebar_mark_changed?
     return false unless destination == "same_conversation" || saved_change_to_destination?
@@ -502,7 +665,7 @@ class Commitment < ApplicationRecord
 
   # One headline and one line of facts. The full text stays with the
   # resident (cue_text) and on the resident's page.
-  def activation_text(chat, now)
+  def activation_text(chat, now, successor = nil)
     due_local = due_at.in_time_zone(timezone)
     now_local = now.in_time_zone(timezone)
     when_line = "due #{due_local.strftime('%-d %b %H:%M')} #{timezone}"
@@ -523,7 +686,14 @@ class Commitment < ApplicationRecord
        end) +
         (source_message ? " (message #{source_message.to_param})" : "")
     end
-    "**Commitment due:** #{headline}\n\n#{agent.name} · #{when_line} · #{origin}"
+    recurs = if successor
+      " · recurs #{recurrence_phrase}, next #{successor.due_at.in_time_zone(timezone).strftime('%H:%M')}"
+    elsif recurring?
+      " · recurring, but the next occurrence could not be scheduled"
+    else
+      ""
+    end
+    "**Commitment due:** #{headline}\n\n#{agent.name} · #{when_line} · #{origin}#{recurs}"
   end
 
   # Wake the resident in the activation conversation, as a knock does
