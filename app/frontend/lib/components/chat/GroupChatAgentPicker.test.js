@@ -56,3 +56,18 @@ test('stays open after the first choice from an empty selection', async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
   expect(screen.getByTestId('participant-summary')).toHaveTextContent('Mira');
 });
+
+test('names selected home residents when an available guest is not auto-invited', async () => {
+  render(GroupChatAgentPicker, {
+    agents: [
+      { id: 'm', name: 'Mira', colour: 'violet', invite_to_new_conversations: true },
+      { id: 'l', name: 'Lume', colour: 'orange', invite_to_new_conversations: true },
+      { id: 'c', name: 'Chris', colour: 'stone', guest: true, invite_to_new_conversations: false },
+    ],
+    accountId: 'a',
+    selectedAgentIds: ['m', 'l'],
+  });
+  expect(screen.getByTestId('participant-summary')).toHaveTextContent('Mira and Lume');
+  await fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Chris' })).toHaveAttribute('aria-pressed', 'false');
+});

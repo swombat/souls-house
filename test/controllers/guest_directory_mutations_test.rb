@@ -46,6 +46,17 @@ class GuestDirectoryMutationsTest < ActionDispatch::IntegrationTest
     assert_not GuestMembership.exists?(membership.id)
   end
 
+  test "changing invite_to_new_conversations refreshes the receiving directory only" do
+    membership = join
+    sign_in @user
+    assert_no_broadcasts(stream(@home)) do
+      assert_equal [ { "action" => "refresh" } ], capture_broadcasts(stream(@receiving)) do
+        patch account_guest_membership_path(@receiving, membership), params: { invite_to_new_conversations: true }
+        assert_redirected_to account_agents_path(@receiving)
+      end
+    end
+  end
+
   test "home-side web withdrawal refreshes both sides" do
     membership = join
     sign_in @user

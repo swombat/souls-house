@@ -19,7 +19,9 @@ export class NewConversationDraft {
     this.content = {
       message: '',
       title: '',
-      selectedAgentIds: agents.filter((agent) => agent.paused !== true).map((agent) => agent.id),
+      selectedAgentIds: agents
+        .filter((agent) => agent.paused !== true && agent.invite_to_new_conversations !== false)
+        .map((agent) => agent.id),
       submissionId: null,
     };
     if (!this.key) return;

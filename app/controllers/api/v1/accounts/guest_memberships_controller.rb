@@ -4,8 +4,10 @@ module Api
       # Guest residents, as accounts/guest_memberships and the residents page
       # handle them on the web. Adding needs someone who belongs to both the
       # resident's home and this account (GuestMembership.candidates_for);
-      # removing needs an owner of either side (GuestMembership#removable_by?).
-      # A resident leaving by its own key is Api::V1::GuestMembershipsController.
+      # updating guest conversation defaults belongs to managers of the
+      # receiving account; removing needs an owner of either side
+      # (GuestMembership#removable_by?). A resident leaving by its own key is
+      # Api::V1::GuestMembershipsController.
       class GuestMembershipsController < BaseController
 
         include ApiAccountAdministration
@@ -32,6 +34,21 @@ module Api
           render json: { error: "That resident can't be added as a guest here" }, status: :unprocessable_entity
         end
 
+        def update
+          membership = GuestMembership.where(account: administrable_accounts).find(params[:id])
+          administer!(membership.account)
+          return render_forbidden("You don't have permission to manage this account") unless @account.manageable_by?(current_api_user)
+
+          invited = GuestMembership.boolean_param(guest_membership_source[:invite_to_new_conversations])
+          if invited.nil?
+            return render json: { error: "invite_to_new_conversations must be true or false" }, status: :unprocessable_entity
+          end
+
+          membership.update!(invite_to_new_conversations: invited)
+          audit("update_guest_resident", membership, agent_id: membership.agent_id, invite_to_new_conversations: membership.invite_to_new_conversations)
+          render json: { guest_membership: membership.as_json }
+        end
+
         # The receiving account removes its guest, or the hosting account
         # withdraws its resident. Either side is enough.
         def destroy
@@ -47,6 +64,12 @@ module Api
           membership.destroy!
           audit("remove_guest_resident", membership, agent_id: membership.agent_id, account_id: membership.account_id)
           render json: { removed: membership.as_json }
+        end
+
+        private
+
+        def guest_membership_source
+          params[:guest_membership].is_a?(ActionController::Parameters) ? params[:guest_membership] : params
         end
 
       end

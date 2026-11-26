@@ -21,6 +21,21 @@ describe('browser-local new conversation draft', () => {
   });
   afterEach(() => editors.forEach((editor) => editor.dispose()));
 
+  it('omits guests with invite_to_new_conversations false by default while keeping opted-in guests and unsent draft selections', () => {
+    const agents = [
+      { id: 'home', invite_to_new_conversations: true },
+      { id: 'quiet-guest', guest: true, invite_to_new_conversations: false },
+      { id: 'default-guest', guest: true, invite_to_new_conversations: true },
+      { id: 'paused-guest', guest: true, paused: true, invite_to_new_conversations: true },
+    ];
+    const fresh = create({ agents });
+    expect(fresh.content.selectedAgentIds).toEqual(['home', 'default-guest']);
+
+    fresh.edit({ message: 'Invite them once', selectedAgentIds: ['home', 'quiet-guest'] });
+    const restored = create({ agents });
+    expect(restored.content.selectedAgentIds).toEqual(['home', 'quiet-guest']);
+  });
+
   it('restores before writes and retains title, message and selected paused residents', () => {
     const first = create();
     expect(first.content.selectedAgentIds).toEqual(['one']);

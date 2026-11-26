@@ -24,6 +24,7 @@
   } = $props();
 
   let selected = $state('');
+  let updating = $state({});
 
   $effect(() => {
     if (selected && !candidates.some((candidate) => candidate.id === selected)) selected = '';
@@ -31,12 +32,15 @@
 
   function addGuest() {
     if (!selected || !candidates.some((candidate) => candidate.id === selected)) return;
-    router.post(
-      accountGuestMembershipsPath(accountId),
-      { agent_id: selected },
-      {
-        onSuccess: () => (selected = ''),
-      }
+    router.post(accountGuestMembershipsPath(accountId), { agent_id: selected }, { onSuccess: () => (selected = '') });
+  }
+
+  function toggleInvite(membership, inviteToNewConversations) {
+    updating = { ...updating, [membership.id]: true };
+    router.patch(
+      accountGuestMembershipPath(accountId, membership.id),
+      { invite_to_new_conversations: inviteToNewConversations },
+      { preserveScroll: true, onFinish: () => (updating = { ...updating, [membership.id]: false }) }
     );
   }
 
@@ -75,15 +79,24 @@
         <ul class="space-y-2" data-testid="guest-residents">
           {#each guests as membership (membership.id)}
             <li class="flex items-center justify-between gap-4">
-              <span class="space-y-1">
+              <div class="space-y-1">
                 <span class="block"
                   >{membership.agent.name}
                   <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
                 {@render sharedIntegrations(membership, 'this account')}
+                <label class="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    class="accent-primary"
+                    checked={Boolean(membership.invite_to_new_conversations)}
+                    disabled={Boolean(updating[membership.id])}
+                    onchange={(event) => toggleInvite(membership, event.currentTarget.checked)} />
+                  Invite to new conversations
+                </label>
                 <a
                   class="block text-xs text-muted-foreground underline underline-offset-4"
                   href={accountAgentCommitmentsPath(accountId, membership.agent.id)}>Commitments made here</a>
-              </span>
+              </div>
               {#if canEnd}
                 <Button
                   variant="outline"

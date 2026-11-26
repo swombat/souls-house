@@ -100,6 +100,32 @@ module Api
         assert_response :not_found
       end
 
+      test "receiving-account members toggle invite_to_new_conversations while home keys and invalid payloads cannot" do
+        membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+        assert_equal false, membership.invite_to_new_conversations
+
+        patch api_v1_account_guest_membership_path(membership),
+              params: { invite_to_new_conversations: true }, headers: @nexus_member_headers, as: :json
+        assert_response :success
+        assert_equal true, response.parsed_body.dig("guest_membership", "invite_to_new_conversations")
+        assert membership.reload.invite_to_new_conversations
+        assert AuditLog.exists?(action: "update_guest_resident", auditable: membership)
+
+        patch api_v1_account_guest_membership_path(membership),
+              params: { invite_to_new_conversations: false }, headers: @home_headers, as: :json
+        assert_response :not_found
+        assert membership.reload.invite_to_new_conversations
+
+        patch api_v1_account_guest_membership_path(membership),
+              params: { invite_to_new_conversations: "invalid" }, headers: @nexus_owner_headers, as: :json
+        assert_response :unprocessable_entity
+        assert membership.reload.invite_to_new_conversations
+
+        patch api_v1_account_guest_membership_path(membership),
+              params: { invite_to_new_conversations: false }, headers: @resident_headers, as: :json
+        assert_response :forbidden
+      end
+
       # Credential scope (Mira's #232 approval): a key minted for one account
       # must not reach records in another account, even one the person owns.
       test "a key for one account cannot reach records in another of the person's accounts" do

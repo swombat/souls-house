@@ -89,4 +89,40 @@ class Accounts::GuestMembershipsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes room.agents.reload, agents(:code_reviewer), "a home resident who is not a guest stays out"
   end
 
+  test "a member of the receiving account toggles whether a guest is invited to new conversations" do
+    membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+    sign_in @team_member
+
+    patch account_guest_membership_path(@nexus, membership), params: { invite_to_new_conversations: true }
+
+    assert_redirected_to account_agents_path(@nexus)
+    assert membership.reload.invite_to_new_conversations
+    assert AuditLog.exists?(action: "update_guest_resident", auditable: membership)
+
+    patch account_guest_membership_path(@nexus, membership), params: { guest_membership: { invite_to_new_conversations: false } }
+
+    assert_redirected_to account_agents_path(@nexus)
+    assert_not membership.reload.invite_to_new_conversations
+  end
+
+  test "the home account cannot change how the receiving account invites a guest to new conversations" do
+    membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+    sign_in @daniel
+
+    patch account_guest_membership_path(@home, membership), params: { invite_to_new_conversations: true }
+
+    assert_response :not_found
+    assert_not membership.reload.invite_to_new_conversations
+  end
+
+  test "rejects non-boolean invite_to_new_conversations values" do
+    membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+    sign_in @daniel
+
+    patch account_guest_membership_path(@nexus, membership), params: { invite_to_new_conversations: "sometimes" }
+
+    assert_redirected_to account_agents_path(@nexus)
+    assert_not membership.reload.invite_to_new_conversations
+  end
+
 end

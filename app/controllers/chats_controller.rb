@@ -284,13 +284,19 @@ class ChatsController < ApplicationController
   end
 
   def agents_json(agents, as: nil)
-    agents.map do |agent|
+    records = agents.to_a
+    guest_ids = records.filter_map { |agent| agent.id if agent.account_id != current_account.id }
+    guest_invites = guest_ids.any? ? current_account.guest_memberships.where(agent_id: guest_ids).pluck(:agent_id, :invite_to_new_conversations).to_h : {}
+
+    records.map do |agent|
       json = as.present? ? agent.as_json(as: as) : agent.as_json
       subscription = Agents::ProviderSubscriptionPresentation.call(agent)
       json = json.merge("provider_subscription" => subscription) if subscription
       # Which model this resident will run on here next, and what it may choose.
       json = json.merge("model_selection" => Agents::ModelSelection.for(agent, chat: @chat).as_json) if @chat&.persisted?
-      json["guest"] = agent.account_id != current_account.id
+      guest = agent.account_id != current_account.id
+      json["guest"] = guest
+      json["invite_to_new_conversations"] = guest ? guest_invites.fetch(agent.id, false) : true
       json["can_remove_from_chat"] = @chat&.persisted? &&
         @chat.agents.exists?(agent.id) && @chat.participant_removable_by?(agent, Current.user)
       json
