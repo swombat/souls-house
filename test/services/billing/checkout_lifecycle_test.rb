@@ -326,7 +326,7 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
 
   def complete_payment(session_id)
     put_paid_subscription
-    @stripe.session_states.fetch(session_id).merge!(status: "complete", subscription: "sub_checkout_lifecycle")
+    @stripe.session_states.fetch(session_id).merge!(status: "complete", payment_status: "paid", subscription: "sub_checkout_lifecycle")
   end
 
   def sync

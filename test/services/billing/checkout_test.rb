@@ -120,6 +120,59 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_empty BillingCheckoutAttempt.where(agent: @agent)
   end
 
+  test "completed with the payment still to come, then paid: the attempt holds until its subscription comes in" do
+    checkout
+    account = @agent.account
+    attempt = BillingCheckoutAttempt.unresolved.find_by!(agent: @agent)
+    @stripe.complete_checkout_session(attempt.stripe_session_id, subscription_id: "sub_slow", payment_status: "unpaid")
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert_nil attempt.reload.resolved_at, "an unpaid session may still be paid"
+    assert_not Billing::Included.available?(account)
+
+    @stripe.set_subscription_status("sub_slow", "active")
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert_nil attempt.reload.resolved_at, "paid is not ended unpaid: the sweep leaves it to BillSync"
+    Billing::BillSync.new("sub_slow", client: @stripe).call
+    assert attempt.reload.resolved_at
+    assert ResidentSubscription.live.exists?(agent: @agent)
+  end
+
+  test "completed with the payment still to come, then ended unpaid: the sweep releases it and a new Checkout replaces it" do
+    checkout
+    account = @agent.account
+    attempt = BillingCheckoutAttempt.unresolved.find_by!(agent: @agent)
+    @stripe.complete_checkout_session(attempt.stripe_session_id, subscription_id: "sub_slow", payment_status: "unpaid")
+    @stripe.set_subscription_status("sub_slow", "past_due")
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert_nil attempt.reload.resolved_at, "only incomplete_expired ends it"
+
+    @stripe.set_subscription_status("sub_slow", "incomplete_expired")
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert attempt.reload.resolved_at
+    assert Billing::Included.available?(account)
+    checkout
+    assert_equal 2, @stripe.checkout_sessions.size
+    assert BillingCheckoutAttempt.unresolved.find_by!(agent: @agent).stripe_session_id.present?
+  end
+
+  test "a new Checkout replaces one Stripe ended unpaid even when the sweep didn't see it" do
+    checkout
+    attempt = BillingCheckoutAttempt.unresolved.find_by!(agent: @agent)
+    @stripe.complete_checkout_session(attempt.stripe_session_id, subscription_id: "sub_slow", payment_status: "unpaid")
+    @stripe.set_subscription_status("sub_slow", "incomplete_expired")
+    Billing::CheckoutSession.stub(:release_expired!, nil) { checkout(tier: "work") }
+    assert attempt.reload.resolved_at, "settle! decided it"
+    assert_equal "work", BillingCheckoutAttempt.unresolved.find_by!(agent: @agent).tier
+  end
+
+  test "a new Checkout still refuses while a completed session's payment is undecided" do
+    checkout
+    attempt = BillingCheckoutAttempt.unresolved.find_by!(agent: @agent)
+    @stripe.complete_checkout_session(attempt.stripe_session_id, subscription_id: "sub_slow", payment_status: "unpaid")
+    assert_raises(Billing::AlreadySubscribed) { checkout(tier: "work") }
+    assert_nil attempt.reload.resolved_at
+  end
+
   test "same offer returns its open session rather than creating another link" do
     first = checkout
     assert_equal first, checkout
@@ -152,7 +205,7 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
   end
 
   test "a legacy paid unknown blocks instead of starting a new attempt" do
-    @stripe.session_states["cs_legacy"] = { customer: "cus_1", status: "complete", subscription: "sub_unknown",
+    @stripe.session_states["cs_legacy"] = { customer: "cus_1", status: "complete", payment_status: "paid", subscription: "sub_unknown",
       mode: "subscription", client_reference_id: @agent.id.to_s }
     assert_raises(Billing::AlreadySubscribed) { checkout }
     assert_empty @stripe.checkout_sessions

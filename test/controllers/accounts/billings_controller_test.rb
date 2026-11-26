@@ -301,7 +301,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
 
   test "a paid checkout the webhook hasn't confirmed yet blocks a new one" do
     start_checkout("conversation")
-    @stripe.session_states["cs_test_1"] = { status: "complete", subscription: "sub_pending" }
+    @stripe.session_states["cs_test_1"] = { status: "complete", payment_status: "paid", subscription: "sub_pending" }
 
     start_checkout("life")
 
@@ -313,7 +313,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
 
   test "once that paid subscription has ended, a new checkout is allowed" do
     start_checkout("conversation")
-    @stripe.session_states["cs_test_1"] = { status: "complete", subscription: "sub_old" }
+    @stripe.session_states["cs_test_1"] = { status: "complete", payment_status: "paid", subscription: "sub_old" }
     ResidentSubscription.create!(agent: @agent, account: @account, stripe_subscription_id: "sub_old",
       tier: "conversation", stripe_status: "canceled")
 
