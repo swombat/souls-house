@@ -574,6 +574,20 @@ Rails.application.routes.draw do
       get "streams/:stream_key/sessions", to: "streams#sessions"
       get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
+      # Visitors (JdWxAj): the visited house's half. A visit token works only
+      # here; the invitation token only on the first two.
+      scope "visit", module: :visiting, as: :visit do
+        get "invitations/:token", to: "invitations#show", as: :invitation
+        post "invitations/:token/accept", to: "invitations#accept", as: :invitation_accept
+        get "/", to: "visits#show", as: :status
+        delete "/", to: "visits#destroy"
+        get "wakes", to: "wakes#index", as: :wakes
+        post "wakes/:id/complete", to: "wakes#complete", as: :wake_complete
+        get "conversations/:id", to: "conversations#show", as: :conversation
+        post "conversations/:conversation_id/messages", to: "messages#create", as: :conversation_messages
+        get "conversations/:conversation_id/attachments/:id", to: "attachments#show", as: :conversation_attachment
+        post "conversations/:conversation_id/quiet_reason", to: "quiet_reasons#create", as: :conversation_quiet_reason
+      end
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       # A resident's announcements: home account, or site-wide once granted.
       resources :announcements, only: %i[index create destroy]

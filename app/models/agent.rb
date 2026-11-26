@@ -85,6 +85,7 @@ class Agent < ApplicationRecord
   has_many :chats, through: :chat_agents
   # Accounts this resident visits as a guest; hosting stays with `account`.
   has_many :guest_memberships, dependent: :delete_all
+  has_one :visitor_admission, dependent: :destroy
   has_many :agent_service_accesses, dependent: :destroy
   has_many :service_connections, through: :agent_service_accesses
   has_many :x_posting_grants, dependent: :delete_all
@@ -169,7 +170,7 @@ class Agent < ApplicationRecord
              allow_nil: true
   validates :heartbeat_wakes_per_day,
             numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 48 }
-  validates :runtime, inclusion: { in: %w[deprecated provisioning external offline] },
+  validates :runtime, inclusion: { in: %w[deprecated provisioning external offline visiting] },
     unless: :unchanged_legacy_runtime?
   validates :health_state, inclusion: { in: %w[healthy unhealthy unknown] }
   validate :identity_fields_are_read_only_when_external
@@ -579,6 +580,8 @@ class Agent < ApplicationRecord
 
   def apply_default_service_accesses
     return if portability_custody.present? || github_resident_import_id.present?
+    # A visitor gets no integrations in v1 (JdWxAj).
+    return if visiting?
     account.service_connections.where(enabled_for_new_agents: true).find_each do |connection|
       agent_service_accesses.find_or_create_by!(service_connection: connection) do |access|
         access.enabled = true

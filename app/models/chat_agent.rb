@@ -87,6 +87,11 @@ class ChatAgent < ApplicationRecord
   # check fails. Neither order can leave a seat without a membership.
   def agent_takes_part_in_account
     return unless chat && agent
+    if agent.visiting?
+      return if VisitorAdmission.current.where(account_id: chat.account_id, agent_id: agent.id).lock("FOR SHARE").exists?
+
+      return errors.add(:agent, "is not visiting this account")
+    end
     return if agent.account_id == chat.account_id
     return if GuestMembership.where(account_id: chat.account_id, agent_id: agent.id).lock("FOR SHARE").exists?
 
