@@ -3178,9 +3178,10 @@ def runtime_failure(errors, stderr):
 def classify_provider_error(response, provider):
     if response.get("status") != "error":
         return None
+    failure = response.get("runtime_failure")
+    said = failure.get("message") if isinstance(failure, dict) else None
     diagnostic = "\n".join(
-        str(response.get(key) or "")
-        for key in ("error", "stderr", "stdout")
+        [str(said or "")] + [str(response.get(key) or "") for key in ("error", "stderr", "stdout")]
     )
     if provider == "gemini":
         diagnostic = "\n".join(
@@ -3218,8 +3219,14 @@ def classify_provider_error(response, provider):
         re.IGNORECASE,
     ):
         return "subscription_limit"
+    # Claude Code's dead-sign-in line says "re-authenticate", not
+    # "authentication", and names the refresh token as "no longer valid", not
+    # "expired" ("OAuth refresh token is no longer valid; run /login to
+    # re-authenticate", eRNlOe, 26 Nov 2026). Missing it left Lume failing
+    # for hours with no reconnect notice.
     if re.search(
         r"unauthori[sz]ed|authentication|auth(?:entication)?[^a-z]+expired|token[^a-z]+expired|"
+        r"re-?authenticate|run /login\b|token is no longer valid|"
         r"missing provider credentials|provider auth missing|no (?:usable )?credentials|\b401\b",
         diagnostic,
         re.IGNORECASE,

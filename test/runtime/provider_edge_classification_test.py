@@ -47,6 +47,16 @@ class ProviderEdgeClassificationTest(unittest.TestCase):
         self.assertEqual(shim.classify_provider_edge(failed(stderr="API Error: 403 Forbidden cf-ray: 8f1a2b3c4d5e6f70-MAD")),
                          "provider_challenge")
 
+    def test_a_dead_claude_sign_in_is_auth_expired(self):
+        # eRNlOe, 26 Nov 2026: the line Claude Code prints when its refresh
+        # token dies, in the runtime failure with an empty stderr.
+        dead = ("clamp_runtime_failed: control request failed: Unable to validate model: "
+                "OAuth refresh token is no longer valid; run /login to re-authenticate")
+        failure = shim.runtime_failure(['{"type":"error","message":"%s"}' % dead], "")
+        self.assertEqual(shim.classify_provider_error(failed(runtime_failure=failure, stderr=""), "anthropic"),
+                         "auth_expired")
+        self.assertEqual(shim.classify_provider_error(failed(stderr=dead), "anthropic"), "auth_expired")
+
     def test_provider_5xx_and_overload_are_transient(self):
         for text in ("API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}",
                      "API Error: 503 Service Unavailable", "overloaded_error",
