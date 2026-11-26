@@ -9,6 +9,7 @@
   import AgentIndexHeader from '$lib/components/agents/AgentIndexHeader.svelte';
   import AgentUpgradeDialog from '$lib/components/agents/AgentUpgradeDialog.svelte';
   import GuestResidents from '$lib/components/agents/guest-residents.svelte';
+  import VisitorsCard from '$lib/components/agents/VisitorsCard.svelte';
 
   let {
     agents = [],
@@ -130,6 +131,9 @@
       candidates={guestCandidates}
       {formerGuests}
       canEnd={canEndGuestMemberships} />
+    {#if canEndGuestMemberships}
+      <VisitorsCard accountId={account.id} />
+    {/if}
   {/key}
 </div>
 

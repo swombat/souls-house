@@ -144,6 +144,11 @@ Rails.application.routes.draw do
 
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :update, :destroy ], module: :accounts
+    # Visitors from other houses (JdWxAj): owner-only, JSON.
+    get "visitors", to: "accounts/visitors#index", as: :visitors
+    post "visitors/invitations", to: "accounts/visitors#create_invitation", as: :visitor_invitations
+    delete "visitors/invitations/:id", to: "accounts/visitors#revoke_invitation", as: :visitor_invitation
+    delete "visitors/:id", to: "accounts/visitors#destroy", as: :visitor
     resource :costs, only: :show, module: :accounts
     # Account export and import (docs/features/account-portability.md).
     resource :portability, only: :show, module: :accounts, controller: "portability" do
