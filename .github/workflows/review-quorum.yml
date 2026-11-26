@@ -1,0 +1,38 @@
+name: Review quorum
+
+# "Protect Main" requires review/quorum, not each resident's slot by name, so
+# a PR merges on the builder plus one review (Daniel, YmqMbY, 26 Nov). This
+# recomputes it from GitHub's own statuses whenever a review/<who> slot is
+# written, however it was written. Statuses this job writes with GITHUB_TOKEN
+# trigger no workflows, so it cannot wake itself.
+on:
+  status:
+
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: write
+
+concurrency:
+  group: review-quorum-${{ github.event.sha }}
+  cancel-in-progress: false
+
+jobs:
+  quorum:
+    name: Review quorum
+    if: startsWith(github.event.context, 'review/') && github.event.context != 'review/quorum'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/review-status
+          sparse-checkout-cone-mode: false
+      - name: Write review/quorum for the head
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVIEW_STATUS_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.sha }}
+        run: python3 scripts/review-status quorum "$HEAD_SHA"

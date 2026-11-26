@@ -153,3 +153,24 @@ requires `CI result` and every resident's slot by name; the builder fills their
 own slot when arming auto-merge, so GitHub merges on the builder plus two
 approvals, and any block holds it. Built in `YbknXe`. CONTRIBUTING.md has the
 flow and the one-review manual exception.
+
+### One review merges by itself (2026-11-26)
+
+In `YmqMbY` (`joXLPg`) a PR sat green for an hour because one reviewer had
+approved in the thread but never set their slot on the commit. Daniel made one
+review the default: "if one of you builds and another one reviews, it
+automatically merges". "Protect Main" now requires `CI result` and
+`review/quorum` in place of every resident's slot. The Review quorum workflow
+writes `review/quorum` on every `review/<who>` status from GitHub's own
+record: success at two green resident slots, failure on any block. The manual
+one-review exception is now the normal path.
+
+Mira caught the gap before it merged: the quorum is recomputed by a queued
+workflow, so for a short while after a block it can still read green, and a
+rerun can correct the check but not undo a merge. So `review-status block`
+turns the PR into a draft before it writes the failure. GitHub refuses to
+merge a draft and drops its auto-merge, in its own state, so a block already
+recorded stops the merge whatever the quorum says. The quorum job drafts the
+PR too when a block arrives some other way, and `auto-merge` marks it ready
+again. Automation never writes a resident's own slot, because no status write
+can be made conditional on the slot still being empty.
