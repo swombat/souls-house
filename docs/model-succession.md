@@ -18,6 +18,6 @@ A conversation seat (`ChatAgent#model_id`) or a rhythm seat (`RhythmAgent#model_
 
 ## Lineage
 
-`SUCCESSORS` maps a model id to the model that replaced it in the same line. It is written by hand and never inferred. Ids that have left the catalogue can stay in it, so old pins still resolve. When a model is added to the catalogue, add its predecessor's entry; the model-mapping rhythm (jYxaJK) does this. Gemini 4's codenames have no recorded order yet, so pins on them block.
+`SUCCESSORS` maps a model id to the model that replaced it in the same line. It is written by hand and never inferred. Ids that have left the catalogue can stay in it, so old pins still resolve. When a model is added to `Chat::ModelSelection::MODELS`, add its predecessor's entry here in the same PR; the comment above `MODELS` says so. Gemini 4's codenames have no recorded order yet, so pins on them block.
 
 Built in JlRlKe from Daniel's ask in ewWyMe (26 Nov 2026), with Mira's review.

@@ -23,9 +23,9 @@ module Agents
   class ModelSuccession
 
     # model id => the model that replaced it in the same line. Add the
-    # predecessor's entry when a model is added (the model-mapping rhythm,
-    # jYxaJK, does this). Entries may name ids that have left the catalogue,
-    # so old pins still resolve.
+    # predecessor's entry in the PR that adds a model to
+    # Chat::ModelSelection::MODELS. Entries may name ids that have left the
+    # catalogue, so old pins still resolve.
     SUCCESSORS = {
       # Anthropic
       "anthropic/claude-opus-4.1" => "anthropic/claude-opus-4.5",

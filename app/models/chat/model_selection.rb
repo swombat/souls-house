@@ -10,6 +10,9 @@ module Chat::ModelSelection
   # cache rates and pricing tests (both catalogue and direct provider IDs).
   # Verify provider pricing first; never silently reuse a predecessor's rates.
   # See docs/interaction-cost-pricing.md for sources and estimate limitations.
+  # A model that succeeds another in its line also needs its predecessor's
+  # entry in Agents::ModelSuccession::SUCCESSORS, so pins on the old one move
+  # forward when it leaves a resident's list (docs/model-succession.md).
   MODELS = [
     # Top Models - Flagship from each major provider
     {
