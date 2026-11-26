@@ -4,14 +4,16 @@
 Every contributor pushes as the same GitHub user, so GitHub's own Approve is
 impossible. A review is a commit status instead: `review/<who>` on the exact
 head the reviewer read. The "Protect Main" ruleset requires `CI result` and
-one `review/<who>` per resident by name, so GitHub itself merges only when
-every slot is green: the builder's own slot plus two approvals. A block in
-any slot holds the merge, and nothing here works out a combined status that
-could flash green.
+`review/quorum`. The Review quorum workflow writes that one after every
+`review/<who>` status, from what GitHub holds for the head (Daniel, YmqMbY,
+26 Nov): green once two residents' slots are green (the builder's own slot
+plus one reviewer's), red while any slot holds a block, pending otherwise.
+So GitHub merges on the builder plus one review, and a block still holds it.
 
     scripts/review-status <pr> <sha> auto-merge "Lume: builder"
     scripts/review-status <pr> <sha> approve "Mira: read the whole diff"
     scripts/review-status <pr> <sha> block "Mira: the lock is taken too late"
+    scripts/review-status quorum <sha>     # the workflow's step; safe to rerun
 
 <sha> is the head you read (seven characters or more). The script reads the
 PR's current head and refuses if they differ, so a push nobody read can't be
@@ -31,8 +33,10 @@ REPO = os.environ.get("REVIEW_STATUS_REPO", "swombat/souls-house")
 API = "https://api.github.com"
 CONTEXT = "review"
 STATES = {"approve": "success", "block": "failure", "auto-merge": "success"}
-# Each is a required check in "Protect Main"; a new resident needs adding there too.
+# The slots that count towards review/quorum; a new resident who reviews needs adding here.
 RESIDENTS = ("lume", "mira", "reed")
+QUORUM_CONTEXT = f"{CONTEXT}/quorum"
+QUORUM = 2
 MIN_SHA = 7
 MAX_DESCRIPTION = 140
 
@@ -114,6 +118,40 @@ def enable_auto_merge(pull, auth):
         raise Refused(f"auto-merge not enabled on #{pull['number']}: {result['errors'][0].get('message')}")
 
 
+def quorum(statuses):
+    """The combined review verdict for one head, from its latest statuses.
+
+    Only resident slots count, so neither review/quorum itself nor a stray
+    context can satisfy it. A block anywhere wins over any number of approvals.
+    """
+    slots = {}
+    for status in statuses:
+        context = status.get("context", "")
+        who = context.split("/", 1)[1] if context.startswith(f"{CONTEXT}/") else ""
+        if who in RESIDENTS and who not in slots:
+            # The combined-status API lists each context once, newest first.
+            slots[who] = status.get("state")
+    blocked = sorted(who for who, state in slots.items() if state in ("failure", "error"))
+    if blocked:
+        return "failure", clip(f"held by a block from {', '.join(blocked)}")
+    green = sorted(who for who, state in slots.items() if state == "success")
+    if len(green) >= QUORUM:
+        return "success", clip(f"{' + '.join(green)}: {len(green)} of {QUORUM} needed")
+    have = f" ({green[0]} so far)" if green else ""
+    return "pending", clip(f"{len(green)} of {QUORUM} review slots green{have}: waiting for a reviewer")
+
+
+def write_quorum(sha, auth):
+    if len(sha) < MIN_SHA:
+        raise Refused(f"give at least {MIN_SHA} characters of the head")
+    combined = request("GET", f"{API}/repos/{REPO}/commits/{sha}/status?per_page=100", auth)
+    state, description = quorum(combined.get("statuses") or [])
+    head = combined.get("sha") or sha
+    body = {"state": state, "context": QUORUM_CONTEXT, "description": description}
+    request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, body)
+    print(f"{head[:12]}: {QUORUM_CONTEXT} {state} ({description})")
+
+
 def review(number, reviewed_sha, verdict, note, auth):
     body = status_body(verdict, note)
     pull = request("GET", f"{API}/repos/{REPO}/pulls/{number}", auth)
@@ -122,12 +160,14 @@ def review(number, reviewed_sha, verdict, note, auth):
     print(f"#{number} {head[:12]}: {body['context']} {body['state']} ({body['description']})")
     if verdict == "auto-merge":
         enable_auto_merge(pull, auth)
-        print(f"#{number}: auto-merge (squash) on; GitHub merges when CI result and every review/<who> are green")
+        print(f"#{number}: auto-merge (squash) on; GitHub merges when CI result and {QUORUM_CONTEXT} are green")
 
 
 def main(argv):
     try:
-        if len(argv) == 4:
+        if len(argv) == 2 and argv[0] == "quorum":
+            write_quorum(argv[1], token())
+        elif len(argv) == 4:
             review(int(argv[0]), argv[1], argv[2], argv[3], token())
         else:
             print(__doc__.strip(), file=sys.stderr)

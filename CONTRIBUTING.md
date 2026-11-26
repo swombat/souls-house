@@ -24,14 +24,14 @@ Follow [docs/adding-an-integration.md](docs/adding-an-integration.md): the catal
 
 ## Review and merge
 
-Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. A review is a commit status `review/<who>` on the head the reviewer read. The "Protect Main" ruleset requires `CI result` and one slot per resident by name (`review/lume`, `review/mira`, `review/reed`), so GitHub merges only when every slot is green and any block holds it.
+Everyone pushes as the same GitHub user, so GitHub's Approve button can't be used. A review is a commit status `review/<who>` on the head the reviewer read. The "Protect Main" ruleset requires `CI result` and `review/quorum`. The Review quorum workflow rewrites `review/quorum` after every `review/<who>` status. It goes green when two residents' slots are green on the head (the builder's plus one reviewer's) and red while anyone's slot holds a block. So one build plus one review merges by itself (Daniel, `YmqMbY`), and a block still holds it.
 
 - The builder opens the PR and runs `scripts/review-status <pr> <sha> auto-merge "<who>: builder"`. That fills their own slot and turns on squash auto-merge. A new push starts with every slot empty, so the builder runs it again after each push.
 - Each reviewer reads the head and runs `scripts/review-status <pr> <sha> approve "<who>: <why>"`, or `block` with the reason. The script refuses if the head has moved past `<sha>`. A block holds until a new head is pushed or the same reviewer approves.
-- With the builder's slot and two approvals green, GitHub merges and Rails deploys as before.
-- Manual merge on one review (Daniel, `JVwQWY`): when the other reviewer is still away, the builder may merge by hand (admin bypass) only with green `CI result` on the current head, one approval of that head, and no block from anyone.
+- With the builder's slot and one approval green, GitHub merges and Rails deploys as before. A second reviewer who wants a look first should say so in the thread before the first approval lands, or block.
 - The token is shared, so nothing technical stops a builder filling someone else's slot. The rule is: don't.
-- A new resident who reviews needs their slot added to the ruleset and to `RESIDENTS` in the script.
+- A new resident who reviews needs adding to `RESIDENTS` in the script; the ruleset no longer names residents.
+- If `review/quorum` looks stale, `scripts/review-status quorum <sha>` recomputes it by hand.
 - The admin bypass otherwise stays for emergencies and the small direct pushes in ADR 0002. Say in the thread when you use it.
 
 ## Everything else

@@ -60,6 +60,55 @@ class ReviewStatusTest(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertRegex(workflow, re.compile(r"^\s+name: CI result$", re.M))
 
+    def test_builder_plus_one_review_is_a_quorum(self):
+        state, description = review_status.quorum([
+            {"context": "review/reed", "state": "success"},
+            {"context": "review/mira", "state": "success"},
+        ])
+        self.assertEqual(state, "success")
+        self.assertIn("mira + reed", description)
+
+    def test_one_slot_alone_waits(self):
+        self.assertEqual(review_status.quorum([{"context": "review/lume", "state": "success"}])[0], "pending")
+        self.assertEqual(review_status.quorum([])[0], "pending")
+
+    def test_a_block_holds_against_any_number_of_approvals(self):
+        state, description = review_status.quorum([
+            {"context": "review/lume", "state": "success"},
+            {"context": "review/mira", "state": "success"},
+            {"context": "review/reed", "state": "failure"},
+        ])
+        self.assertEqual(state, "failure")
+        self.assertIn("reed", description)
+
+    def test_only_resident_slots_count(self):
+        # The quorum's own earlier verdict, CI, or an unknown name must not
+        # stand in for a second resident.
+        state, _ = review_status.quorum([
+            {"context": "review/lume", "state": "success"},
+            {"context": "review/quorum", "state": "success"},
+            {"context": "review/daniel", "state": "success"},
+            {"context": "CI result", "state": "success"},
+        ])
+        self.assertEqual(state, "pending")
+
+    def test_the_newest_status_for_a_slot_wins(self):
+        # The combined-status API lists newest first; an approval after a
+        # block by the same reviewer lifts it.
+        state, _ = review_status.quorum([
+            {"context": "review/mira", "state": "success"},
+            {"context": "review/mira", "state": "failure"},
+            {"context": "review/lume", "state": "success"},
+        ])
+        self.assertEqual(state, "success")
+
+    def test_the_quorum_workflow_runs_on_review_statuses_only(self):
+        workflow = (ROOT / ".github" / "workflows" / "review-quorum.yml").read_text()
+        self.assertRegex(workflow, re.compile(r"^on:\n  status:", re.M))
+        self.assertIn("github.event.context != 'review/quorum'", workflow)
+        self.assertIn("scripts/review-status quorum", workflow)
+        self.assertEqual(review_status.QUORUM_CONTEXT, "review/quorum")
+
 
 if __name__ == "__main__":
     unittest.main()
