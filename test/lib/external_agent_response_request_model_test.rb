@@ -202,7 +202,26 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     refute_match(/subscription/, line.content)
   end
 
-  test "a rhythm-woken run on a seat pinned off the list carries the list kind, not unknown" do
+  # JlRlKe: a pin that left the list runs on its successor when the list
+  # carries one, and the room is told before the turn's model is resolved.
+  test "a pin off the list runs on its successor, which the dispatch, the run and the room all name" do
+    @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
+    @agent.update!(switchable_model_ids: [ "anthropic/claude-fable-5.2" ])
+    successor = Agents::Sandbox.chaos_selection_for(@agent, model_id: "anthropic/claude-fable-5.2").fetch(:model)
+    sent = nil
+    stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| sent = JSON.parse(request.body) }
+      .to_return(status: 200, body: ok_body(successor))
+
+    ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
+
+    assert_equal successor, sent["model"]
+    assert_equal "anthropic/claude-fable-5.2", @seat.reload.model_id
+    assert_equal successor, AgentRuntimeInteraction.last.model
+    assert_match(/moved from Claude Fable 5\.1 to Claude Fable 5\.2/, @chat.messages.where(role: "system").last.content)
+  end
+
+  test "a rhythm-woken run on a seat pinned off the list with no successor carries the list kind, not unknown" do
     @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
     @agent.update!(switchable_model_ids: [])
     stub = stub_request(:post, "https://agent.example.com/trigger")
