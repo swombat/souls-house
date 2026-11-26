@@ -29,10 +29,15 @@ class VisitorWake < ApplicationRecord
   def self.claim_for!(admission, limit: 10)
     sweep!(admission)
     now = Time.current
-    ids = admission.visitor_wakes
-      .where(state: "pending").or(admission.visitor_wakes.where(state: "claimed").where("lease_expires_at < ?", now))
-      .order(:id).limit(limit).lock("FOR UPDATE SKIP LOCKED").pluck(:id)
-    where(id: ids).update_all([ "state = 'claimed', lease_expires_at = ?, claim_count = claim_count + 1, updated_at = ?", now + LEASE, now ])
+    # Select and lease in one transaction, so the row locks hold until the
+    # lease is written and a concurrent poll skips these rows.
+    ids = transaction do
+      locked = admission.visitor_wakes
+        .where(state: "pending").or(admission.visitor_wakes.where(state: "claimed").where("lease_expires_at < ?", now))
+        .order(:id).limit(limit).lock("FOR UPDATE SKIP LOCKED").pluck(:id)
+      where(id: locked).update_all([ "state = 'claimed', lease_expires_at = ?, claim_count = claim_count + 1, updated_at = ?", now + LEASE, now ])
+      locked
+    end
     where(id: ids).order(:id).includes(:chat, :message).to_a
   end
 

@@ -63,7 +63,26 @@ module Visits
       else
         []
       end
-      list.select { |entry| entry.is_a?(Hash) && entry["id"].present? && entry["conversation_id"].present? }
+      list.select { |entry| entry.is_a?(Hash) && valid_wake?(entry) }
+    end
+
+    # Everything in a wake came from another house. IDs must match the wire
+    # format before anything is stored or dispatched (they reach the
+    # resident's prompt and URLs); a reason is kept only if it is a plain
+    # word. Anything else is dropped, not repaired.
+    REMOTE_ID = /\A[A-Za-z0-9_-]{1,64}\z/
+    REMOTE_REASON = /\A[a-z_]{1,32}\z/
+
+    def valid_wake?(entry)
+      ids = [ entry["id"], entry["conversation_id"] ]
+      ids << entry["message_id"] unless entry["message_id"].nil?
+      valid = ids.all? { |value| value.is_a?(String) && value.match?(REMOTE_ID) }
+      Rails.logger.warn("[Visits::Poller] visit #{visit.id}: dropped a wake with malformed ids") unless valid
+      valid
+    end
+
+    def remote_reason(value)
+      value.is_a?(String) && value.match?(REMOTE_REASON) ? value : nil
     end
 
     def process_wake(raw_wake)
@@ -79,7 +98,7 @@ module Visits
         remote_wake_id: remote_wake_id,
         remote_conversation_id: raw_wake["conversation_id"].to_s,
         remote_message_id: raw_wake["message_id"]&.to_s,
-        reason: raw_wake["reason"]&.to_s
+        reason: remote_reason(raw_wake["reason"])
       )
       visit.update!(last_wake_at: Time.current)
       Visits::TriggerWakeJob.perform_later(wake.id)

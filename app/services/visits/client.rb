@@ -33,7 +33,7 @@ module Visits
     OPEN_TIMEOUT = 5
     READ_TIMEOUT = 15
     NON_PUBLIC_RANGES = Services::GhostAdapter::NON_PUBLIC_RANGES
-    SAFE_SEGMENT = /\A[A-Za-z0-9._-]{1,256}\z/
+    SAFE_SEGMENT = /\A[A-Za-z0-9_-]{1,256}\z/
 
     def self.allow_private_origins?
       ENV["SOULSHOUSE_ALLOW_PRIVATE_VISIT_ORIGINS"] == "1" || Rails.env.development?

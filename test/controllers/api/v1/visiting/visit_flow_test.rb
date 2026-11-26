@@ -249,4 +249,19 @@ class Api::V1::Visiting::VisitFlowTest < ActionDispatch::IntegrationTest
     assert handoff.reload.delivered?
   end
 
+  test "attachments: a message's files are served directly, generated voice audio is not" do
+    token, = admitted!
+    message = @chat.messages.create!(role: "user", user: @owner, content: "see file")
+    message.attachments.attach(io: StringIO.new("hello"), filename: "note.txt", content_type: "text/plain")
+    message.voice_audio.attach(io: StringIO.new("RIFF"), filename: "voice.mp3", content_type: "audio/mpeg")
+    file = message.attachments_attachments.first
+    voice = message.voice_audio_attachment
+
+    get "/api/v1/visit/conversations/#{@chat.to_param}/attachments/#{file.id}", headers: visit_headers(token)
+    assert_response :success
+    assert_equal "hello", response.body
+    get "/api/v1/visit/conversations/#{@chat.to_param}/attachments/#{voice.id}", headers: visit_headers(token)
+    assert_response :not_found
+  end
+
 end
