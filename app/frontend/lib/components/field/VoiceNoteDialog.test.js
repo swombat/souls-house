@@ -198,10 +198,39 @@ test('a save that is never answered can be retried safely, re-sending the same u
   expect(upload).toHaveBeenCalledOnce();
   expect(post.mock.calls.map((call) => call[1].field_recording.upload_id)).toEqual(['once', 'once']);
 
-  // The first had gone through: the server refuses the same blob twice.
+  // Refused: the first may have landed, or the upload may have expired. Say
+  // the real reason and keep the uncertainty for the next attempt too.
   postFinishedWith('error', { audio: "That upload can't be used." });
   await settle();
-  expect(screen.getByRole('alert')).toHaveTextContent('first save went through');
+  expect(screen.getByRole('alert')).toHaveTextContent("still can't confirm the first save");
+  expect(screen.getByRole('alert')).toHaveTextContent("That upload can't be used.");
+  expect(screen.getByRole('alert')).toHaveTextContent('Check Recordings');
+
+  await fireEvent.click(screen.getByTestId('voice-note-save'));
+  await settle();
+  postFinishedWith('neither');
+  await settle();
+  expect(screen.getByRole('alert')).toHaveTextContent("still can't confirm the first save");
+  expect(screen.getByRole('alert')).not.toHaveTextContent('Trying again is safe');
+});
+
+test('an answer to a save that arrives after the dialog has gone holds nothing', async () => {
+  const component = render(VoiceNoteDialog, { open: true, accountId: 'acc' });
+  await settle();
+  recorders.at(-1).say('idea');
+  await fireEvent.click(screen.getByTestId('voice-note-stop'));
+  await settle();
+  upload.mockResolvedValue({ signed_id: 'late' });
+  await fireEvent.click(screen.getByTestId('voice-note-save'));
+  await settle();
+  const options = post.mock.calls.at(-1)[2];
+  component.unmount();
+  expect(hold.held).toHaveLength(0);
+
+  options.onError({ audio: 'late' });
+  options.onFinish();
+  options.onSuccess();
+  expect(hold.held).toHaveLength(0);
 });
 
 test('leaving the page mid-take lets go of the microphone and the page hold', async () => {

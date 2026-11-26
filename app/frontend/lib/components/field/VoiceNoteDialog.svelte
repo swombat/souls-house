@@ -37,6 +37,10 @@
   let ticker = null;
   let attempt = null;
   let releaseHold = null;
+  // The POST in flight. Its callbacks act only while it is still this one:
+  // unmount or a cleared dialog drops it, so a late answer can't hold the page
+  // for a dialog that has gone.
+  let posting = null;
   const CANCELLED = Symbol('cancelled');
 
   const holding = $derived(phase !== 'idle' && phase !== 'failed');
@@ -140,6 +144,8 @@
   function post(name) {
     const retrying = unconfirmed;
     let answered = false;
+    const mine = Symbol('post');
+    posting = mine;
     progress = 1;
     // Our own save is not leaving the page: trade the hold that asks
     // "discard the recording?" for a quiet one until the save is answered.
@@ -158,30 +164,41 @@
       {
         preserveState: true,
         onSuccess: () => {
+          if (posting !== mine) return;
           answered = true;
           clear();
           open = false;
         },
         onError: (errors) => {
+          if (posting !== mine) return;
           answered = true;
+          posting = null;
           hold();
           phase = 'review';
           progress = null;
-          unconfirmed = false;
-          error =
-            retrying && errors.audio
-              ? 'It looks like the first save went through. Check Recordings in the Field before saving again.'
-              : errors.recorded_at || errors.audio || 'The voice note could not be saved. It is still here; try again.';
+          const reason = errors.recorded_at || errors.audio;
+          // A refusal after an unconfirmed save doesn't tell us whether the
+          // first one landed (an expired upload is refused the same way), so
+          // the uncertainty stays until something succeeds.
+          if (retrying) {
+            error = `We still can't confirm the first save${reason ? ` (${reason})` : ''}. Check Recordings in the Field before starting another upload.`;
+          } else {
+            unconfirmed = false;
+            error = reason || 'The voice note could not be saved. It is still here; try again.';
+          }
         },
         // Cancelled, a network failure, or a response Inertia can't read:
         // neither callback ran, and the recording may or may not exist.
         onFinish: () => {
-          if (answered) return;
+          if (answered || posting !== mine) return;
+          posting = null;
           hold();
           phase = 'review';
           progress = null;
           unconfirmed = true;
-          error = "We couldn't confirm the save. Trying again is safe: it can't make a second copy.";
+          error = retrying
+            ? "We still can't confirm the first save. Check Recordings in the Field before starting another upload."
+            : "We couldn't confirm the save. Trying again is safe: it can't make a second copy.";
         },
       }
     );
@@ -205,6 +222,7 @@
   }
 
   function clear() {
+    posting = null;
     letGo();
     if (take?.url) URL.revokeObjectURL(take.url);
     take = null;
