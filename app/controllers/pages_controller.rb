@@ -27,18 +27,14 @@ class PagesController < ApplicationController
       end
 
       format.atom do
-        entries = Changelog.latest(Changelog::FEED_LIMIT)
-        site_name = Setting.instance.site_name
-        last_modified = entries.first && Time.iso8601(entries.first[:published_at])
-        etag = [ request.base_url, site_name, entries.first&.dig(:slug), entries.first&.dig(:published_at), entries.size ]
+        xml = Changelog::AtomFeed.render(
+          entries: Changelog.latest(Changelog::FEED_LIMIT),
+          base_url: request.base_url,
+          site_name: Setting.instance.site_name,
+          subtitle: LinkPreview.for(:changelog).description
+        )
 
-        if stale?(etag:, last_modified:, public: true)
-          xml = Changelog::AtomFeed.render(
-            entries:,
-            base_url: request.base_url,
-            site_name:,
-            subtitle: LinkPreview.for(:changelog).description
-          )
+        if stale?(etag: xml, public: true)
           render body: xml, content_type: "application/atom+xml; charset=utf-8"
         end
       end

@@ -31,14 +31,32 @@ class ChangelogAtomFeedTest < ActionDispatch::IntegrationTest
     assert_equal expected.first[:published_at], first.at_xpath("atom:updated", NS).text
   end
 
-  test "changelog.atom supports conditional GET with ETag" do
-    get changelog_path(format: :atom)
-    assert_response :success
-    etag = response.headers["ETag"]
-    assert_predicate etag, :present?
+  test "changelog.atom supports conditional GET with ETag and invalidates when an entry is corrected" do
+    original_entries = Changelog.latest(Changelog::FEED_LIMIT)
+    etag = nil
 
-    get changelog_path(format: :atom), headers: { "If-None-Match" => etag }
-    assert_response :not_modified
+    Changelog.stub(:latest, ->(_limit) { original_entries }) do
+      get changelog_path(format: :atom)
+      assert_response :success
+      assert_nil response.headers["Last-Modified"]
+      etag = response.headers["ETag"]
+      assert_predicate etag, :present?
+
+      get changelog_path(format: :atom), headers: { "If-None-Match" => etag }
+      assert_response :not_modified
+    end
+
+    # Correcting an entry's body without changing the top slug, published_at, or entry count
+    # must invalidate the ETag and return 200 with the corrected XML.
+    corrected_entries = original_entries.map(&:dup)
+    corrected_entries[0][:body] = "#{corrected_entries[0][:body]} (corrected)"
+
+    Changelog.stub(:latest, ->(_limit) { corrected_entries }) do
+      get changelog_path(format: :atom), headers: { "If-None-Match" => etag }
+      assert_response :success
+      refute_equal etag, response.headers["ETag"]
+      assert_includes response.body, "(corrected)"
+    end
   end
 
   test "public pages advertise the Atom feed for autodiscovery" do
