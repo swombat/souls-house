@@ -25,8 +25,9 @@
   <p>
     {#if interval_minutes > 0}
       Rooms quiet for {interval_minutes} minutes are judged once per state.
-      {#if waking}Waking is on: a resident judged to have a step is woken once per stretch between a person's messages.{:else}Shadow
-        mode: nothing is posted and nobody is woken; these rows are what the sweeper would have done.{/if}
+      {#if waking}Waking is on: a resident judged to have a step is woken up to the account's stalled-thread wake cap
+        (default 3) per stretch between a person's messages.{:else}Shadow mode: nothing is posted and nobody is woken;
+        these rows are what the sweeper would have done.{/if}
     {:else}
       The sweeper is off (Site Settings). Earlier verdicts stay listed.
     {/if}

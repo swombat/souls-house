@@ -21,10 +21,12 @@
     <CardTitle>Stalled threads</CardTitle>
     <CardDescription>
       Every five minutes, judges rooms that went quiet for the chosen time (and not more than 15 minutes longer): whose
-      move is it, and is it a resident's? Shadow mode only records the verdict
-      (<a class="underline" href="/admin/stalled_sweeps">see the log</a>). With waking off it only records; on, a resident
-      it judges has a step to take is woken once, with a notice in the room, and not again there until a person posts.
-      Only rooms in the accounts chosen below are read.
+      move is it, and is it a resident's? Shadow mode only records the verdict (<a
+        class="underline"
+        href="/admin/stalled_sweeps">see the log</a
+      >). With waking off it only records; on, a resident it judges has a step to take is woken with a notice in the
+      room, up to the account's stalled-thread wake cap (default 3) until a person posts. Only rooms in the accounts
+      chosen below are read.
     </CardDescription>
   </CardHeader>
   <CardContent class="space-y-4">
@@ -34,7 +36,8 @@
           type="button"
           role="radio"
           aria-checked={Number(form.stalled_sweep_minutes ?? 0) === interval.value}
-          class="rounded px-3 py-1.5 text-sm transition-colors {Number(form.stalled_sweep_minutes ?? 0) === interval.value
+          class="rounded px-3 py-1.5 text-sm transition-colors {Number(form.stalled_sweep_minutes ?? 0) ===
+          interval.value
             ? 'bg-primary text-primary-foreground'
             : 'text-muted-foreground hover:bg-muted'}"
           onclick={() => (form.stalled_sweep_minutes = interval.value)}>

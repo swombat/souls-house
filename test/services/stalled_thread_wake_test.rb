@@ -122,6 +122,27 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
     assert_equal "cancelled", run.reload.execution_state
   end
 
+  test "lowering the wake cap to zero mid-call never stops the chain or posts a stop notice" do
+    StalledThreadSweeper.new(now: 1.hour.from_now, interval: 10.minutes, window: 1.day, wake: false, decide: answers(lume: 0.9)).call
+    pending_sweep = StalledThreadSweep.sole
+    wake = StalledThreadWake.new(pending_sweep)
+
+    original = StalledThreadWake.method(:room_refusal_reason)
+    calls = 0
+    StalledThreadWake.stub(:room_refusal_reason, lambda { |chat, **kwargs|
+      calls += 1
+      result = original.call(chat, **kwargs)
+      @lume.account.update!(stalled_thread_wake_cap: 0) if calls == 1
+      result
+    }) do
+      assert_no_difference(-> { AgentRuntimeInteraction.count }) { wake.call }
+    end
+
+    assert_equal 0, stop_notices
+    assert_not pending_sweep.reload.stopped
+    assert_equal [ "wake_cap_zero" ], pending_sweep.held.pluck("reason")
+  end
+
   test "two already-woken residents produce one stop notice" do
     @lume.account.update!(stalled_thread_wake_cap: 1)
     sweep(lume: 0.9, mira: 0.85)
