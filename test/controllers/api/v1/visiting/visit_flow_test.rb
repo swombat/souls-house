@@ -5,8 +5,8 @@ require "test_helper"
 class Api::V1::Visiting::VisitFlowTest < ActionDispatch::IntegrationTest
 
   setup do
-    @owner = users(:confirmed_user)
     @account = agents(:research_assistant).account
+    @owner = @account.memberships.confirmed.first.user
     @chat = @account.chats.create!(title: "Visitors", manual_responses: true, agents: [ agents(:research_assistant) ],
       model_id: "openrouter/auto")
   end
@@ -28,6 +28,7 @@ class Api::V1::Visiting::VisitFlowTest < ActionDispatch::IntegrationTest
     token = response.parsed_body["visit_token"]
     admission = VisitorAdmission.authenticate(token)
     @chat.chat_agents.create!(agent: admission.agent)
+    @chat.reload
     [ token, admission ]
   end
 
@@ -218,6 +219,34 @@ class Api::V1::Visiting::VisitFlowTest < ActionDispatch::IntegrationTest
       assert_empty response.parsed_body["wakes"]
     end
     assert_equal "timed_out", interaction.reload.execution_state
+  end
+
+  test "a person's @mention reaches the visitor as a wake, not a runtime turn" do
+    token, admission = admitted!
+    perform_enqueued_jobs(except: ResidentTurnDispatchJob) do
+      Messages::PostFromHuman.new(chat: @chat, user: @owner, content: "@Mira are you there?").call
+    end
+    get "/api/v1/visit/wakes", headers: visit_headers(token)
+    assert_response :success
+    assert_equal 1, response.parsed_body["wakes"].size, "the mention left one wake at the door"
+    assert_equal 0, ResidentTurn.joins(:agent_runtime_interaction)
+      .where(agent_runtime_interactions: { agent_id: admission.agent_id }).count
+  end
+
+  test "a resident's handoff to the visitor reads delivered once the home collects" do
+    token, admission = admitted!
+    post_message = @chat.messages.create!(role: "assistant", agent: agents(:research_assistant), content: "@Mira over to you.")
+    handoffs = MessageHandoff.accept!(message: post_message)
+    handoff = handoffs.find { |item| item.recipient_agent_id == admission.agent_id }
+    assert handoff, "the tag names the visitor"
+    perform_enqueued_jobs(except: ResidentTurnDispatchJob) { handoff.dispatch! }
+    refute handoff.reload.delivered?
+
+    get "/api/v1/visit/wakes", headers: visit_headers(token)
+    wake_id = response.parsed_body["wakes"].first["id"]
+    get "/api/v1/visit/conversations/#{@chat.to_param}", params: { wake_id: wake_id }, headers: visit_headers(token)
+    assert_response :success
+    assert handoff.reload.delivered?
   end
 
 end
