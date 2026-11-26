@@ -4,10 +4,9 @@
 
   // One changelog entry on its own page, so a post about one change can link to it.
   // The description is the server's, the same words its link preview gives crawlers.
+  // The clip shows its poster with controls and waits to be played: the visitor came
+  // to read this one change, and a loop beside the text they couldn't pause would fight it.
   let { entry, description } = $props();
-
-  const reduceMotion =
-    typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 
   function formatDate(iso) {
     return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', {
@@ -46,11 +45,9 @@
           src={entry.clip.src}
           poster={entry.clip.poster}
           aria-label={`Clip: ${entry.title}`}
-          autoplay={!reduceMotion}
-          controls={reduceMotion}
+          controls
           preload="metadata"
           muted
-          loop
           playsinline
           data-testid="changelog-clip"></video>
         <a

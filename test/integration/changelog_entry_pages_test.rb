@@ -59,6 +59,15 @@ class ChangelogEntryPagesTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  # The visitor came to read one change; a loop beside the text they can't pause fights that.
+  test "the entry page's clip waits to be played, with controls" do
+    source = Rails.root.join("app/frontend/pages/changelog-entry.svelte").read
+
+    assert_match(/<video[^>]*\bcontrols\b/m, source)
+    refute_match(/\bautoplay\b/, source)
+    refute_match(/^\s*loop$/, source)
+  end
+
   test "the list and the home carousel link each entry to its page" do
     %w[app/frontend/lib/components/features/ChangelogList.svelte app/frontend/lib/components/home/ChangelogCarousel.svelte].each do |file|
       assert_includes Rails.root.join(file).read, "href={`/changelog/${entry.slug}`}", "#{file} should link each entry to its own page"
