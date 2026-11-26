@@ -50,7 +50,10 @@ class Visits::PollerTest < ActiveSupport::TestCase
       assert_equal 1, result[:enqueued]
     end
 
-    # Redelivery of wake_1 must NOT enqueue a second TriggerWakeJob.
+    # Simulate the first turn having been dispatched, then redeliver wake_1:
+    # must NOT enqueue a second TriggerWakeJob.
+    @visit.visit_wakes.find_by!(remote_wake_id: "wake_1").update!(dispatched_at: Time.current)
+
     assert_no_enqueued_jobs(only: Visits::TriggerWakeJob) do
       result = Visits::Poller.new(@visit, client: client).call
       assert_equal :ok, result[:status]
@@ -58,6 +61,20 @@ class Visits::PollerTest < ActiveSupport::TestCase
       assert_equal 1, result[:deduplicated]
     end
     assert_equal 1, @visit.visit_wakes.count
+  end
+
+  test "re-enqueues an existing wake that failed before dispatch" do
+    wakes_payload = [ { "id" => "wake_retry", "conversation_id" => "conv_1", "message_id" => "msg_1", "reason" => "mention" } ]
+    ok = Visits::Client::Response.new(status: 200, body: wakes_payload.to_json, json: wakes_payload, content_type: "application/json", content_disposition: nil)
+    client = FakeClient.new([ ok ])
+    wake = @visit.visit_wakes.create!(remote_wake_id: "wake_retry", remote_conversation_id: "conv_1")
+
+    assert_enqueued_with(job: Visits::TriggerWakeJob, args: [ wake.id ]) do
+      result = Visits::Poller.new(@visit, client: client).call
+      assert_equal :ok, result[:status]
+      assert_equal 1, result[:enqueued]
+      assert_equal 0, result[:deduplicated]
+    end
   end
 
   test "marks visit revoked on 401 from visited house" do

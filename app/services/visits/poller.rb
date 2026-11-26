@@ -70,8 +70,7 @@ module Visits
       remote_wake_id = raw_wake["id"].to_s
       existing = visit.visit_wakes.find_by(remote_wake_id: remote_wake_id)
       if existing
-        recomplete_if_finished!(existing)
-        return :deduplicated
+        return handle_existing_wake(existing)
       end
 
       return :capped if visit.wake_cap_reached?
@@ -87,7 +86,16 @@ module Visits
       :enqueued
     rescue ActiveRecord::RecordNotUnique
       existing = visit.visit_wakes.find_by(remote_wake_id: remote_wake_id)
-      recomplete_if_finished!(existing) if existing
+      existing ? handle_existing_wake(existing) : :deduplicated
+    end
+
+    def handle_existing_wake(wake)
+      if !wake.dispatched? && !wake.completed?
+        Visits::TriggerWakeJob.perform_later(wake.id)
+        return :enqueued
+      end
+
+      recomplete_if_finished!(wake)
       :deduplicated
     end
 
