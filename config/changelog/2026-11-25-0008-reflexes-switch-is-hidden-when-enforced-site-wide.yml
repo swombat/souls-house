@@ -1,3 +1,3 @@
 date: 2026-11-25
 title: Reflexes switch is hidden when enforced site-wide
-body: When site settings enforce reflexes for every account, Account Settings no longer shows the per-account Reflexes switch and instead notes that reflexes are on for every account.
+body: When site settings turn reflexes on or off for every account, Account Settings no longer shows the per-account Reflexes switch at all.

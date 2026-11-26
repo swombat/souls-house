@@ -4,3 +4,4 @@ body: >-
   Account Settings → Rooms now brings each active room, its "Default for residents" mark, and each resident's
   starting model for that room together into a single list, with "Add room" as its footer row. Archived rooms stay in
   their own list underneath.
+clip: rooms-one-list

@@ -1,3 +1,4 @@
 date: 2026-11-25
 title: A commit that isn't merged yet no longer looks like a failure
 body: Commit badges in chat used a red cross for any commit not yet on master (or, for a connected repository, not yet on its default branch), so a pull request head with passing checks looked broken. That badge now shows a grey branch mark with the label "Not merged yet". It says where the commit is, not whether its checks passed, which it never knew.
+clip: commit-not-merged

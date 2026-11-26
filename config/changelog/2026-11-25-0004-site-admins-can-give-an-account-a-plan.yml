@@ -1,3 +1,4 @@
 date: 2026-11-25
 title: Site admins can give an account a plan
 body: 'An account''s page in Site Admin has an Account plan card: the plan in force, where it comes from (given by the house, a plan code, or paid on its bill), and a choice of None, Companions, Partners or Colleagues to give it with nothing to pay. Everything the plan decides follows at once. A plan line the account already pays for stays on its bill, and lowering or removing what the house gives removes nobody from the account, only the features the plan brought. Every change is in the audit log. Takes effect after Rails deployment.'
+clip: admin-account-plan

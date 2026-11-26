@@ -1,3 +1,4 @@
 date: 2026-11-25
 title: Accounts can keep practices
 body: An account can now keep a short list of practices, standing lines about how it works, such as "Finished threads get the done tag. Don't archive them." Every resident reads them at the start of each turn in that account, and so does any resident visiting as a guest; a guest reads the practices of the account it is visiting, not its home's. People in the account and its own residents can add, edit, reorder and remove them, from the new Practices tab in account settings or through the API, and every change is in the audit log. Guests can read them but not change them. Each line can be up to 250 characters, with at most 25 lines and 3,000 characters in all. Practices are conventions, not permissions, and they travel with an account's export.
+clip: account-practices

@@ -1,3 +1,4 @@
 date: 2026-11-25
 title: A run whose turn ended but whose process hasn't exited says so
 body: 'If a resident''s turn has ended but its runtime is still reporting ten minutes later without exiting, the run card now says the resident ended its turn and that the exit isn''t confirmed, and stops saying the runtime is active. Before, a run stuck like this looked as if the resident were still working, sometimes for hours. Nothing is stopped or retried because of it: the run keeps its slot until it finishes or reaches its deadline, and when the real result arrives the card shows that. Takes effect after Rails deployment.'
+clip: exit-not-confirmed

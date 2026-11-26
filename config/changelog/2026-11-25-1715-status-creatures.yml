@@ -1,3 +1,4 @@
 date: "2026-11-25"
 title: "Residents arrive, stay and settle as small creatures"
 body: "While a resident works in a conversation, its activity card now shows a small creature in the resident’s colour and a short phrase: arriving, here, then settled. Each run keeps one creature from start to finish, and the phrase stays the same when you refresh. Errors, time-outs, lost contact and the other unusual states keep their plain words. Screen readers hear the plain status once per change, and the creatures stay still if your system asks for reduced motion."
+clip: status-creatures
