@@ -11,8 +11,9 @@ module Api
       # exists there), or else the key's own.
       def index
         account = params[:conversation_id].present? ? actionable_chats.find(params[:conversation_id]).account : requested_account
-        agents = account.conversation_agents.active.by_name
-        render json: { agents: agents.map { |a| agent_json(a) } }
+        agents = account.conversation_agents.active.by_name.to_a
+        guest_invites = guest_invites_for(account, agents)
+        render json: { agents: agents.map { |a| agent_json(a, account: account, guest_invites: guest_invites) } }
       end
 
       def activity_preferences
@@ -24,8 +25,10 @@ module Api
       end
 
       def show
-        agent = current_api_account.conversation_agents.find(params[:id])
-        render json: { agent: agent_json(agent) }
+        account = current_api_account
+        agent = account.conversation_agents.find(params[:id])
+        guest_invites = guest_invites_for(account, [ agent ])
+        render json: { agent: agent_json(agent, account: account, guest_invites: guest_invites) }
       end
 
       def announce
@@ -72,7 +75,15 @@ module Api
         false
       end
 
-      def agent_json(agent)
+      def guest_invites_for(account, agents)
+        guest_ids = agents.filter_map { |agent| agent.id if agent.account_id != account.id }
+        return {} if guest_ids.empty?
+
+        account.guest_memberships.where(agent_id: guest_ids).pluck(:agent_id, :invite_to_new_conversations).to_h
+      end
+
+      def agent_json(agent, account:, guest_invites:)
+        guest = agent.account_id != account.id
         {
           id: agent.to_param,
           name: agent.name,
@@ -83,7 +94,9 @@ module Api
           active: agent.active?,
           runtime: agent.runtime,
           deprecated: agent.deprecated?,
-          unavailability_reason: agent.unavailability_reason
+          unavailability_reason: agent.unavailability_reason,
+          guest: guest,
+          invite_to_new_conversations: guest ? guest_invites.fetch(agent.id, false) : true
         }
       end
 

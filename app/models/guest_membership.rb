@@ -10,18 +10,32 @@ class GuestMembership < ApplicationRecord
   belongs_to :agent
   belongs_to :added_by, class_name: "User", optional: true
 
+  BOOLEAN_INPUTS = [ true, false, "true", "false", "1", "0", 1, 0 ].freeze
+
   validates :agent_id, uniqueness: { scope: :account_id }
+  validates :invite_to_new_conversations, inclusion: { in: [ true, false ] }
   validate :not_hosted_here
   validate :added_by_belongs_to_both_accounts, on: :create
 
   before_destroy :close_seats
   before_destroy :end_integration_grants
   after_save :refresh_guest_directory, if: -> {
-    (saved_changes.keys & %w[id account_id agent_id]).any?
+    (saved_changes.keys & %w[id account_id agent_id invite_to_new_conversations]).any?
   }
   after_destroy :refresh_guest_directory
 
+  def self.boolean_param(value)
+    return nil unless BOOLEAN_INPUTS.include?(value)
+
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
   def refresh_guest_directory
+    if !destroyed? && saved_change_to_invite_to_new_conversations? && (saved_changes.keys & %w[id account_id agent_id]).empty?
+      GuestDirectory.refresh!([ account_id ])
+      return
+    end
+
     home_ids = Agent.where(id: [ agent_id, agent_id_before_last_save ]).pluck(:account_id)
     GuestDirectory.refresh!([ account_id, account_id_before_last_save, *home_ids ])
   end
@@ -55,6 +69,7 @@ class GuestMembership < ApplicationRecord
       agent: { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon, avatar_url: agent.avatar_url },
       account: { id: account.to_param, name: account.name },
       home_account: { id: agent.account.to_param, name: agent.account.name },
+      invite_to_new_conversations: invite_to_new_conversations,
       added_at: created_at.iso8601
     }
   end

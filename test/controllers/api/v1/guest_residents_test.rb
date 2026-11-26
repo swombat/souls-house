@@ -21,7 +21,12 @@ module Api
 
       test "a local resident sees the guest in its account's directory and seats it" do
         get api_v1_agents_url, headers: @local_headers
-        assert_includes response.parsed_body["agents"].map { |agent| agent["id"] }, @lume.to_param
+        by_id = response.parsed_body["agents"].index_by { |agent| agent["id"] }
+        assert_includes by_id.keys, @lume.to_param
+        assert_equal false, by_id.dig(@local.to_param, "guest")
+        assert_equal true, by_id.dig(@local.to_param, "invite_to_new_conversations")
+        assert_equal true, by_id.dig(@lume.to_param, "guest")
+        assert_equal false, by_id.dig(@lume.to_param, "invite_to_new_conversations")
 
         post api_v1_conversation_participants_url(@room), params: { agent_id: @lume.to_param }, headers: @local_headers
         assert_response :created

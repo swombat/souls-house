@@ -2,7 +2,14 @@ export function buildChatSubscriptions({ account, chat }) {
   const subscriptions = {};
 
   if (chat) {
-    subscriptions[`Chat:${chat.id}`] = ['chat', 'messages', 'runtime_interactions', 'cost_breakdown', 'agents'];
+    subscriptions[`Chat:${chat.id}`] = [
+      'chat',
+      'messages',
+      'runtime_interactions',
+      'cost_breakdown',
+      'agents',
+      'addable_agents',
+    ];
     subscriptions[`Chat:${chat.id}:messages`] = 'messages';
     // The account's voice engine or voice mode switch changing reaches an open
     // conversation, so the voice panel stops reading with the old engine
@@ -10,6 +17,10 @@ export function buildChatSubscriptions({ account, chat }) {
     // the same way: VoiceModeInvalidationJob sends a content-free marker to
     // every account's stream (Setting:all stays admin-only).
     subscriptions[`Account:${account.id}`] = ['voice_mode'];
+    // Residents joining or leaving this account (guests or home residents)
+    // updates the Manage residents / Assign resident lists in an open chat.
+    subscriptions[`GuestDirectory:${account.id}`] = ['agents', 'available_agents', 'addable_agents'];
+    subscriptions[`HomeResidentRoster:${account.id}`] = ['agents', 'available_agents', 'addable_agents'];
 
     if (chat.active_whiteboard) {
       subscriptions[`Whiteboard:${chat.active_whiteboard.id}`] = ['chat', 'messages'];

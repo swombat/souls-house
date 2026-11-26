@@ -3,6 +3,7 @@
 // office formats stay download-only: there is no easy, faithful browser preview.
 
 const MARKDOWN_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd'];
+const HTML_EXTENSIONS = ['html', 'htm'];
 const TEXT_EXTENSIONS = [
   'txt',
   'text',
@@ -26,7 +27,6 @@ const TEXT_EXTENSIONS = [
   'go',
   'sh',
   'sql',
-  'html',
   'css',
   'srt',
   'vtt',
@@ -61,6 +61,7 @@ function kindOf(file) {
   if (type.startsWith('audio/')) return 'audio';
   if (type.startsWith('video/')) return 'video';
   if (type === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (type === 'text/html' || HTML_EXTENSIONS.includes(ext)) return 'html';
   if (type.startsWith('text/') || TEXT_CONTENT_TYPES.includes(type) || TEXT_EXTENSIONS.includes(ext)) return 'text';
 
   return null;
@@ -72,6 +73,7 @@ export function previewKind(file) {
   if (!file) return null;
   const kind = kindOf(file);
   if (!kind) return null;
+  if (kind === 'html') return file.html_preview_url ? 'html' : null;
   const isText = kind === 'markdown' || kind === 'text';
   return (isText ? file.text_preview_url : file.inline_url) ? kind : null;
 }

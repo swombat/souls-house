@@ -2052,6 +2052,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_130000) do
     t.bigint "added_by_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "invite_to_new_conversations", default: false, null: false
     t.index ["account_id", "agent_id"], name: "index_guest_memberships_on_account_id_and_agent_id", unique: true
     t.index ["account_id"], name: "index_guest_memberships_on_account_id"
     t.index ["added_by_id"], name: "index_guest_memberships_on_added_by_id"

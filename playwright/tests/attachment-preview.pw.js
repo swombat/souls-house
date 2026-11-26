@@ -3,6 +3,7 @@ import CommitBadgeHarness from '../CommitBadgeHarness.svelte';
 
 const inline = (name) => `/rails/active_storage/blobs/redirect/sig/${name}?disposition=inline`;
 const textPreview = (name) => `/attachment_previews/sig/${name}`;
+const htmlPreview = (name) => `/attachment_html_previews/sig/${name}`;
 const blob = (name) => `/rails/active_storage/blobs/redirect/sig/${name}?disposition=attachment`;
 
 const messages = [
@@ -83,4 +84,67 @@ test('a markdown attachment opens rendered in place, a zip has no eye', async ({
   const audio = page.locator('[data-testid="attachment-preview-audio"]');
   await expect(audio).toHaveAttribute('src', inline('recording.webm'));
   await expect(audio).toHaveAttribute('controls', '');
+});
+
+test('an html attachment opens in a sandboxed iframe and can toggle to source', async ({ mount, page }) => {
+  const htmlMessages = [
+    {
+      id: 'mira-html-1',
+      role: 'assistant',
+      author_name: 'Mira',
+      content: 'Preview attached.',
+      created_at: '2026-10-29T12:47:00Z',
+      files_json: [
+        {
+          id: 4,
+          filename: 'preview.html',
+          content_type: 'text/html',
+          byte_size: 128,
+          url: blob('preview.html'),
+          inline_url: inline('preview.html'),
+          text_preview_url: textPreview('preview.html'),
+          html_preview_url: htmlPreview('preview.html'),
+        },
+      ],
+    },
+  ];
+
+  await page.route('**/commit_statuses**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"statuses":{}}' })
+  );
+  await page.route('**/attachment_html_previews/sig/preview.html', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: '<!doctype html><html><body><h1>Draft preview</h1></body></html>',
+    })
+  );
+  await page.route('**/attachment_previews/sig/preview.html', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/plain',
+      body: '<!doctype html><html><body><h1>Draft preview</h1></body></html>',
+    })
+  );
+
+  const component = await mount(CommitBadgeHarness, { props: { messages: htmlMessages, repos: [] } });
+  await component.locator('[data-testid="file-attachment-preview"]').click();
+
+  const dialog = page.locator('[data-testid="attachment-preview"]');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('data-preview-kind', 'html');
+
+  const iframe = dialog.locator('[data-testid="attachment-preview-html"]');
+  await expect(iframe).toHaveAttribute('src', htmlPreview('preview.html'));
+  await expect(iframe).toHaveAttribute('sandbox', '');
+
+  const frame = dialog.frameLocator('[data-testid="attachment-preview-html"]');
+  await expect(frame.locator('h1')).toHaveText('Draft preview');
+
+  await dialog.locator('[data-testid="attachment-preview-html-source"]').click();
+  await expect(dialog.locator('[data-testid="attachment-preview-text"]')).toContainText('<h1>Draft preview</h1>');
+
+  await dialog.locator('[data-testid="attachment-preview-html-rendered"]').click();
+  await expect(iframe).toBeVisible();
+  await expect(frame.locator('h1')).toHaveText('Draft preview');
 });

@@ -8,6 +8,8 @@ Rails.application.routes.draw do
   end
   # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
   get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
+  # Sandboxed, uncached HTML for in-conversation iframe previews (AttachmentHtmlPreviewsController).
+  get "attachment_html_previews/:signed_id/*filename", to: "attachment_html_previews#show", as: :attachment_html_preview, format: false
   resources :stones, only: :show do
     get "revisions/:number", to: "stones#show", as: :revision
     get "revisions/:number/content", to: "stones#content", as: :revision_content
@@ -141,7 +143,7 @@ Rails.application.routes.draw do
     end
 
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
-    resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
+    resources :guest_memberships, only: [ :create, :update, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
     # Account export and import (docs/features/account-portability.md).
     resource :portability, only: :show, module: :accounts, controller: "portability" do
@@ -548,7 +550,7 @@ Rails.application.routes.draw do
           get "conversations/:conversation_id/costs", to: "costs#conversation", as: :conversation_costs
           resources :visual_tags, only: %i[create update destroy]
           resources :api_keys, only: %i[index destroy]
-          resources :guest_memberships, only: %i[index create destroy]
+          resources :guest_memberships, only: %i[index create update destroy]
           resources :service_connections, only: %i[index create update destroy] do
             get :providers, on: :collection
           end

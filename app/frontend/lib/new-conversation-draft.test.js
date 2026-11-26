@@ -21,6 +21,80 @@ describe('browser-local new conversation draft', () => {
   });
   afterEach(() => editors.forEach((editor) => editor.dispose()));
 
+  it('omits guests with invite_to_new_conversations false by default while keeping opted-in guests and unsent draft selections', () => {
+    const agents = [
+      { id: 'home', invite_to_new_conversations: true },
+      { id: 'quiet-guest', guest: true, invite_to_new_conversations: false },
+      { id: 'default-guest', guest: true, invite_to_new_conversations: true },
+      { id: 'paused-guest', guest: true, paused: true, invite_to_new_conversations: true },
+    ];
+    const fresh = create({ agents });
+    expect(fresh.content.selectedAgentIds).toEqual(['home', 'default-guest']);
+
+    fresh.edit({ message: 'Invite them once', selectedAgentIds: ['home', 'quiet-guest'] });
+    const restored = create({ agents });
+    expect(restored.content.selectedAgentIds).toEqual(['home', 'quiet-guest']);
+  });
+
+  it('drops newly opted-out guests from message-only drafts while preserving draft text and explicit picker choices', () => {
+    const beforeToggle = [
+      { id: 'home', invite_to_new_conversations: true },
+      { id: 'guest', guest: true, invite_to_new_conversations: true },
+    ];
+    const afterToggle = [
+      { id: 'home', invite_to_new_conversations: true },
+      { id: 'guest', guest: true, invite_to_new_conversations: false },
+    ];
+
+    const typedOnly = create({ agents: beforeToggle });
+    expect(typedOnly.content.selectedAgentIds).toEqual(['home', 'guest']);
+    typedOnly.edit({ message: 'Keep this message', title: 'Draft title' });
+
+    const reopenedAfterOptOut = create({ agents: afterToggle });
+    expect(reopenedAfterOptOut.content).toMatchObject({
+      message: 'Keep this message',
+      title: 'Draft title',
+      selectedAgentIds: ['home'],
+    });
+
+    const explicit = create({ accountId: 'explicit', agents: beforeToggle });
+    explicit.edit({ selectedAgentIds: ['home', 'guest'] });
+    explicit.edit({ message: 'Deliberate invite' });
+    const reopenedExplicit = create({ accountId: 'explicit', agents: afterToggle });
+    expect(reopenedExplicit.content).toMatchObject({
+      message: 'Deliberate invite',
+      selectedAgentIds: ['home', 'guest'],
+    });
+  });
+
+  it('excludes opted-out guests from legacy stored drafts without selection provenance', () => {
+    const key = 'conversation-draft:v1:user:legacy:new';
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        message: 'Older unsent draft',
+        title: 'Legacy',
+        selectedAgentIds: ['kept-home', 'opted-out-guest', 'opted-in-guest'],
+        submissionId: null,
+        version: 'legacy-v1',
+      })
+    );
+    const restored = create({
+      accountId: 'legacy',
+      agents: [
+        { id: 'kept-home', invite_to_new_conversations: true },
+        { id: 'unselected-home', invite_to_new_conversations: true },
+        { id: 'opted-out-guest', guest: true, invite_to_new_conversations: false },
+        { id: 'opted-in-guest', guest: true, invite_to_new_conversations: true },
+      ],
+    });
+    expect(restored.content).toMatchObject({
+      message: 'Older unsent draft',
+      title: 'Legacy',
+      selectedAgentIds: ['kept-home', 'opted-in-guest'],
+    });
+  });
+
   it('restores before writes and retains title, message and selected paused residents', () => {
     const first = create();
     expect(first.content.selectedAgentIds).toEqual(['one']);

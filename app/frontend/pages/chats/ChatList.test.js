@@ -150,3 +150,37 @@ test('counts hidden conversations with an open red eye, and only those', async (
   await tick();
   expect(screen.queryByTestId('hidden-attention-count')).not.toBeInTheDocument();
 });
+
+test('visually distinguishes hidden rows from normal and archived rows', () => {
+  const hidingTag = { id: 'done', label: 'Done', icon: 'Checks', colour: 'green', hides_from_list: true };
+  const visibleTag = { id: 'work', label: 'Work', icon: 'Wrench', colour: 'blue', hides_from_list: false };
+  render(ChatList, {
+    accountId: 'house',
+    chats: [
+      { id: 'normal', title: 'Normal thread', visual_tag: visibleTag },
+      { id: 'hidden', title: 'Hidden thread', visual_tag: hidingTag },
+      { id: 'archived', title: 'Archived thread', archived: true },
+      { id: 'both', title: 'Hidden and archived', archived: true, visual_tag: hidingTag },
+    ],
+  });
+
+  const normalLink = screen.getByRole('link', { name: /Normal thread/ });
+  const hiddenLink = screen.getByRole('link', { name: /Hidden thread/ });
+  const archivedLink = screen.getByRole('link', { name: /Archived thread/ });
+  const bothLink = screen.getByRole('link', { name: /Hidden and archived/ });
+
+  expect(normalLink.className).not.toMatch(/opacity-(50|70)/);
+  expect(normalLink.querySelector('[data-testid="chat-hidden-indicator"]')).toBeNull();
+
+  expect(hiddenLink.className).toContain('opacity-70');
+  expect(hiddenLink.className).not.toContain('opacity-50');
+  expect(hiddenLink.querySelector('[data-testid="chat-hidden-indicator"]')).not.toBeNull();
+
+  expect(archivedLink.className).toContain('opacity-50');
+  expect(archivedLink.className).not.toContain('opacity-70');
+  expect(archivedLink.querySelector('[data-testid="chat-hidden-indicator"]')).toBeNull();
+
+  expect(bothLink.className).toContain('opacity-50');
+  expect(bothLink.className).not.toContain('opacity-70');
+  expect(bothLink.querySelector('[data-testid="chat-hidden-indicator"]')).not.toBeNull();
+});

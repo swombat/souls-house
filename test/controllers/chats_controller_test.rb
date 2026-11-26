@@ -23,6 +23,25 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "new conversation props mark hosted residents invited by default and guests according to their membership" do
+    nexus = accounts(:team_account)
+    local = agents(:other_account_agent)
+    guest = agents(:research_assistant)
+    membership = nexus.guest_memberships.create!(agent: guest, added_by: @user)
+
+    get new_account_chat_path(nexus)
+    assert_response :success
+    by_id = inertia_props.dig("props", "agents").index_by { |row| row["id"] }
+    assert_equal({ "guest" => false, "invite" => true }, { "guest" => by_id.dig(local.to_param, "guest"), "invite" => by_id.dig(local.to_param, "invite_to_new_conversations") })
+    assert_equal({ "guest" => true, "invite" => false }, { "guest" => by_id.dig(guest.to_param, "guest"), "invite" => by_id.dig(guest.to_param, "invite_to_new_conversations") })
+
+    membership.update!(invite_to_new_conversations: true)
+    @inertia_props = nil
+    get new_account_chat_path(nexus)
+    by_id = inertia_props.dig("props", "agents").index_by { |row| row["id"] }
+    assert_equal true, by_id.dig(guest.to_param, "invite_to_new_conversations")
+  end
+
   test "the chat pages carry the account's voice mode status" do
     Setting.instance.update!(voice_mode_scope: "account_choice")
     @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: nil)
@@ -267,7 +286,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
     agent_json = inertia_shared_props.fetch("agents").sole
     assert_equal(
-      [ "active", "avatar_url", "can_remove_from_chat", "colour", "deprecated", "guest", "health_state", "icon", "id", "inference_setup_message", "model_id", "model_label", "model_selection", "name", "paused", "runtime", "unavailability_reason" ],
+      [ "active", "avatar_url", "can_remove_from_chat", "colour", "deprecated", "guest", "health_state", "icon", "id", "inference_setup_message", "invite_to_new_conversations", "model_id", "model_label", "model_selection", "name", "paused", "runtime", "unavailability_reason" ],
       agent_json.keys.sort
     )
     assert_equal(

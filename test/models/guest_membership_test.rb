@@ -95,4 +95,14 @@ class GuestMembershipTest < ActiveSupport::TestCase
     assert_no_match(/account:/, home_text)
   end
 
+  test "guests default to staying out of new conversations until enabled" do
+    membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+
+    assert_equal false, membership.invite_to_new_conversations
+    assert_equal false, membership.as_json[:invite_to_new_conversations]
+
+    membership.update!(invite_to_new_conversations: true)
+    assert_equal true, membership.as_json[:invite_to_new_conversations]
+  end
+
 end
