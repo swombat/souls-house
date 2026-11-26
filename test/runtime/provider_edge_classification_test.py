@@ -56,6 +56,11 @@ class ProviderEdgeClassificationTest(unittest.TestCase):
         self.assertEqual(shim.classify_provider_error(failed(runtime_failure=failure, stderr=""), "anthropic"),
                          "auth_expired")
         self.assertEqual(shim.classify_provider_error(failed(stderr=dead), "anthropic"), "auth_expired")
+        # A failed run whose stdout only quotes the line is not a dead sign-in
+        # (Mira's negative, #1182).
+        quoted = 'I told Daniel to "run /login to re-authenticate"; the refresh token is no longer valid there.'
+        self.assertIsNone(shim.classify_provider_error(
+            failed(stdout=quoted, stderr="", runtime_failure={"message": "clamp_runtime_failed: exit 1"}), "anthropic"))
 
     def test_provider_5xx_and_overload_are_transient(self):
         for text in ("API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}",

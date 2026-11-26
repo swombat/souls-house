@@ -3223,10 +3223,18 @@ def classify_provider_error(response, provider):
     # "authentication", and names the refresh token as "no longer valid", not
     # "expired" ("OAuth refresh token is no longer valid; run /login to
     # re-authenticate", eRNlOe, 26 Nov 2026). Missing it left Lume failing
-    # for hours with no reconnect notice.
+    # for hours with no reconnect notice. Read only in the runtime's own
+    # failure, its error and its stderr, never stdout, which can quote a
+    # conversation that mentions /login (Mira, #1182).
+    runtime_diagnostic = "\n".join(str(text or "") for text in (said, response.get("error"), response.get("stderr")))
+    if re.search(
+        r"refresh token is no longer valid|run /login to re-?authenticate",
+        runtime_diagnostic,
+        re.IGNORECASE,
+    ):
+        return "auth_expired"
     if re.search(
         r"unauthori[sz]ed|authentication|auth(?:entication)?[^a-z]+expired|token[^a-z]+expired|"
-        r"re-?authenticate|run /login\b|token is no longer valid|"
         r"missing provider credentials|provider auth missing|no (?:usable )?credentials|\b401\b",
         diagnostic,
         re.IGNORECASE,
