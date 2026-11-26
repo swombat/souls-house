@@ -1,7 +1,7 @@
 <script>
   import linkPreviews from '$lib/link-previews';
   import { siteName } from '$lib/branding';
-  import { ClockCounterClockwise } from 'phosphor-svelte';
+  import { ClockCounterClockwise, Rss } from 'phosphor-svelte';
   import ChangelogList from '$lib/components/features/ChangelogList.svelte';
 
   let { changelog = [] } = $props();
@@ -25,6 +25,15 @@
         class="underline underline-offset-4"
         target="_blank"
         rel="noopener noreferrer">commit history</a> has it all.
+    </p>
+    <p class="mt-4 text-sm text-muted-foreground">
+      <a
+        href="/changelog.atom"
+        class="inline-flex items-center gap-1.5 underline underline-offset-4 hover:text-foreground"
+        data-testid="changelog-atom-link">
+        <Rss size={15} aria-hidden="true" />
+        Subscribe via Atom feed
+      </a>
     </p>
   </header>
 

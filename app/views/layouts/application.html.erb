@@ -11,6 +11,7 @@
     <%= yield :head %>
     <%= render "layouts/share_video" if @share_video %>
     <%= render "layouts/link_preview", link_preview: @link_preview if @link_preview %>
+    <%= auto_discovery_link_tag :atom, changelog_url(format: :atom), title: "Changelog — #{Setting.instance.site_name}" %>
 
     <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
     <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>

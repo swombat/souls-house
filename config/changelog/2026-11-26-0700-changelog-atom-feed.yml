@@ -1,0 +1,3 @@
+date: 2026-11-26
+title: Subscribe to the changelog with an Atom feed
+body: The changelog now publishes an Atom feed at /changelog.atom with the latest 50 entries, each linking to its own page and carrying its clip poster and video enclosure when present. Every page advertises the feed for autodiscovery in feed readers like Feedbin, NetNewsWire, Readwise and Slack, and /changelog includes a direct link to subscribe.
