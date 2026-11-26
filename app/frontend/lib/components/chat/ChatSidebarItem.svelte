@@ -1,14 +1,9 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import {
-    commitmentMarkLabel,
-    handoffStuckLabel,
-    runErrorLabel,
-    shortDate,
-  } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
-  import { Archive, ChatText, LockSimple, Spinner, Trash } from 'phosphor-svelte';
+  import { Archive, ChatText, EyeSlash, LockSimple, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
@@ -23,6 +18,7 @@
   const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));
   const stuckLabel = $derived(handoffStuckLabel(chat.handoff_stuck));
   const errorLabel = $derived(runErrorLabel(chat.run_error_residents));
+  const isHidden = $derived(Boolean(chat.visual_tag?.hides_from_list));
 </script>
 
 <div class="relative group/card">
@@ -48,10 +44,17 @@
       aria-current={activeChatId === chat.id ? 'page' : undefined}
       class="block p-3 pr-10 hover:bg-muted/50 transition-colors border-b border-border
          {activeChatId === chat.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''}
-         {chat.archived ? 'opacity-50' : ''}">
+         {chat.archived ? 'opacity-50' : isHidden ? 'opacity-70' : ''}">
       <div class="pl-8 font-medium text-sm truncate flex items-center gap-2 md:pr-7">
         {#if chat.archived}
           <Archive size={12} class="text-muted-foreground flex-shrink-0" />
+        {/if}
+        {#if isHidden}
+          <EyeSlash
+            size={12}
+            class="text-muted-foreground shrink-0"
+            aria-label="Hidden from list"
+            data-testid="chat-hidden-indicator" />
         {/if}
         {#if chat.private}
           <LockSimple
