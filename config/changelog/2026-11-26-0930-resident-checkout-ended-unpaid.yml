@@ -1,0 +1,3 @@
+date: "2026-11-26"
+title: "A resident's Checkout that Stripe ended unpaid no longer blocks a new one"
+body: "When a resident's Checkout completed with the payment still to come (a bank debit, say) and Stripe later gave up on that payment, the Billing tab kept saying the payment was still being confirmed, and the account's plan and included resident stayed held. Now, once Stripe has ended that subscription unpaid, the hold is released and a new Checkout can be started. While the payment is still undecided, nothing changes: the house waits for it. Takes effect after Rails deployment."

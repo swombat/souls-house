@@ -65,9 +65,12 @@ module Billing
     # holding the plan's included resident (Billing::Included), a plan code
     # (BillingCode#plan_refusal) or the account's first bill
     # (Billing::FirstBill). Only a session Stripe says is expired is
-    # released (Billing::CheckoutSession.release_expired!).
+    # released, or one it completed whose payment it has ended unpaid
+    # (Billing::CheckoutSession.release_expired!, ended_unpaid?). A resident's
+    # Checkout takes any payment method, so it can complete with the payment
+    # still to come, as a plan's could before #1149 made it card only.
     def self.release_expired!(account, client: Billing.client)
-      CheckoutSession.release_expired!(BillingCheckoutAttempt.where(account:, kind: "checkout"), client:)
+      CheckoutSession.release_expired!(BillingCheckoutAttempt.where(account:, kind: "checkout"), client:, ended_unpaid: true)
       CheckoutSession.release_expired!(AccountPlanCheckoutAttempt.where(account:), client:, ended_unpaid: true)
     end
 
@@ -124,6 +127,9 @@ module Billing
       when "open"
         CheckoutSession.expire!(session, client: @client, remote: method(:remote))
       when "complete"
+        # Stripe ended its payment unpaid: nothing was bought, safe to replace.
+        return if remote { CheckoutSession.ended_unpaid?(session, client: @client) }
+
         recorded = ResidentSubscription.find_by(stripe_subscription_id: stripe_id(session.subscription),
           agent: @agent, account: @agent.account)
         if recorded.nil? || recorded.live?
