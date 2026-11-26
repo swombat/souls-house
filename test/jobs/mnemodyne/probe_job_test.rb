@@ -52,4 +52,24 @@ class Mnemodyne::ProbeJobTest < ActiveSupport::TestCase
     assert_not_includes error.full_message, "outer-private-detail"
   end
 
+  test "a timed-out probe's failed row says where the call had got to" do
+    previous = ENV.to_h.slice("MNEMODYNE_EMBEDDING_URL", "MNEMODYNE_EMBEDDING_PROFILE")
+    ENV["MNEMODYNE_EMBEDDING_URL"] = "https://synthetic-embeddings.invalid/embed"
+    ENV["MNEMODYNE_EMBEDDING_PROFILE"] = "synthetic-v1"
+    stub_request(:post, ENV["MNEMODYNE_EMBEDDING_URL"]).to_raise(Net::ReadTimeout)
+    reports = []
+    error = Rails.error.stub(:report, ->(*args, **options) { reports << options }) do
+      assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::ProbeJob.perform_now }
+    end
+    assert_match(/\Atimeout \(Net::ReadTimeout\) \[phase connected, attempt 1, connect \d+ ms, elapsed \d+ ms\]\z/,
+      error.message.delete_prefix("Mnemodyne embeddings unavailable: "))
+    context = reports.first[:context]
+    assert_equal :connected, context[:phase]
+    assert_equal 1, context[:attempts]
+    assert_kind_of Integer, context[:elapsed_ms]
+    assert_not_includes error.message, "synthetic-embeddings.invalid"
+  ensure
+    %w[MNEMODYNE_EMBEDDING_URL MNEMODYNE_EMBEDDING_PROFILE].each { |key| ENV[key] = previous[key] }
+  end
+
 end
