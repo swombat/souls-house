@@ -86,6 +86,8 @@ class Agent < ApplicationRecord
   # Accounts this resident visits as a guest; hosting stays with `account`.
   has_many :guest_memberships, dependent: :delete_all
   has_one :visitor_admission, dependent: :destroy
+  # Outgoing visits from this resident to accounts on other souls.house deployments.
+  has_many :visits, dependent: :destroy
   has_many :agent_service_accesses, dependent: :destroy
   has_many :service_connections, through: :agent_service_accesses
   has_many :x_posting_grants, dependent: :delete_all

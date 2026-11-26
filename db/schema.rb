@@ -3486,6 +3486,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000000) do
     t.index ["item_type", "item_id", "created_at"], name: "index_versions_on_item_type_and_item_id_and_created_at"
   end
 
+  create_table "visit_wakes", force: :cascade do |t|
+    t.bigint "agent_runtime_interaction_id"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "dispatched_at"
+    t.string "reason"
+    t.string "remote_conversation_id", null: false
+    t.string "remote_message_id"
+    t.string "remote_wake_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "visit_id", null: false
+    t.index ["agent_runtime_interaction_id"], name: "index_visit_wakes_on_agent_runtime_interaction_id"
+    t.index ["visit_id", "created_at"], name: "index_visit_wakes_on_visit_id_and_created_at"
+    t.index ["visit_id", "remote_wake_id"], name: "index_visit_wakes_on_visit_id_and_remote_wake_id", unique: true
+    t.index ["visit_id"], name: "index_visit_wakes_on_visit_id"
+  end
+
   create_table "visitor_admissions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "agent_id", null: false
@@ -3537,6 +3554,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000000) do
     t.index ["message_id"], name: "index_visitor_wakes_on_message_id"
     t.index ["visitor_admission_id", "state"], name: "index_visitor_wakes_on_visitor_admission_id_and_state"
     t.index ["visitor_admission_id"], name: "index_visitor_wakes_on_visitor_admission_id"
+  end
+
+  create_table "visits", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.integer "consecutive_errors", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "ended_at"
+    t.string "last_error"
+    t.datetime "last_polled_at"
+    t.datetime "last_wake_at"
+    t.string "local_name"
+    t.integer "max_wakes_per_hour", default: 12, null: false
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.text "visit_token", null: false
+    t.string "visited_account_name"
+    t.string "visited_house_name"
+    t.string "visited_origin", null: false
+    t.index ["agent_id", "status"], name: "index_visits_on_agent_id_and_status"
+    t.index ["agent_id"], name: "index_visits_on_agent_id"
+    t.index ["created_by_id"], name: "index_visits_on_created_by_id"
+    t.index ["status"], name: "index_visits_on_status"
   end
 
   create_table "visual_tags", force: :cascade do |t|
@@ -4060,6 +4100,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000000) do
   add_foreign_key "tweet_logs", "agents", column: "resolved_by_agent_id"
   add_foreign_key "tweet_logs", "x_integrations"
   add_foreign_key "users", "accounts", column: "default_account_id", on_delete: :nullify
+  add_foreign_key "visit_wakes", "agent_runtime_interactions"
+  add_foreign_key "visit_wakes", "visits"
   add_foreign_key "visitor_admissions", "accounts"
   add_foreign_key "visitor_admissions", "agents"
   add_foreign_key "visitor_admissions", "visitor_invitations"
@@ -4069,6 +4111,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_000000) do
   add_foreign_key "visitor_wakes", "chats"
   add_foreign_key "visitor_wakes", "messages"
   add_foreign_key "visitor_wakes", "visitor_admissions"
+  add_foreign_key "visits", "agents"
+  add_foreign_key "visits", "users", column: "created_by_id"
   add_foreign_key "visual_tags", "accounts"
   add_foreign_key "vm_backups", "agent_backup_snapshots"
   add_foreign_key "vm_backups", "agents"

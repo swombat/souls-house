@@ -315,6 +315,9 @@ Rails.application.routes.draw do
         resource :fallback_policy, only: [ :show, :update ]
         # jaMBVj: which Chaos hooks this resident's runs are held to. Owners only.
         resource :hook_expectations, only: [ :show, :update ]
+        resources :visits, only: %i[index create destroy] do
+          post :preview, on: :collection
+        end
         resources :service_accesses, only: :update do
           # Sending as a comms connection's owner: granted by the owner only.
           resource :send_grant, only: :update, controller: "service_send_grants"
@@ -669,6 +672,15 @@ Rails.application.routes.draw do
       resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
       resources :guest_memberships, only: [ :index, :destroy ]
+      resources :visits, only: %i[index show destroy] do
+        member do
+          get "conversations/:conversation_id", action: :conversation, as: :conversation
+          post "conversations/:conversation_id/messages", action: :create_message, as: :conversation_messages
+          get "conversations/:conversation_id/attachments/:attachment_id", action: :attachment, as: :conversation_attachment
+          post "conversations/:conversation_id/quiet_reason", action: :quiet_reason, as: :conversation_quiet_reason
+          post "wakes/:wake_id/complete", action: :complete_wake, as: :complete_wake
+        end
+      end
       resources :residents, only: [ :show, :create, :update, :destroy ] do
         get :catalogue, on: :collection
         member do
