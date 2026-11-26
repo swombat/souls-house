@@ -16,17 +16,17 @@
     soon as someone names that speaker, sets them aside, or turns down a guess about them.
   </li>
   <li>
-    All voice prints are kept, encrypted, only in this Field. The audio is processed inside this house and isn't sent
-    to any outside service.
+    All voice prints are kept, encrypted, only in this Field. The audio is processed inside this house and isn't sent to
+    any outside service.
   </li>
   <li>
     A print is used only to suggest who's speaking in this Field's recordings, and only after it has been checked
     against recordings it wasn't learned from. A person always confirms the suggestion.
   </li>
   <li>
-    Anyone in this Field can forget a voice at any time on {onVoicesPage ? 'this page' : 'the Voices page'}. A
-    forgotten voice stops learning until someone chooses to remember it again. Forget all voices also deletes the
-    voice prints of unnamed speakers.
+    Anyone in this Field can forget a voice at any time on {onVoicesPage ? 'this page' : 'the Voices page'}. A forgotten
+    voice stops learning until someone chooses to remember it again. Forget all voices also deletes the voice prints of
+    unnamed speakers.
   </li>
   <li data-testid="voice-meaning-backups">
     Backups of this Field may still hold a voice print after it's forgotten, for an indeterminate time.

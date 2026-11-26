@@ -21,10 +21,10 @@
   import FieldEmpty from '$lib/components/field/FieldEmpty.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
-  import FieldActions from '$lib/components/field/FieldActions.svelte';
-  import FieldTranscriptionLinks from '$lib/components/field/FieldTranscriptionLinks.svelte';
+  import FieldHeader from '$lib/components/field/FieldHeader.svelte';
   import FieldSharing from '$lib/components/field/FieldSharing.svelte';
   import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
+  import VoiceNoteDialog from '$lib/components/field/VoiceNoteDialog.svelte';
   import { fieldItemLink } from '$lib/field';
   import { CaretLeft } from 'phosphor-svelte';
 
@@ -195,6 +195,7 @@
   });
 
   let recordingOpen = $state(false);
+  let voiceNoteOpen = $state(false);
 
   let uploadOpen = $state(false);
   let noteOpen = $state(false);
@@ -319,19 +320,14 @@
 </svelte:head>
 
 <div class="px-4 py-6 sm:p-8 max-w-7xl mx-auto">
-  <div class="mb-6 flex-wrap items-end justify-between gap-4 {current ? 'hidden lg:flex' : 'flex'}">
-    <div>
-      <h1 class="text-3xl font-bold">Field</h1>
-      <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
-      <FieldTranscriptionLinks accountId={account.id} />
-    </div>
-    <FieldActions
-      tablesHref={`/accounts/${account.id}/field/tables`}
-      onFile={() => (uploadOpen = true)}
-      onNote={() => (noteOpen = true)}
-      onRecording={() => (recordingOpen = true)}
-      onSong={addSong} />
-  </div>
+  <FieldHeader
+    accountId={account.id}
+    hidden={!!current}
+    onFile={() => (uploadOpen = true)}
+    onNote={() => (noteOpen = true)}
+    onRecordNow={() => (voiceNoteOpen = true)}
+    onRecording={() => (recordingOpen = true)}
+    onSong={addSong} />
 
   {#if fieldEmpty}
     <FieldEmpty {accountLabel} />
@@ -484,6 +480,8 @@
   {sharedLine} />
 
 <FieldNoteDialog bind:open={noteOpen} accountId={account.id} {sharedLine} />
+
+<VoiceNoteDialog bind:open={voiceNoteOpen} accountId={account.id} {sharedLine} />
 
 <FieldSongDialog
   bind:open={songOpen}

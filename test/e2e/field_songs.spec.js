@@ -70,6 +70,7 @@ test('a member shares songs: from a link with checked lyrics, an instrumental, a
     await page.goto(`${base}/field`);
 
     // 1. From a link: the title and artist arrive; typed words survive a lookup.
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-add-song').click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('Find lyrics sends the title and artist to LRCLIB');
@@ -109,6 +110,7 @@ test('a member shares songs: from a link with checked lyrics, an instrumental, a
 
     // 2. The lookup is down: manual entry still works, and an instrumental doesn't wait.
     lyricsLookup = 'down';
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-add-song').click();
     await page.getByTestId('field-song-link').first().fill('https://open.spotify.com/track/5NGtFXVpXSvwunEIGeviY3');
     await page.getByLabel('Title').fill('Spiegel im Spiegel');
@@ -120,6 +122,7 @@ test('a member shares songs: from a link with checked lyrics, an instrumental, a
     await expect(viewer.getByTestId('field-song-instrumental')).toBeVisible();
 
     // 3. Shared before its words: it waits in Needs you until they're added.
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-add-song').click();
     await page.getByTestId('field-song-link').first().fill('https://grouper.bandcamp.com/track/heavy-water');
     await page.getByLabel('Title').fill('Heavy Water / I’d Rather Be Sleeping');
@@ -195,6 +198,7 @@ test('file-name guesses stay guesses, and late link lookups are dropped', async 
 
     // 1. Link A is slow; it's replaced by link B, which answers first. A's
     //    late answer fills nothing.
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-add-song').click();
     const link = page.getByTestId('field-song-link').first();
     await link.fill('https://youtu.be/slowAAAAAAA');
@@ -213,6 +217,7 @@ test('file-name guesses stay guesses, and late link lookups are dropped', async 
 
     // 2. A tagged file called download.mp3: the name shows as a greyed guess,
     //    isn't sent, and the saved song takes its title from the tags.
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-add-song').click();
     await page.locator('#field-song-audio').setInputFiles({
       name: 'download.mp3',

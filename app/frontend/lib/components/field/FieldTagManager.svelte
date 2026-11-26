@@ -21,7 +21,10 @@
   }
 
   function reload() {
-    router.reload({ only: ['items', 'current_item', 'counts', 'field_empty', 'pagination', 'tags', 'search', 'filter_tags'], preserveScroll: true });
+    router.reload({
+      only: ['items', 'current_item', 'counts', 'field_empty', 'pagination', 'tags', 'search', 'filter_tags'],
+      preserveScroll: true,
+    });
   }
 
   async function rename(tag, merge = false) {

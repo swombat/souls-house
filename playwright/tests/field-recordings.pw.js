@@ -473,6 +473,7 @@ const dialog = (page) => page.locator('[data-slot="dialog-content"]');
 const audioFile = { name: 'call.m4a', mimeType: 'audio/mp4', buffer: Buffer.from('not really audio') };
 
 async function startUpload(page, title) {
+  await page.getByTestId('field-add').click();
   await page.getByTestId('field-add-recording').click();
   await expect(dialog(page)).toBeVisible();
   await dialog(page).locator('#recording-file').setInputFiles(audioFile);
@@ -489,6 +490,7 @@ const closeBy = {
 
 // After an abandoned attempt the dialog must come back clean and a new upload must go all the way.
 async function reopenAndComplete(page, log, expectedSignedId) {
+  await page.getByTestId('field-add').click();
   await page.getByTestId('field-add-recording').click();
   await expect(dialog(page)).toBeVisible();
   await expect(dialog(page).getByTestId('recording-progress')).toHaveCount(0);
@@ -582,6 +584,7 @@ test('once the recording is being brought in, closing only closes: it says Close
   await closeBy['the Cancel button'](page);
   await expect(dialog(page)).toHaveCount(0);
   // Reopening while it is still out shows it still going, not a fresh form.
+  await page.getByTestId('field-add').click();
   await page.getByTestId('field-add-recording').click();
   await expect(dialog(page)).toContainText('Uploaded. Bringing it in…');
   await page.keyboard.press('Escape');
@@ -590,6 +593,7 @@ test('once the recording is being brought in, closing only closes: it says Close
   expect(log.posts).toHaveLength(1);
   expect(log.posts[0].field_recording).toMatchObject({ upload_id: 'signed-1', title: 'Too late to stop' });
 
+  await page.getByTestId('field-add').click();
   await page.getByTestId('field-add-recording').click();
   await expect(dialog(page).getByTestId('recording-progress')).toHaveCount(0);
   await expect(dialog(page).getByRole('button', { name: 'Cancel' })).toBeVisible();

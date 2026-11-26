@@ -53,6 +53,8 @@ test('an open Field gets arrivals, deletion and reconnect catch-up without chat 
     await page.waitForTimeout(900); // deliberate negative assertion beyond the 300ms debounce
     expect(fieldReloads).toHaveLength(beforeChat);
 
+    await page.getByTestId('field-add').click();
+
     await page.getByTestId('field-new-note').click();
     await page.getByLabel('Name', { exact: true }).fill('My unsaved note');
     await page.getByLabel(/^Note/).fill('Do not lose these words');
