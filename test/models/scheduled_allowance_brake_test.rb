@@ -172,4 +172,35 @@ class ScheduledAllowanceBrakeTest < ActiveSupport::TestCase
     assert essential.reload.activated?
   end
 
+
+  # JlRlKe: a rhythm pinned to a model that left the list will run on the
+  # successor, so every gate before the turn measures the successor.
+  def pin_rhythm_to_retired_sol!(old_remaining:, new_remaining:)
+    @agent.update!(switchable_model_ids: [ "openai/gpt-6.2-sol" ])
+    @rhythm.rhythm_agents.update_all(model_id: "openai/gpt-6.1-sol")
+    { "openai/gpt-6.1-sol" => old_remaining, "openai/gpt-6.2-sol" => new_remaining }.each do |model_id, remaining|
+      model = Agents::Sandbox.chaos_selection_for(@agent, model_id: model_id).fetch(:model)
+      AllowanceBrakeReading.create!(agent: @agent, provider: "openai", model: model,
+        windows: [ { "id" => "a", "remaining_percent" => remaining, "resets_at" => 1.day.from_now.iso8601 } ],
+        observed_at: Time.current, checked_at: Time.current, refresh_requested_at: Time.current)
+    end
+  end
+
+  test "a braked retired pin does not skip a slot whose successor has room, at preflight or reservation" do
+    pin_rhythm_to_retired_sol!(old_remaining: 10, new_remaining: 90)
+
+    occurrence = @rhythm.fire!.occurrence
+    assert occurrence, "the slot fires on the successor's allowance"
+    assert_difference "AgentRuntimeInteraction.count", 1 do
+      occurrence.message_dispatch.reserve!
+    end
+    assert_nil occurrence.message_dispatch.reload.reason
+  end
+
+  test "a braked successor is not bypassed through the retired pin" do
+    pin_rhythm_to_retired_sol!(old_remaining: 90, new_remaining: 10)
+
+    assert_equal "skipped_allowance", @rhythm.fire!.reason
+  end
+
 end

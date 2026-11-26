@@ -79,24 +79,25 @@ class Agents::ModelSuccessionTest < ActiveSupport::TestCase
     assert_empty house_lines
   end
 
-  test "only the resident who lost the model moves; the room default stays as set" do
-    other = agents(:research_assistant).dup
-    other.assign_attributes(name: "Second resident", model_id: "anthropic/claude-opus-5.5",
-      switchable_model_ids: [ "anthropic/claude-fable-5.1" ])
-    other.save!(validate: false)
-    room = @chat.room || rooms_for(@agent.account)
-    RoomModelDefault.create!(account: @agent.account, room: room, agent: other, model_id: "anthropic/claude-fable-5.1")
-    @chat.update_column(:room_id, room.id)
-    ChatAgent.create!(chat: @chat, agent: other)
-    assert_equal "anthropic/claude-fable-5.1", ChatAgent.find_by!(chat: @chat, agent: other).model_id
-    pin!("anthropic/claude-fable-5.1")
+  # RoomModelDefault is per resident and room. Mira's review: cover a stale
+  # row for the resident who loses access, for seats it already seeded and
+  # for seats it seeds afterwards.
+  test "a stale room default: its seeded seat moves, new seats start on the successor, the row stays as set" do
+    room = Room.create!(account: @agent.account, name: "Succession room")
+    @agent.update!(switchable_model_ids: [ "anthropic/claude-fable-5.1", "anthropic/claude-fable-5.2" ])
+    RoomModelDefault.set!(account: @agent.account, room: room, agent: @agent, model_id: "anthropic/claude-fable-5.1")
+    seeded = in_room(room)
+    assert_equal "anthropic/claude-fable-5.1", seat(seeded).model_id
+    @agent.update!(switchable_model_ids: [ "anthropic/claude-fable-5.2" ])
 
-    Agents::ModelSuccession.repair!(@agent, chat: @chat)
-    assert_nil Agents::ModelSuccession.repair!(other, chat: @chat), "it is still on the other resident's list"
+    Agents::ModelSuccession.repair!(@agent, chat: seeded)
+    assert_equal "anthropic/claude-fable-5.2", seat(seeded).model_id, "the seat it seeded moves at its next turn"
+    assert_equal "anthropic/claude-fable-5.2", seat(in_room(room)).model_id, "a new seat starts on the successor"
+    assert_equal "anthropic/claude-fable-5.1", RoomModelDefault.find_by!(room: room, agent: @agent).model_id,
+      "the row is whoever set it's to change; the Rooms page reports it"
 
-    assert_equal "anthropic/claude-fable-5.2", seat.model_id
-    assert_equal "anthropic/claude-fable-5.1", ChatAgent.find_by!(chat: @chat, agent: other).model_id
-    assert_equal "anthropic/claude-fable-5.1", RoomModelDefault.find_by!(room: room, agent: other).model_id
+    @agent.update!(switchable_model_ids: [])
+    assert_nil seat(in_room(room)).model_id, "with no successor a new seat follows the resident's default, as before"
   end
 
   # The case that started it: Alanis's rhythms were pinned to GPT-6.1 Sol,
@@ -141,8 +142,11 @@ class Agents::ModelSuccessionTest < ActiveSupport::TestCase
 
   private
 
-  def rooms_for(account)
-    Room.create!(account: account, name: "Succession room")
+  def in_room(room)
+    chat = @agent.account.chats.new(model_id: "openrouter/auto", manual_responses: true, room: room)
+    chat.agent_ids = [ @agent.id ]
+    chat.save!
+    chat
   end
 
 end

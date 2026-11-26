@@ -89,8 +89,11 @@ class Agents::AllowanceBrake
 
   attr_reader :provider, :model
 
+  # A pin that has left the resident's list is measured as the successor its
+  # turn will move to (Agents::ModelSuccession), not as the retired model.
   def initialize(agent, model_id: nil)
     @agent = agent
+    model_id = Agents::ModelSuccession.effective_model_id(agent, model_id)
     selection = Agents::Sandbox.chaos_selection_for(agent, model_id: model_id.presence || agent.model_id)
     @provider, @model = selection.values_at(:provider, :model)
   end

@@ -263,6 +263,9 @@ class ExternalAgentResponseRequest
       @interaction&.update!(failure_notice_message: notice, response_body: model_unavailable_body)
       @interaction&.finish_execution!("failed")
     end
+    # The occurrence line reaches nobody when no one reads the rhythm's
+    # threads; its owner is told once (JlRlKe).
+    StaleRhythmPinNotice.observe!(agent: agent, chat: chat, model_id: selection.model_id) if selection.off_list?
     { status: 409, error: "selected model unavailable", body: { "status" => "model_unavailable" } }
   end
 

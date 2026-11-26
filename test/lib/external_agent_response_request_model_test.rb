@@ -68,6 +68,8 @@ require "webmock/minitest"
 # as one value, resolved once when the turn starts.
 class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
 
+  include ActionMailer::TestHelper
+
   setup do
     @agent = agents(:research_assistant)
     @agent.update!(
@@ -219,6 +221,41 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     assert_equal "anthropic/claude-fable-5.2", @seat.reload.model_id
     assert_equal successor, AgentRuntimeInteraction.last.model
     assert_match(/moved from Claude Fable 5\.1 to Claude Fable 5\.2/, @chat.messages.where(role: "system").last.content)
+  end
+
+  # JlRlKe: an unattended rhythm's refusal reaches its owner once, however
+  # many occurrences it refuses; the occurrence line stands for each.
+  test "a rhythm pin with no successor emails the owner once across occurrences" do
+    @agent.update!(switchable_model_ids: [])
+    rhythm = Rhythm.create!(account: @agent.account, creator: users(:user_1), title: "Night look", opening: "Look.",
+      agents: [ @agent ], cadence: "daily", time_of_day: "09:00", timezone: "UTC", next_run_at: 1.day.ago)
+    rhythm.rhythm_agents.update_all(model_id: "anthropic/claude-fable-5.1")
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+
+    # The first is the scheduled slot; the second a later start of the same
+    # rhythm. Each goes through its dispatch's reservation, as the job does.
+    starts = [ -> { rhythm.fire! }, -> { rhythm.fire!(manual: true, request_key: SecureRandom.hex(8)) } ]
+    chats = starts.map do |start|
+      occurrence = start.call.occurrence
+      dispatch = occurrence.message_dispatch
+      dispatch.reserve!
+      interaction = dispatch.reload.runtime_interactions.sole
+      ExternalAgentResponseRequest.new(agent: @agent, chat: occurrence.chat, interaction: interaction,
+        wake_source_kinds: interaction.wake_source_kinds).call
+      occurrence.chat
+    end
+
+    assert_not_requested stub
+    chats.each { |chat| assert_match(/did not respond/, chat.messages.where(role: "system").last.content) }
+    rows = AuditLog.where(action: StaleRhythmPinNotice::ACTION)
+    assert_equal 1, rows.count
+    assert_equal "anthropic/claude-fable-5.1", rows.sole.data["model_id"]
+    assert_enqueued_email_with ResidentHealthMailer, :rhythm_model_pin_stale, args: [ rows.sole ]
+    assert_enqueued_emails 1
+    mail = ResidentHealthMailer.rhythm_model_pin_stale(rows.sole)
+    assert_equal [ @agent.account.owner.email_address ], mail.to
+    assert_includes mail.body.to_s, "Night look"
+    assert_includes mail.body.to_s, "/rhythms/"
   end
 
   test "a rhythm-woken run on a seat pinned off the list with no successor carries the list kind, not unknown" do

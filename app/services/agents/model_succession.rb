@@ -71,8 +71,9 @@ module Agents
 
     Move = Data.define(:from_model_id, :to_model_id, :rhythm)
 
-    # The newest model reached by following the line forward from model_id
-    # that the resident may select, or nil. Pure: reads, never writes.
+    # The nearest newer model in model_id's line that the resident may
+    # select (6.1 Sol skips a delisted 6.2 Sol for 6.3 Sol), or nil. Pure:
+    # reads, never writes.
     def self.successor_for(agent, model_id)
       seen = Set[model_id.to_s]
       current = model_id.to_s
@@ -83,6 +84,20 @@ module Agents
         current = following
       end
       nil
+    end
+
+    # The model a pin will actually run on: the pin itself while the resident
+    # may use it, otherwise the successor the next turn will move it to, or
+    # the pin unchanged when there is none (and the turn will be refused).
+    # Read-only, for the gates that run before the turn does (the allowance
+    # brake at rhythm preflight, admission and dispatch reservation), so a
+    # low reading on a retired model can't skip a run its successor has room
+    # for, and a braked successor can't be bypassed through the old pin.
+    def self.effective_model_id(agent, model_id)
+      return model_id if model_id.blank? || model_id.to_s == agent.model_id.to_s
+      return model_id if agent.switchable_model_ids.include?(model_id.to_s)
+
+      successor_for(agent, model_id) || model_id
     end
 
     # Call when a turn starts, before its model is resolved. Returns the Move

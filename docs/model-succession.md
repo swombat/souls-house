@@ -4,15 +4,27 @@ A conversation seat (`ChatAgent#model_id`) or a rhythm seat (`RhythmAgent#model_
 
 ## What moves
 
-- The newest model reached by following `Agents::ModelSuccession::SUCCESSORS` forward from the pinned model that the resident may select. The resident's default counts.
+- The nearest newer model reached by following `Agents::ModelSuccession::SUCCESSORS` forward from the pinned model that the resident may select. The resident's default counts.
 - The conversation seat, and, when the conversation is a rhythm occurrence, that rhythm's seat for the resident, so the next occurrence is dispatched on the new model.
 - Each write is conditional on the row still holding the model that was read. A re-pick made meanwhile wins, and two wakes racing produce one move.
 - One house line (`ConversationModelEvent.moved_forward!`) in the same transaction as the move.
 
+## Before the turn
+
+Gates that run before the turn read the same answer without writing it: `Agents::ModelSuccession.effective_model_id` gives the pin while it is usable, otherwise its successor. `Agents::AllowanceBrake` applies it to every model it measures, so rhythm preflight and admission (`Rhythm#fire!`) and dispatch reservation (`MessageDispatch#reserve!`) measure the model the turn will run on. A braked retired model can't skip a slot its successor has room for, and a braked successor can't be bypassed through the old pin.
+
+## Room defaults
+
+A `RoomModelDefault` row whose model has left the resident's list is never rewritten. New seats in that room start on its successor when the list carries one, and on the resident's default otherwise (as before). Seats it already seeded move at their next turn like any other pin. The Rooms page keeps reporting the row, so whoever set it decides what it becomes.
+
+## No successor
+
+The pin stays. Each refused run gets the room line, and for a rhythm the account's owner is emailed once per rhythm seat and stale model (`StaleRhythmPinNotice`, latched by an audit row under a lock on the seat), because rhythm runs are conversation runs and the scheduled-run streak email (`ScheduledRunFailureNotice`) doesn't count them.
+
 ## What never moves
 
-- A pin with no recorded successor, or whose successors are all off the list. It stays, and the run is refused as before (`model_not_on_list`, the room line, and the owner's failing-streak email).
-- A room's model default (`RoomModelDefault`). It is shared by everyone who joins the room. The seat it seeded is the resident's own and moves like any other.
+- A pin with no recorded successor, or whose successors are all off the list; see "No successor".
+- A room's model default row (`RoomModelDefault`); see below.
 - A pin refused for any reason other than the list: provider connection, outage, rate limit.
 - Pins in conversations that never run again. Nothing sweeps them.
 
