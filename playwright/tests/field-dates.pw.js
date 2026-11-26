@@ -129,6 +129,7 @@ for (const [label, date, expected] of [
   test(`bringing in a recording ${label}`, async ({ mount, page }) => {
     await mount(FieldPage, { props: fieldProps });
     const posts = await fakeRecordingBackend(page);
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-add-recording').click();
     await dialog(page).locator('#recording-file').setInputFiles(audioFile);
     await dialog(page).locator('#recording-title').fill('Old call');
@@ -152,6 +153,7 @@ async function addFile(mount, page, { date, respond }) {
     bodies.push(route.request().postData());
     return respond(route);
   });
+  await page.getByTestId('field-add').click();
   await page.getByTestId('field-add-file').click();
   await dialog(page).locator('#field-file').setInputFiles(textFile);
   if (date) await dialog(page).getByTestId('field-file-date').fill(date);
