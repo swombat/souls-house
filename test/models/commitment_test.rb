@@ -559,7 +559,9 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_match(/The next is commitment #{upcoming.to_param}/, commitment.cue_text)
     assert_includes commitment.cue_text, "soulshouse-commitment cancel #{upcoming.to_param}"
 
-    # The third hangs off the second and shares the series root.
+    # The third hangs off the second and shares the series root (once the
+    # first's wake has been delivered; until then the second waits).
+    commitment.update_columns(wake_state: "delivered")
     travel_to(upcoming.due_at + 1.minute) { live { upcoming.activate! } }
     third = upcoming.reload.next_commitment
     assert_equal commitment.id, third.series_root_id
@@ -608,6 +610,43 @@ class CommitmentTest < ActiveSupport::TestCase
     upcoming = commitment.reload.next_commitment
     assert_equal :cancelled, upcoming.cancel!(by: @lume).status
     assert_equal "cancelled", upcoming.reload.series_ended_reason
+  end
+
+  test "an occurrence due while the previous one's wake is still in custody moves on an interval and posts nothing" do
+    first = commit("Busy resident", at: @now + 1.minute, recur_min_minutes: 20, recur_max_minutes: 20)
+    travel_to(@now + 2.minutes) { live { first.activate! } }
+    second = first.reload.next_commitment
+    assert_equal "woken", first.wake_state
+
+    due = second.due_at
+    travel_to(due + 1.minute) do
+      live do
+        assert_no_difference -> { @chat.messages.where(role: "system").count } do
+          assert_equal :waiting, second.activate!.status
+        end
+      end
+    end
+    second.reload
+    assert second.scheduled?
+    assert_equal "previous_occurrence_in_progress", second.waiting_reason
+    assert_equal due + 21.minutes, second.due_at
+    assert_nil second.next_commitment
+    # The first occurrence's cue still points at the live series.
+    assert_includes first.reload.cue_text, "soulshouse-commitment cancel #{second.to_param}"
+  end
+
+  test "every occurrence reads the series' end, not only the row that was cancelled" do
+    first = commit("Read the series", at: @now + 1.minute, recur_min_minutes: 15, recur_max_minutes: 15)
+    travel_to(@now + 2.minutes) { live { first.activate! } }
+    second = first.reload.next_commitment
+    assert_equal second.to_param, first.as_json[:series_next_commitment_id]
+    assert_nil first.as_json[:series_ended_reason]
+
+    second.cancel!(by: @lume)
+    first.reload
+    assert_equal "cancelled", first.as_json[:series_ended_reason]
+    assert_nil first.as_json[:series_next_commitment_id]
+    assert_includes first.cue_text, "the series has ended (cancelled)"
   end
 
   test "a one-shot commitment schedules nothing after it" do

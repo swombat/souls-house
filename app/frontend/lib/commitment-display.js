@@ -20,6 +20,7 @@ export const COMMITMENT_WAITING = {
   skipped_allowance: 'the allowance brake is holding this wake; the commitment is still owed',
   conversation_unavailable: 'the conversation is archived',
   resident_not_in_conversation: 'the resident has left the conversation',
+  previous_occurrence_in_progress: 'the previous occurrence is still being delivered, so this one moved on by an interval',
 };
 
 // A recurring commitment says so after its state: how often, which
@@ -28,7 +29,7 @@ export function commitmentRecurrenceLine(c) {
   if (!c.recurrence) return '';
   const nth = c.occurrence > 1 ? ` (occurrence ${c.occurrence})` : '';
   if (c.series_ended_reason) {
-    const why = c.series_ended_reason === 'cancelled' ? 'ended' : 'ended: the next occurrence could not be scheduled';
+    const why = c.series_ended_reason === 'next_occurrence_failed' ? 'ended: the next occurrence could not be scheduled' : 'ended';
     return `Recurred ${c.recurrence.phrase}${nth}; the series has ${why}.`;
   }
   return `Recurs ${c.recurrence.phrase}${nth} until cancelled.`;

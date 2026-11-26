@@ -137,6 +137,16 @@ interval), 5 minutes to 30 days.
   fails anyway, a savepoint keeps the activation, the row records
   `series_ended_reason = next_occurrence_failed`, and the due message says
   the next could not be scheduled.
+- Series lock (Mira, #1176 P1): a recurring activation and any cancel
+  lock the series' first row before their own (`with_series_lock`), so a
+  cancel from an earlier occurrence either sees the successor a racing
+  activation inserted or runs before the activation and stops it.
+- One wake owed per series (#1176 P2): an occurrence that comes due while an
+  earlier occurrence's wake is still in custody (woken, held, retrying)
+  posts nothing, waits with `previous_occurrence_in_progress`, and moves a
+  full interval on.
+- The cue, `series_next_commitment_id` and `series_ended_reason` are read
+  from the live series, not from the row's immediate child (#1176 P3).
 - Ending a series is cancelling any of its rows (`end_series!`): every other
   scheduled row in the series is cancelled with `series_ended_reason =
   cancelled`. A delivered row is not itself cancellable, so cancelling it

@@ -205,7 +205,7 @@ class Commitment < ApplicationRecord
   # carries theirs, and a run not yet claimed is refused at claim
   # (claim_refusal_reason). A run already claimed cannot be recalled.
   def cancel!(by:)
-    with_lock do
+    with_series_lock do
       ended = recurring? ? end_series!(by: by, reason: "cancelled") : 0
       next Result.new(status: ended.positive? ? :series_ended : :not_cancellable) unless cancellable?
 
@@ -219,10 +219,28 @@ class Commitment < ApplicationRecord
     end
   end
 
+  # The series' scheduled occurrence other than this one, if the series is
+  # still live (at most one exists).
+  def live_successor
+    return unless recurring?
+
+    series_scope.scheduled.where.not(id: id).order(:due_at).first
+  end
+
+  # Why the series ended, read from the whole series: cancellation writes
+  # only the rows it stops.
+  def series_end_reason
+    return unless recurring?
+    return if scheduled? || live_successor
+
+    series_scope.where.not(series_ended_reason: nil).order(:id).last&.series_ended_reason || "ended"
+  end
+
   # Cancel the series' scheduled occurrences other than this one. Returns how
-  # many. The caller holds this row's lock; each other row is locked in turn
-  # (this row first, then later ones), so it never deadlocks with an
-  # activation, which locks only its own row.
+  # many. The caller holds the series lock (with_series_lock), which
+  # activation also takes before its own row, so a successor inserted by a
+  # concurrent activation is either committed before this query runs or
+  # never inserted.
   def end_series!(by:, reason:)
     series_scope.scheduled.where.not(id: id).order(:id).to_a.count do |other|
       other.with_lock do
@@ -254,13 +272,23 @@ class Commitment < ApplicationRecord
   # The sweep's work for one row. Idempotent: anything but a scheduled row
   # that is due returns without effect.
   def activate!(now: Time.current)
-    with_lock do
+    with_series_lock do
       next Result.new(status: :not_scheduled) unless scheduled?
       next Result.new(status: :not_due) if due_at > now
 
       if (reason = waiting_reason_now)
         update!(waiting_reason: reason, last_attempted_at: now)
         next Result.new(status: :waiting, reason: reason)
+      end
+
+      # One wake owed per series: while an earlier occurrence's wake is still
+      # in the house's custody (woken, held, retrying), this one posts
+      # nothing and moves a full interval on, so a resident busy in the
+      # destination never builds up a queue of held wakes.
+      if recurring? && series_scope.wake_in_custody.where.not(id: id).exists?
+        update!(due_at: now + next_interval_minutes.minutes, waiting_reason: "previous_occurrence_in_progress",
+                last_attempted_at: now)
+        next Result.new(status: :waiting, reason: "previous_occurrence_in_progress")
       end
 
       chat = new_conversation? ? open_conversation! : source_chat
@@ -312,15 +340,16 @@ class Commitment < ApplicationRecord
   def recurrence_cue
     return "" unless recurring?
 
-    upcoming = next_commitment
-    if upcoming&.scheduled?
+    upcoming = live_successor
+    if upcoming
       next_local = upcoming.due_at.in_time_zone(timezone)
       "\n\nThis commitment recurs #{recurrence_phrase} (this is occurrence #{occurrence}). The next is commitment " \
         "#{upcoming.to_param}, due #{next_local.strftime('%-d %b %H:%M')} #{timezone}. If what it is for is done, " \
         "end the series: `soulshouse-commitment cancel #{upcoming.to_param}`. Otherwise do nothing and it comes back."
     else
+      reason = series_end_reason
       "\n\nThis commitment recurred #{recurrence_phrase} (this is occurrence #{occurrence}); the series has ended" \
-        "#{series_ended_reason ? " (#{series_ended_reason.tr('_', ' ')})" : ''}, so nothing follows it."
+        "#{reason && reason != 'ended' ? " (#{reason.tr('_', ' ')})" : ''}, so nothing follows it."
     end
   end
 
@@ -362,7 +391,8 @@ class Commitment < ApplicationRecord
       series_id: recurring? ? Commitment.new(id: series_key).to_param : nil,
       previous_commitment_id: previous_commitment&.to_param,
       next_commitment_id: next_commitment&.to_param,
-      series_ended_reason: series_ended_reason,
+      series_next_commitment_id: live_successor&.to_param,
+      series_ended_reason: series_end_reason,
       created_at: created_at&.iso8601
     }
   end
@@ -419,7 +449,7 @@ class Commitment < ApplicationRecord
   # savepoint so a failure ends the series with a reason and never undoes
   # the activation.
   def schedule_next!(now)
-    minutes = recur_min_minutes == recur_max_minutes ? recur_min_minutes : rand(recur_min_minutes..recur_max_minutes)
+    minutes = next_interval_minutes
     successor = Commitment.new(
       account: account, agent: agent, source_chat: source_chat, source_message: source_message,
       text: text, summary: summary, destination: destination, room: room, essential: essential,
@@ -433,6 +463,23 @@ class Commitment < ApplicationRecord
     Rails.logger.warn("[Commitment#schedule_next!] #{to_param}: #{error.class}: #{error.message}")
     self.series_ended_reason = "next_occurrence_failed"
     nil
+  end
+
+  def next_interval_minutes
+    recur_min_minutes == recur_max_minutes ? recur_min_minutes : rand(recur_min_minutes..recur_max_minutes)
+  end
+
+  # The series lock is the first row's lock, taken before this row's. Every
+  # recurring activation and every cancel takes it, so they serialise per
+  # series (Mira, #1176 P1). A one-shot commitment, and the first row
+  # itself, just lock their own row.
+  def with_series_lock(&block)
+    return with_lock(&block) unless recurring? && series_root_id
+
+    Commitment.transaction do
+      Commitment.lock.find_by(id: series_root_id)
+      with_lock(&block)
+    end
   end
 
   def recurrence_valid
