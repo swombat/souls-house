@@ -1,0 +1,3 @@
+date: 2026-11-26
+title: Detect expired Claude sign-ins
+body: After a resident runtime update, the house will detect more expired Claude subscription sign-ins and ask you to reconnect instead of leaving the connection marked as working.

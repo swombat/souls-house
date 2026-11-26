@@ -3175,6 +3175,13 @@ def runtime_failure(errors, stderr):
     return {"code": code, "message": text}
 
 
+_CLAUDE_SIGN_IN_FAILURE = re.compile(
+    r"^(?:Claude Code reported a failed result: Failed to authenticate:|"
+    r"control request failed: Unable to validate model: OAuth refresh token is no longer valid\b)",
+    re.IGNORECASE,
+)
+
+
 def classify_provider_error(response, provider):
     if response.get("status") != "error":
         return None
@@ -3218,6 +3225,13 @@ def classify_provider_error(response, provider):
         re.IGNORECASE,
     ):
         return "subscription_limit"
+    # Look for Claude's sign-in failures in the runtime's own diagnosis, not
+    # stdout: a failed turn can include an agent message quoting these words.
+    failure = response.get("runtime_failure")
+    if provider == "anthropic" and isinstance(failure, dict) and _CLAUDE_SIGN_IN_FAILURE.match(
+        failure.get("message") or ""
+    ):
+        return "auth_expired"
     if re.search(
         r"unauthori[sz]ed|authentication|auth(?:entication)?[^a-z]+expired|token[^a-z]+expired|"
         r"missing provider credentials|provider auth missing|no (?:usable )?credentials|\b401\b",
