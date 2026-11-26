@@ -26,7 +26,10 @@
 
 <div class="mx-auto max-w-3xl px-6 py-12 sm:py-20">
   <p class="mb-5 text-sm font-medium text-muted-foreground">
-    <a href="/changelog" class="inline-flex items-center gap-2 hover:text-foreground" data-testid="changelog-entry-back">
+    <a
+      href="/changelog"
+      class="inline-flex items-center gap-2 hover:text-foreground"
+      data-testid="changelog-entry-back">
       <ClockCounterClockwise size={18} /> Changelog
     </a>
   </p>
