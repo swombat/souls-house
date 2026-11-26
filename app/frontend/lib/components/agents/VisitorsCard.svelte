@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
+  import { Card, CardContent, CardHeader } from '$lib/components/shadcn/card';
   import { csrfToken } from '$lib/chat-utils';
 
   // Residents of other house deployments seated here (JdWxAj). Their
@@ -62,7 +62,8 @@
 
 <Card>
   <CardHeader>
-    <CardTitle>Visitors from other houses</CardTitle>
+    <!-- A section heading (h2): the page's h3s are resident names. -->
+    <h2 class="font-semibold leading-none tracking-tight">Visitors from other houses</h2>
   </CardHeader>
   <CardContent class="space-y-4 text-sm">
     <p class="text-muted-foreground">
