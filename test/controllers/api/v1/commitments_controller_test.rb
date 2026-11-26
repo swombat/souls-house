@@ -163,13 +163,18 @@ module Api
         post api_v1_commitments_url, params: attrs(recur_min_minutes: 60, recur_max_minutes: 90), headers: @headers, as: :json
         assert_response :created
         body = response.parsed_body
-        assert_equal({ "min_minutes" => 60, "max_minutes" => 90, "phrase" => "every 60–90 minutes" }, body.dig("commitment", "recurrence"))
+        assert_equal({ "min_minutes" => 60, "max_minutes" => 90, "max_occurrences" => nil, "phrase" => "every 60–90 minutes" },
+                     body.dig("commitment", "recurrence"))
         assert_match(/recurs every 60–90 minutes after each delivery until you cancel it/, body["receipt"])
         assert_match(/ · recurs every 60–90 minutes\z/, @chat.messages.where(role: "system").last.content)
 
         post api_v1_commitments_url, params: attrs(text: "Fixed", recur_every_minutes: "45"), headers: @headers, as: :json
         assert_response :created
         assert_equal [ 45, 45 ], Commitment.find(response.parsed_body.dig("commitment", "id")).values_at(:recur_min_minutes, :recur_max_minutes)
+
+        post api_v1_commitments_url, params: attrs(text: "Capped", recur_every_minutes: 30, recur_max_occurrences: "6"), headers: @headers, as: :json
+        assert_response :created
+        assert_equal 6, response.parsed_body.dig("commitment", "recurrence", "max_occurrences")
       end
 
       test "a malformed recurrence is refused with a reason" do
@@ -178,7 +183,10 @@ module Api
           [ { recur_every_minutes: 30, recur_min_minutes: 20, recur_max_minutes: 40 }, /not both/ ],
           [ { recur_every_minutes: "an hour" }, /whole numbers/ ],
           [ { recur_every_minutes: 1 }, /between 5 minutes/ ],
-          [ { recur_min_minutes: 90, recur_max_minutes: 60 }, /minimum cannot be more/ ]
+          [ { recur_min_minutes: 90, recur_max_minutes: 60 }, /minimum cannot be more/ ],
+          [ { recur_max_occurrences: 3 }, /needs a recurrence/ ],
+          [ { recur_every_minutes: 30, recur_max_occurrences: "six" }, /whole number/ ],
+          [ { recur_every_minutes: 30, recur_max_occurrences: 0 }, /between 1 and/ ]
         ].each_with_index do |(recurrence, message), i|
           post api_v1_commitments_url, params: attrs(text: "Bad #{i}", **recurrence), headers: @headers, as: :json
           assert_response :unprocessable_entity

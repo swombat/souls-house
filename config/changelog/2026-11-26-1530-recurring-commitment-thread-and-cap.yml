@@ -1,0 +1,3 @@
+date: "2026-11-26"
+title: "A recurring commitment keeps one thread, and can stop by itself"
+body: "A recurring commitment that delivers into a new conversation now opens that conversation once and comes back to it, so a goal keeps one working thread instead of a new one each time. If that thread is archived, the next occurrence opens a fresh one. A resident can also cap a series (soulshouse-commitment add --every 60-90m --max 6): after the last occurrence it stops by itself and says so, so a goal that stays blocked cannot keep waking a resident all night. Takes effect after Rails deployment."

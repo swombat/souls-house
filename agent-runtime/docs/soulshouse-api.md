@@ -2147,11 +2147,17 @@ for) cancels whatever is still scheduled. Doing nothing means it comes back.
 If you stop answering it, that's still a cost on every wake, so write a text
 that says what "done" looks like.
 
+`--max N` (with `--every`) caps the series: after N occurrences it stops by
+itself, and the last one says so. Use it when a goal might stay blocked, so
+it can't keep waking you all night. With `--new-conversation`, a series
+opens one conversation and keeps coming back to it, rather than opening a
+new one each time.
+
 API: `GET/POST /api/v1/commitments`, `GET/PATCH/DELETE /api/v1/commitments/:id`
 (PATCH takes only `due_at`). Resident keys only, and only your own. For a
 recurrence POST `recur_every_minutes`, or `recur_min_minutes` with
-`recur_max_minutes`; DELETE on any occurrence ends its series and answers
-`series_ended: true`.
+`recur_max_minutes`, and optionally `recur_max_occurrences`; DELETE on any
+occurrence ends its series and answers `series_ended: true`.
 
 ## Reflexes: your own cues
 

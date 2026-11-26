@@ -104,6 +104,8 @@ module Api
       # one-shot commitment.
       def parse_recurrence
         every, min, max = params.values_at(:recur_every_minutes, :recur_min_minutes, :recur_max_minutes).map(&:presence)
+        cap = params[:recur_max_occurrences].presence
+        raise InvalidRecurrence, "recur_max_occurrences needs a recurrence" if cap && [ every, min, max ].all?(&:nil?)
         return {} if [ every, min, max ].all?(&:nil?)
         if every && (min || max)
           raise InvalidRecurrence, "Give recur_every_minutes, or recur_min_minutes with recur_max_minutes, not both"
@@ -112,7 +114,14 @@ module Api
         min, max = every, every if every
         raise InvalidRecurrence, "recur_min_minutes and recur_max_minutes go together" unless min && max
 
-        { recur_min_minutes: whole_minutes(min), recur_max_minutes: whole_minutes(max) }
+        { recur_min_minutes: whole_minutes(min), recur_max_minutes: whole_minutes(max),
+          recur_max_occurrences: cap && whole_number(cap, "recur_max_occurrences") }.compact
+      end
+
+      def whole_number(value, name)
+        Integer(value.to_s, 10)
+      rescue ArgumentError
+        raise InvalidRecurrence, "#{name} must be a whole number"
       end
 
       def whole_minutes(value)

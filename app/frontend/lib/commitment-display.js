@@ -29,10 +29,15 @@ export function commitmentRecurrenceLine(c) {
   if (!c.recurrence) return '';
   const nth = c.occurrence > 1 ? ` (occurrence ${c.occurrence})` : '';
   if (c.series_ended_reason) {
-    const why = c.series_ended_reason === 'next_occurrence_failed' ? 'ended: the next occurrence could not be scheduled' : 'ended';
+    const why = c.series_ended_reason === 'next_occurrence_failed'
+      ? 'ended: the next occurrence could not be scheduled'
+      : c.series_ended_reason === 'max_occurrences_reached'
+        ? `ended after ${c.recurrence.max_occurrences} occurrences`
+        : 'ended';
     return `Recurred ${c.recurrence.phrase}${nth}; the series has ${why}.`;
   }
-  return `Recurs ${c.recurrence.phrase}${nth} until cancelled.`;
+  const cap = c.recurrence.max_occurrences ? `, at most ${c.recurrence.max_occurrences} times,` : '';
+  return `Recurs ${c.recurrence.phrase}${nth}${cap} until cancelled.`;
 }
 
 export function commitmentStatusLine(c, agentName = 'This resident') {

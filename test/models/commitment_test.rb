@@ -635,6 +635,60 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_includes first.reload.cue_text, "soulshouse-commitment cancel #{second.to_param}"
   end
 
+  test "a recurring new-conversation series opens one conversation and recurs inside it" do
+    room = @account.rooms.create!(name: "Workshop")
+    first = commit("Carry the migration to live", at: @now + 1.minute, destination: "new_conversation", room: room,
+                   recur_min_minutes: 30, recur_max_minutes: 30)
+    travel_to(@now + 2.minutes) { live { first.activate! } }
+    thread = first.reload.activation_chat
+    assert_equal room, thread.room
+    first.update_columns(wake_state: "delivered")
+
+    second = first.next_commitment
+    travel_to(second.due_at + 1.minute) do
+      live do
+        assert_no_difference -> { Chat.count } do
+          assert_equal :activated, second.activate!.status
+        end
+      end
+    end
+    assert_equal thread, second.reload.activation_chat
+    assert_equal 2, thread.messages.where(role: "system").where("content LIKE ?", "**Commitment due:**%").count
+
+    # Once that conversation is archived, the next occurrence opens a fresh one.
+    second.update_columns(wake_state: "delivered")
+    thread.update_columns(archived_at: Time.current)
+    third = second.next_commitment
+    travel_to(third.due_at + 1.minute) do
+      live do
+        assert_difference -> { Chat.count }, 1 do
+          assert_equal :activated, third.activate!.status
+        end
+      end
+    end
+    assert_not_equal thread, third.reload.activation_chat
+  end
+
+  test "a series with a maximum stops by itself after that many occurrences and says why" do
+    assert_not build("Cap alone", at: @now + 1.hour, recur_max_occurrences: 3).valid?
+    assert_not build("Cap zero", at: @now + 1.hour, recur_min_minutes: 15, recur_max_minutes: 15, recur_max_occurrences: 0).valid?
+
+    first = commit("At most twice", at: @now + 1.minute, recur_min_minutes: 15, recur_max_minutes: 15, recur_max_occurrences: 2)
+    travel_to(@now + 2.minutes) { live { first.activate! } }
+    first.update_columns(wake_state: "delivered")
+    second = first.reload.next_commitment
+    assert_equal 2, second.recur_max_occurrences
+    assert_includes first.cue_text, "occurrence 1 of at most 2"
+
+    travel_to(second.due_at + 1.minute) { live { assert_equal :activated, second.activate!.status } }
+    second.reload
+    assert_nil second.next_commitment
+    assert_equal "max_occurrences_reached", second.series_ended_reason
+    assert_match(/last of 2 occurrences/, second.activation_message.content)
+    assert_includes second.cue_text, "the series has ended (max occurrences reached)"
+    assert_equal 0, Commitment.scheduled.where(agent: @lume, text: "At most twice").count
+  end
+
   test "every occurrence reads the series' end, not only the row that was cancelled" do
     first = commit("Read the series", at: @now + 1.minute, recur_min_minutes: 15, recur_max_minutes: 15)
     travel_to(@now + 2.minutes) { live { first.activate! } }
