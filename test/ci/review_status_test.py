@@ -17,8 +17,29 @@ _loader.exec_module(review_status)
 HEAD = "0123456789abcdef0123456789abcdef01234567"
 
 
-def pull(state="open", sha=HEAD):
-    return {"number": 7, "state": state, "head": {"sha": sha}}
+def pull(state="open", sha=HEAD, draft=False):
+    return {"number": 7, "state": state, "head": {"sha": sha}, "node_id": "PR_7", "draft": draft}
+
+
+class FakeGitHub:
+    """Records every call in order, so tests can assert what reached GitHub first."""
+
+    def __init__(self, pr, statuses=(), pulls_for_sha=()):
+        self.pr, self.statuses, self.pulls_for_sha, self.calls = pr, list(statuses), list(pulls_for_sha), []
+
+    def __call__(self, method, url, auth, body=None):
+        if url.endswith("/graphql"):
+            name = body["query"].split("{")[1].split("(")[0].strip()
+            self.calls.append(("graphql", name))
+            return {"data": {}}
+        self.calls.append((method, url.split("/repos/")[1].split("/", 2)[2], (body or {}).get("context")))
+        if method == "GET" and "/pulls/" in url:
+            return self.pr
+        if method == "GET" and url.endswith("/pulls"):
+            return self.pulls_for_sha
+        if method == "GET":
+            return {"sha": HEAD, "statuses": self.statuses}
+        return {}
 
 
 class ReviewStatusTest(unittest.TestCase):
@@ -102,12 +123,54 @@ class ReviewStatusTest(unittest.TestCase):
         ])
         self.assertEqual(state, "success")
 
+    def run_with(self, fake, fn, *args):
+        original = review_status.request
+        review_status.request = fake
+        try:
+            fn(*args)
+        finally:
+            review_status.request = original
+        return fake.calls
+
+    def test_a_block_drafts_the_pr_before_its_status_lands(self):
+        # The quorum can read green until its job runs; a draft can't merge meanwhile.
+        calls = self.run_with(FakeGitHub(pull()), review_status.review, 7, "0123456", "block", "Mira: no", "t")
+        draft = calls.index(("graphql", "convertPullRequestToDraft"))
+        status = next(i for i, c in enumerate(calls) if c[0] == "POST" and c[2] == "review/mira")
+        self.assertLess(draft, status)
+
+    def test_an_approval_leaves_draft_alone(self):
+        calls = self.run_with(FakeGitHub(pull(draft=True)), review_status.review, 7, "0123456", "approve", "Reed: ok", "t")
+        self.assertNotIn("graphql", [c[0] for c in calls])
+
+    def test_arming_marks_a_draft_ready_then_enables_auto_merge(self):
+        calls = self.run_with(FakeGitHub(pull(draft=True)), review_status.review, 7, "0123456", "auto-merge", "Lume: builder", "t")
+        mutations = [c[1] for c in calls if c[0] == "graphql"]
+        self.assertEqual(mutations, ["markPullRequestReadyForReview", "enablePullRequestAutoMerge"])
+
+    def test_the_quorum_job_drafts_a_pr_blocked_some_other_way(self):
+        fake = FakeGitHub(
+            pull(),
+            statuses=[{"context": "review/reed", "state": "failure"}, {"context": "review/lume", "state": "success"}],
+            pulls_for_sha=[pull()],
+        )
+        calls = self.run_with(fake, review_status.write_quorum, HEAD, "t")
+        self.assertIn(("POST", f"statuses/{HEAD}", "review/quorum"), calls)
+        self.assertIn(("graphql", "convertPullRequestToDraft"), calls)
+
+    def test_a_green_quorum_drafts_nothing(self):
+        fake = FakeGitHub(pull(), statuses=[{"context": "review/reed", "state": "success"}, {"context": "review/lume", "state": "success"}])
+        calls = self.run_with(fake, review_status.write_quorum, HEAD, "t")
+        self.assertNotIn("graphql", [c[0] for c in calls])
+
     def test_the_quorum_workflow_runs_on_review_statuses_only(self):
         workflow = (ROOT / ".github" / "workflows" / "review-quorum.yml").read_text()
         self.assertRegex(workflow, re.compile(r"^on:\n  status:", re.M))
         self.assertIn("github.event.context != 'review/quorum'", workflow)
         self.assertIn("scripts/review-status quorum", workflow)
         self.assertEqual(review_status.QUORUM_CONTEXT, "review/quorum")
+        # Drafting a PR blocked some other way needs this.
+        self.assertIn("pull-requests: write", workflow)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,14 @@ head the reviewer read. The "Protect Main" ruleset requires `CI result` and
 plus one reviewer's), red while any slot holds a block, pending otherwise.
 So GitHub merges on the builder plus one review, and a block still holds it.
 
+The quorum is recomputed by a workflow, so for a while after a block it can
+still read green. A block therefore turns the PR into a draft first, before
+its status is written: GitHub will not merge a draft and drops its auto-merge,
+and that happens in GitHub's own state, not in a workflow that may be queued.
+The quorum job drafts the PR too when it sees a block written some other way.
+`auto-merge` marks the PR ready again; the quorum still holds while any slot
+on that head is blocked.
+
     scripts/review-status <pr> <sha> auto-merge "Lume: builder"
     scripts/review-status <pr> <sha> approve "Mira: read the whole diff"
     scripts/review-status <pr> <sha> block "Mira: the lock is taken too late"
@@ -108,14 +116,38 @@ def status_body(verdict, note):
     return {"state": STATES[verdict], "context": f"{CONTEXT}/{reviewer_slug(note)}", "description": clip(note)}
 
 
+def graphql(query, node_id, auth, what):
+    result = request("POST", f"{API}/graphql", auth, {"query": query, "variables": {"id": node_id}})
+    if result.get("errors"):
+        raise Refused(f"{what}: {result['errors'][0].get('message')}")
+    return result
+
+
+def convert_to_draft(pull, auth):
+    if pull.get("draft"):
+        return
+    graphql(
+        "mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } }",
+        pull["node_id"], auth, f"#{pull['number']} not turned into a draft",
+    )
+    print(f"#{pull['number']}: now a draft, so GitHub cannot merge it")
+
+
+def mark_ready(pull, auth):
+    if not pull.get("draft"):
+        return
+    graphql(
+        "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }",
+        pull["node_id"], auth, f"#{pull['number']} not marked ready",
+    )
+
+
 def enable_auto_merge(pull, auth):
     mutation = (
         "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH})"
         " { pullRequest { number autoMergeRequest { mergeMethod } } } }"
     )
-    result = request("POST", f"{API}/graphql", auth, {"query": mutation, "variables": {"id": pull["node_id"]}})
-    if result.get("errors"):
-        raise Refused(f"auto-merge not enabled on #{pull['number']}: {result['errors'][0].get('message')}")
+    graphql(mutation, pull["node_id"], auth, f"auto-merge not enabled on #{pull['number']}")
 
 
 def quorum(statuses):
@@ -150,15 +182,24 @@ def write_quorum(sha, auth):
     body = {"state": state, "context": QUORUM_CONTEXT, "description": description}
     request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, body)
     print(f"{head[:12]}: {QUORUM_CONTEXT} {state} ({description})")
+    if state == "failure":
+        # A block written without this script didn't draft its PR; do it here.
+        for pull in request("GET", f"{API}/repos/{REPO}/commits/{head}/pulls", auth) or []:
+            if pull.get("state") == "open" and pull["head"]["sha"] == head:
+                convert_to_draft(pull, auth)
 
 
 def review(number, reviewed_sha, verdict, note, auth):
     body = status_body(verdict, note)
     pull = request("GET", f"{API}/repos/{REPO}/pulls/{number}", auth)
     head = check_head(pull, reviewed_sha)
+    if verdict == "block":
+        # Before the status: the quorum may still read green until its job runs.
+        convert_to_draft(pull, auth)
     request("POST", f"{API}/repos/{REPO}/statuses/{head}", auth, body)
     print(f"#{number} {head[:12]}: {body['context']} {body['state']} ({body['description']})")
     if verdict == "auto-merge":
+        mark_ready(pull, auth)
         enable_auto_merge(pull, auth)
         print(f"#{number}: auto-merge (squash) on; GitHub merges when CI result and {QUORUM_CONTEXT} are green")
 

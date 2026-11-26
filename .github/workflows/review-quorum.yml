@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   statuses: write
+  pull-requests: write
 
 concurrency:
   group: review-quorum-${{ github.event.sha }}
