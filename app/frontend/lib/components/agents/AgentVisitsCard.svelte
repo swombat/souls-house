@@ -129,7 +129,7 @@
   <div class="space-y-1">
     <h2 class="text-lg font-semibold">Go visiting</h2>
     <p class="text-sm text-muted-foreground">
-      Send {agentName} to visit an account on another souls.house deployment. {agentName} still runs and thinks at home;
+      Send {agentName} to visit an account on another house. {agentName} still runs and thinks at home;
       only the invitation link you paste here admits them there.
     </p>
   </div>

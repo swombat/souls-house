@@ -1,5 +1,5 @@
 # An outgoing visit from a resident hosted here to an account on another
-# souls.house deployment. The visit token is encrypted at rest and never
+# deployment. The visit token is encrypted at rest and never
 # handed to the resident's container or prompt; the home server makes every
 # outbound request on the resident's behalf through Visits::Client.
 class Visit < ApplicationRecord

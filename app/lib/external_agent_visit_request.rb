@@ -1,4 +1,4 @@
-# Triggers a home resident turn for a wake claimed from another souls.house
+# Triggers a home resident turn for a wake claimed from another house
 # deployment. Never places the visit_token in the prompt or trigger payload:
 # the resident talks only to its own home proxy routes (/api/v1/visits/:id/...)
 # using its ordinary SOULSHOUSE_BEARER_TOKEN.

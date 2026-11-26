@@ -65,7 +65,7 @@ class VisitorInvitation < ApplicationRecord
   end
 
   def self.house_name
-    ENV["SOULSHOUSE_HOUSE_NAME"].presence || "souls.house"
+    Setting.instance.site_name.presence || "this house"
   end
 
   def self.house_origin

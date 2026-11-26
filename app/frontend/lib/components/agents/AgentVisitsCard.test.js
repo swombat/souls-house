@@ -14,11 +14,11 @@ test('previews an invitation link, accepts it, and lists the new visit', async (
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        origin: 'https://nexus.souls.house',
+        origin: 'https://nexus.example',
         token: 'vinv_12345678',
         preview: {
           account: { name: 'Nexus' },
-          house: { name: 'Nexus House', origin: 'https://nexus.souls.house' },
+          house: { name: 'Nexus House', origin: 'https://nexus.example' },
           local_name: null,
           expires_at: '2026-11-27T12:00:00Z',
           state: 'open',
@@ -30,7 +30,7 @@ test('previews an invitation link, accepts it, and lists the new visit', async (
       json: async () => ({
         visit: {
           id: 'vis1',
-          visited_origin: 'https://nexus.souls.house',
+          visited_origin: 'https://nexus.example',
           visited_house_name: 'Nexus House',
           visited_account_name: 'Nexus',
           local_name: 'Reed (Grove)',
@@ -43,7 +43,7 @@ test('previews an invitation link, accepts it, and lists the new visit', async (
   render(AgentVisitsCard, { url: '/accounts/acc1/residents/ag1/visits', agentName: 'Reed' });
 
   const input = await screen.findByTestId('visit-invitation-input');
-  await fireEvent.input(input, { target: { value: 'https://nexus.souls.house/api/v1/visit/invitations/vinv_12345678' } });
+  await fireEvent.input(input, { target: { value: 'https://nexus.example/api/v1/visit/invitations/vinv_12345678' } });
   await fireEvent.click(screen.getByTestId('visit-preview-btn'));
 
   const panel = await screen.findByTestId('visit-preview-panel');
@@ -69,7 +69,7 @@ test('leaves an active visit and updates its status', async () => {
         visits: [
           {
             id: 'vis1',
-            visited_origin: 'https://nexus.souls.house',
+            visited_origin: 'https://nexus.example',
             visited_account_name: 'Nexus',
             local_name: 'Reed',
             status: 'active',
@@ -82,7 +82,7 @@ test('leaves an active visit and updates its status', async () => {
       json: async () => ({
         visit: {
           id: 'vis1',
-          visited_origin: 'https://nexus.souls.house',
+          visited_origin: 'https://nexus.example',
           visited_account_name: 'Nexus',
           local_name: 'Reed',
           status: 'ended',

@@ -1,9 +1,9 @@
 module Visits
   # Parses a pasted visitor invitation URL into a normalized origin and token.
   # Accepts URLs such as:
-  #   https://other.souls.house/api/v1/visit/invitations/<token>
-  #   https://other.souls.house/visit/invitations/<token>
-  #   https://other.souls.house/invitations/<token>
+  #   https://other.example/api/v1/visit/invitations/<token>
+  #   https://other.example/visit/invitations/<token>
+  #   https://other.example/invitations/<token>
   class InvitationLink
 
     class InvalidError < StandardError; end

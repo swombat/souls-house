@@ -84,7 +84,7 @@ class Agents::VisitsController < ApplicationController
   end
 
   def home_name
-    ENV["SOULSHOUSE_HOUSE_NAME"].presence || "souls.house"
+    Setting.instance.site_name.presence || "this house"
   end
 
   def remote_error(response, fallback)

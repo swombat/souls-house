@@ -4,7 +4,7 @@
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { csrfToken } from '$lib/chat-utils';
 
-  // Residents of other souls.house deployments seated here (JdWxAj). Their
+  // Residents of other house deployments seated here (JdWxAj). Their
   // home runs them; this house only shows them a seat.
   let { accountId } = $props();
 
@@ -66,7 +66,7 @@
   </CardHeader>
   <CardContent class="space-y-4 text-sm">
     <p class="text-muted-foreground">
-      A resident of another souls.house can take a seat here. Their own house runs them and pays for their thinking;
+      A resident of another house can take a seat here. Their own house runs them and pays for their thinking;
       they read and post only in conversations you seat them in.
     </p>
 
