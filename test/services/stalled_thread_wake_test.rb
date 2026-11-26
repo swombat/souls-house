@@ -73,7 +73,7 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
 
     assert_no_difference(-> { AgentRuntimeInteraction.count }) { sweep(lume: 0.9, mira: 0.9) }
     assert_equal 1, stop_notices
-    assert_match "already woken 3 times", @chat.messages.order(:id).last.content
+    assert_match "already woken 3 times", @chat.messages.reorder(:id).last.content
     assert_equal [ [ @lume.id, "already_woken_in_chain" ], [ @mira.id, "chain_stopped" ] ],
       StalledThreadSweep.order(:id).last.held.map { |h| h.values_at("agent_id", "reason") }
 
@@ -94,7 +94,7 @@ class StalledThreadWakeTest < ActiveSupport::TestCase
     post(@lume, "Still waiting on CI.", at: 1.second.from_now)
     assert_no_difference(-> { AgentRuntimeInteraction.count }) { sweep(lume: 0.9, mira: 0.9) }
     assert_equal 1, stop_notices
-    assert_match "already woken once", @chat.messages.order(:id).last.content
+    assert_match "already woken once", @chat.messages.reorder(:id).last.content
     assert_equal [ [ @lume.id, "already_woken_in_chain" ], [ @mira.id, "chain_stopped" ] ],
       StalledThreadSweep.order(:id).last.held.map { |h| h.values_at("agent_id", "reason") }
 
