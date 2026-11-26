@@ -419,6 +419,25 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     assert_equal({ phase: :connecting, attempts: 2 }, trace.to_h.except(:elapsed_ms))
   end
 
+  test "a deadline inside the next attempt's clock read leaves the previous snapshot whole" do
+    trace = Mnemodyne::Embeddings::Trace.new
+    trace.attempt!
+    trace.connected!
+    trace.response!
+    before = trace.to_h.except(:elapsed_ms)
+    interrupted = Class.new(StandardError)
+    Process.stub(:clock_gettime, ->(*) { raise interrupted }) do
+      assert_raises(interrupted) { trace.attempt! }
+      assert_raises(interrupted) { trace.connected! }
+      assert_raises(interrupted) { trace.response! }
+    end
+    assert_equal before, trace.to_h.except(:elapsed_ms)
+    assert_equal 1, before[:attempts]
+    assert_equal :response, before[:phase]
+    trace.attempt!
+    assert_equal({ phase: :connecting, attempts: 2 }, trace.to_h.except(:elapsed_ms))
+  end
+
   test "only a known phase and non-negative integers survive into the timing" do
     error = Mnemodyne::Embeddings::Unavailable.new(:timeout, timing: {
       phase: :somewhere, attempts: 1, connect_ms: -3, response_ms: 1.5, elapsed_ms: "2001", host: "x.invalid"

@@ -63,38 +63,44 @@ class Mnemodyne::Embeddings
   # latest attempt and stay absent when that point was never reached; a
   # response time is when the headers were parsed, not when the first byte
   # arrived. elapsed_ms runs from the start of the whole call.
+  #
+  # The outer deadline can interrupt anywhere, so each step builds the next
+  # state first and publishes it with one assignment: a deadline sees either
+  # the previous snapshot or the new one, never one attempt's count beside
+  # another attempt's phase and times.
   class Trace
 
     PHASES = %i[connecting connected response].freeze
 
-    attr_reader :phase, :attempts, :connect_ms, :response_ms
-
     def initialize
       @started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      @attempts = 0
+      @state = { attempts: 0 }.freeze
     end
 
+    def phase = @state[:phase]
+    def attempts = @state[:attempts]
+    def connect_ms = @state[:connect_ms]
+    def response_ms = @state[:response_ms]
+
     def attempt!
-      @attempts += 1
-      @attempt_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      @phase = :connecting
-      @connect_ms = nil
-      @response_ms = nil
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @state = { attempts: @state[:attempts] + 1, phase: :connecting, attempt_started: now }.freeze
     end
 
     def connected!
-      @phase = :connected
-      @connect_ms = since(@attempt_started)
+      ms = since(@state[:attempt_started])
+      @state = @state.merge(phase: :connected, connect_ms: ms).freeze
     end
 
     def response!
-      @phase = :response
-      @response_ms = since(@attempt_started)
+      ms = since(@state[:attempt_started])
+      @state = @state.merge(phase: :response, response_ms: ms).freeze
     end
 
     def to_h
-      { phase: phase, attempts: (attempts if attempts.positive?), connect_ms: connect_ms,
-        response_ms: response_ms, elapsed_ms: since(@started) }.compact
+      state = @state
+      { phase: state[:phase], attempts: (state[:attempts] if state[:attempts].positive?), connect_ms: state[:connect_ms],
+        response_ms: state[:response_ms], elapsed_ms: since(@started) }.compact
     end
 
     private
