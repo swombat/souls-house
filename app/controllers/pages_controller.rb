@@ -20,8 +20,25 @@ class PagesController < ApplicationController
   end
 
   def changelog
-    @link_preview = LinkPreview.for(:changelog)
-    render inertia: "changelog", props: { changelog: Changelog.entries }
+    respond_to do |format|
+      format.html do
+        @link_preview = LinkPreview.for(:changelog)
+        render inertia: "changelog", props: { changelog: Changelog.entries }
+      end
+
+      format.atom do
+        xml = Changelog::AtomFeed.render(
+          entries: Changelog.latest(Changelog::FEED_LIMIT),
+          base_url: request.base_url,
+          site_name: Setting.instance.site_name,
+          subtitle: LinkPreview.for(:changelog).description
+        )
+
+        if stale?(etag: xml, public: true)
+          render body: xml, content_type: "application/atom+xml; charset=utf-8"
+        end
+      end
+    end
   end
 
   # Public: one changelog entry, so a post about one change can link to that change.

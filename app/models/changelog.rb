@@ -11,9 +11,16 @@ class Changelog
   FILENAME = /\A(?<date>\d{4}-\d{2}-\d{2})-(?<time>\d{4})-(?<slug>#{SLUG})\.yml\z/
   CLIP_DIR = "changelog-clips"
   RECENT_DAYS = 14
+  FEED_LIMIT = 50
 
   def self.entries(dir: DIR)
     entry_files(dir:).map { |path| parse_entry(path) }
+  end
+
+  def self.latest(limit, dir: DIR)
+    return [] if limit <= 0
+
+    entry_files(dir:).first(limit).map { |path| parse_entry(path) }
   end
 
   def self.entry_files(dir: DIR)
@@ -22,6 +29,17 @@ class Changelog
 
   def self.slug_for(path)
     FILENAME.match(File.basename(path))&.[](:slug)
+  end
+
+  def self.published_at_for(path, date)
+    match = FILENAME.match(File.basename(path))
+    if match
+      hour = match[:time][0, 2].to_i
+      minute = match[:time][2, 2].to_i
+      Time.utc(date.year, date.month, date.day, hour, minute)
+    else
+      Time.utc(date.year, date.month, date.day)
+    end
   end
 
   # One entry by its slug, with the slug, title and date of the entries either
@@ -38,7 +56,14 @@ class Changelog
 
   def self.parse_entry(path)
     entry = YAML.safe_load_file(path, permitted_classes: [ Date ])
-    row = { slug: slug_for(path), date: entry.fetch("date").to_date.iso8601, title: entry.fetch("title"), body: entry.fetch("body") }
+    date = entry.fetch("date").to_date
+    row = {
+      slug: slug_for(path),
+      date: date.iso8601,
+      published_at: published_at_for(path, date).iso8601,
+      title: entry.fetch("title"),
+      body: entry.fetch("body")
+    }
     if (clip = entry["clip"])
       row[:clip] = { name: clip, src: "/#{CLIP_DIR}/#{clip}.mp4", poster: "/#{CLIP_DIR}/#{clip}.jpg" }
     end

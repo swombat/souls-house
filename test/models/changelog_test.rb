@@ -112,4 +112,27 @@ class ChangelogTest < ActiveSupport::TestCase
     end
   end
 
+  test "latest returns the newest entries up to the limit and stops reading older files" do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "2026-11-25-1430-newest.yml"), "date: 2026-11-25\ntitle: Newest\nbody: N.\n")
+      File.write(File.join(dir, "2026-11-25-0900-second.yml"), "date: 2026-11-25\ntitle: Second\nbody: S.\n")
+      # Older unreadable YAML would raise if scanned past the limit.
+      File.write(File.join(dir, "2026-10-01-0001-unreached.yml"), ": [unclosed\n")
+
+      assert_equal %w[Newest Second], Changelog.latest(2, dir:).map { |entry| entry[:title] }
+      assert_equal [], Changelog.latest(0, dir:)
+    end
+  end
+
+  test "entries carry published_at as UTC ISO 8601 derived from the filename date and time" do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "2026-11-25-1430-afternoon.yml"), "date: 2026-11-25\ntitle: Afternoon\nbody: A.\n")
+      File.write(File.join(dir, "2026-11-25-0905-morning.yml"), "date: 2026-11-25\ntitle: Morning\nbody: M.\n")
+
+      entries = Changelog.entries(dir:)
+      assert_equal "2026-11-25T14:30:00Z", entries.first[:published_at]
+      assert_equal "2026-11-25T09:05:00Z", entries.second[:published_at]
+    end
+  end
+
 end
