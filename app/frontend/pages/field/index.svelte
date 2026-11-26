@@ -21,13 +21,12 @@
   import FieldEmpty from '$lib/components/field/FieldEmpty.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
-  import FieldActions from '$lib/components/field/FieldActions.svelte';
-  import FieldTranscriptionLinks from '$lib/components/field/FieldTranscriptionLinks.svelte';
+  import FieldHeader from '$lib/components/field/FieldHeader.svelte';
   import FieldSharing from '$lib/components/field/FieldSharing.svelte';
   import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
   import VoiceNoteDialog from '$lib/components/field/VoiceNoteDialog.svelte';
   import { fieldItemLink } from '$lib/field';
-  import { CaretLeft, ListBullets, Table } from 'phosphor-svelte';
+  import { CaretLeft } from 'phosphor-svelte';
 
   let {
     items = [],
@@ -321,31 +320,14 @@
 </svelte:head>
 
 <div class="px-4 py-6 sm:p-8 max-w-7xl mx-auto">
-  <div class="mb-6 flex-wrap items-end justify-between gap-4 {current ? 'hidden lg:flex' : 'flex'}">
-    <div>
-      <h1 class="text-3xl font-bold">Field</h1>
-      <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
-      <FieldTranscriptionLinks accountId={account.id} />
-      <!-- The Field's two places: its items, and the tables built from them.
-           A way to go, not a thing to add, so it lives here and not under Add. -->
-      <nav class="mt-3 flex gap-1" aria-label="Field sections" data-testid="field-sections">
-        <Button size="sm" variant="secondary" href={`/accounts/${account.id}/field`} aria-current="page">
-          <ListBullets class="size-4" /> Items
-        </Button>
-        <Button size="sm" variant="ghost" href={`/accounts/${account.id}/field/tables`} data-testid="field-tables-link">
-          <Table class="size-4" /> Tables
-        </Button>
-      </nav>
-    </div>
-    <div class="w-full sm:w-auto">
-      <FieldActions
-        onFile={() => (uploadOpen = true)}
-        onNote={() => (noteOpen = true)}
-        onRecordNow={() => (voiceNoteOpen = true)}
-        onRecording={() => (recordingOpen = true)}
-        onSong={addSong} />
-    </div>
-  </div>
+  <FieldHeader
+    accountId={account.id}
+    hidden={!!current}
+    onFile={() => (uploadOpen = true)}
+    onNote={() => (noteOpen = true)}
+    onRecordNow={() => (voiceNoteOpen = true)}
+    onRecording={() => (recordingOpen = true)}
+    onSong={addSong} />
 
   {#if fieldEmpty}
     <FieldEmpty {accountLabel} />

@@ -45,6 +45,13 @@ class FakeRecorder {
   }
 }
 
+function postFinishedWith(outcome, errors = {}) {
+  const options = post.mock.calls.at(-1)[2];
+  if (outcome === 'success') options.onSuccess();
+  if (outcome === 'error') options.onError(errors);
+  options.onFinish?.();
+}
+
 beforeEach(() => {
   recorders = [];
   tracks = [];
@@ -110,7 +117,7 @@ test('opening starts recording at once; Stop shows the take, and Save sends it a
   // Our own save must not meet "discard the recording?": only a quiet hold is left.
   expect(hold.held.map((h) => h.options.warn)).toEqual([false]);
 
-  post.mock.calls[0][2].onSuccess();
+  postFinishedWith('success');
   await settle();
   expect(hold.held).toHaveLength(0);
 });
@@ -138,8 +145,7 @@ test('an upload that fails keeps the take to try again', async () => {
 test('a take the browser ends on its own goes to review with what was captured, and says so', async () => {
   const recorder = await openRecording();
   recorder.say('half a thought');
-  // Safari ends the track when the screen locks.
-  recorder.state = 'inactive';
+  // Safari ends the track when the screen locks; the recorder then stops.
   tracks[0].onended();
   await settle();
   expect(screen.queryByTestId('voice-note-live')).not.toBeInTheDocument();
@@ -168,4 +174,61 @@ test('discarding a take stops the microphone and lets go of the page', async () 
   expect(upload).not.toHaveBeenCalled();
   expect(hold.held).toHaveLength(0);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:take');
+});
+
+test('a save that is never answered can be retried safely, re-sending the same upload', async () => {
+  const recorder = await openRecording();
+  recorder.say('idea');
+  await fireEvent.click(screen.getByTestId('voice-note-stop'));
+  await settle();
+  upload.mockResolvedValue({ signed_id: 'once' });
+  await fireEvent.click(screen.getByTestId('voice-note-save'));
+  await settle();
+  expect(screen.getByTestId('voice-note-progress')).toHaveTextContent('Saving…');
+
+  // A network failure: Inertia finishes without success or error.
+  postFinishedWith('neither');
+  await settle();
+  expect(screen.getByRole('alert')).toHaveTextContent("couldn't confirm the save");
+  expect(screen.getByTestId('voice-note-save')).not.toBeDisabled();
+  expect(hold.held.map((h) => h.options.warn)).toEqual([undefined]);
+
+  await fireEvent.click(screen.getByTestId('voice-note-save'));
+  await settle();
+  expect(upload).toHaveBeenCalledOnce();
+  expect(post.mock.calls.map((call) => call[1].field_recording.upload_id)).toEqual(['once', 'once']);
+
+  // The first had gone through: the server refuses the same blob twice.
+  postFinishedWith('error', { audio: "That upload can't be used." });
+  await settle();
+  expect(screen.getByRole('alert')).toHaveTextContent('first save went through');
+});
+
+test('leaving the page mid-take lets go of the microphone and the page hold', async () => {
+  const component = render(VoiceNoteDialog, { open: true, accountId: 'acc' });
+  await settle();
+  expect(hold.held).toHaveLength(1);
+  component.unmount();
+  expect(tracks[0].stop).toHaveBeenCalled();
+  expect(hold.held).toHaveLength(0);
+});
+
+test('a dialog closed while the permission prompt is open lets go of the mic it is later given', async () => {
+  let grant;
+  navigator.mediaDevices.getUserMedia = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        const track = { stop: vi.fn(), onended: null };
+        tracks.push(track);
+        grant = () => resolve({ getTracks: () => [track], getAudioTracks: () => [track] });
+      })
+  );
+  const component = render(VoiceNoteDialog, { open: true, accountId: 'acc' });
+  await settle();
+  component.unmount();
+  grant();
+  await settle();
+  expect(tracks[0].stop).toHaveBeenCalled();
+  expect(recorders).toHaveLength(0);
+  expect(hold.held).toHaveLength(0);
 });

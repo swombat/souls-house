@@ -72,7 +72,8 @@
   <Button class="w-full" onclick={() => (sheetOpen = true)} data-testid="field-add">
     <Plus class="size-4" /> Add
   </Button>
-  <Drawer.Root bind:open={sheetOpen} direction="bottom">
+  <!-- autoFocus: vaul defaults it off, which leaves keyboard focus behind the sheet. -->
+  <Drawer.Root bind:open={sheetOpen} direction="bottom" autoFocus>
     <Drawer.Content data-testid="field-add-sheet">
       <Drawer.Header class="text-left">
         <Drawer.Title>Add to the Field</Drawer.Title>

@@ -82,6 +82,8 @@ test('on a phone, Add opens a sheet with Record now first, and Tables stays besi
   await expect(sheet.getByRole('button').first()).toContainText('Record now');
   // The whole list fits: the last choice is on screen once the sheet has slid up.
   await expect(sheet.getByTestId('field-add-song')).toBeInViewport({ ratio: 1 });
+  // Keyboard focus moves into the sheet, onto the first choice.
+  await expect(sheet.getByTestId('field-record-now')).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath('3-phone-sheet.png') });
   await sheet.getByTestId('field-record-now').click();
   await expect(page.getByTestId('voice-note-timer')).toBeVisible();

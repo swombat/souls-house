@@ -83,7 +83,7 @@
 
 <Card.Root
   data-testid="speaker-card"
-  data-ignored={speaker.ignored ? (speaker.ignored_as || 'noise') : null}
+  data-ignored={speaker.ignored ? speaker.ignored_as || 'noise' : null}
   class={speaker.ignored && !anonymous ? 'opacity-60' : ''}>
   <Card.Content class="p-3 space-y-2">
     <div>
@@ -103,9 +103,11 @@
         <p class="text-xs text-muted-foreground">Dismissed as noise</p>
       {:else if speaker.talk_ms != null || anonymous}
         <p class="text-xs text-muted-foreground">
-          {#if anonymous}Staying anonymous{speaker.talk_ms != null ? ' · ' : ''}{/if}{#if speaker.talk_ms != null}{formatDuration(
-              speaker.talk_ms || 0
-            )}{share != null ? ` · ${share}% of talk` : ''}{/if}
+          {#if anonymous}Staying anonymous{speaker.talk_ms != null
+              ? ' · '
+              : ''}{/if}{#if speaker.talk_ms != null}{formatDuration(speaker.talk_ms || 0)}{share != null
+              ? ` · ${share}% of talk`
+              : ''}{/if}
         </p>
       {/if}
     </div>
