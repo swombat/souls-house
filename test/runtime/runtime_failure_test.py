@@ -10,6 +10,14 @@ import unittest
 from unittest.mock import patch
 
 
+CLAUDE_SIGN_IN_FAILURES = (
+    "clamp_runtime_failed: Claude Code reported a failed result: Failed to authenticate: [redacted], "
+    "or use `claude setup-token` and set CLAUDE_CODE_OAUTH_TOKEN for unattended jobs",
+    "clamp_runtime_failed: control request failed: Unable to validate model: "
+    "OAuth refresh token is no longer valid; run /login to re-authenticate",
+)
+
+
 class RuntimeFailureTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -33,7 +41,7 @@ class RuntimeFailureTest(unittest.TestCase):
         spec.loader.exec_module(self.shim)
         patch.object(self.shim, "jsonify", side_effect=lambda body: body).start()
 
-    def respond(self, returncode, events, stderr=""):
+    def respond(self, returncode, events, stderr="", *, provider="gemini"):
         stdout = "\n".join(json.dumps(event) for event in events)
         result = subprocess.CompletedProcess(["synthetic-chaos"], returncode, stdout, stderr)
         with self.assertLogs(self.shim.log, level="INFO") as logs:
@@ -43,7 +51,7 @@ class RuntimeFailureTest(unittest.TestCase):
                 events=self.shim.parse_events(stdout),
                 invocation_text="synthetic prompt",
                 usage={},
-                runtime={"provider": "gemini", "model": "synthetic-model"},
+                runtime={"provider": provider, "model": "synthetic-model"},
                 session={"outcome": "legacy_fresh"},
                 prompt={"mode": "full"},
                 resumed=False,
@@ -66,6 +74,33 @@ class RuntimeFailureTest(unittest.TestCase):
                        'result detail: {"error":{"code":503,"message":"model overloaded"}}',
         })
         self.assertIn("runtime_failure=antigravity_runtime_failed: Antigravity invocation failed", logs)
+
+    def test_claude_sign_in_failures_set_auth_expired_on_the_response(self):
+        for message in CLAUDE_SIGN_IN_FAILURES:
+            with self.subTest(message=message):
+                response, status, _logs = self.respond(
+                    1, [{"type": "error", "message": message}], provider="anthropic"
+                )
+                self.assertEqual(status, 500)
+                self.assertEqual(response.get("error_kind"), "auth_expired")
+
+    def test_quoting_claude_sign_in_failures_in_stdout_is_not_auth_expiry(self):
+        for message in CLAUDE_SIGN_IN_FAILURES:
+            with self.subTest(message=message):
+                response, _status, _logs = self.respond(1, [
+                    {"type": "item.completed", "item": {"type": "agent_message", "text": message}},
+                    {"type": "error", "message": "unrelated runtime failure"},
+                ], provider="anthropic")
+                self.assertIn(message, response["stdout"])
+                self.assertNotIn("error_kind", response)
+
+    def test_cloudflare_challenge_takes_precedence_over_claude_sign_in_failure(self):
+        response, _status, _logs = self.respond(
+            1, [{"type": "error", "message": CLAUDE_SIGN_IN_FAILURES[0]}],
+            stderr="Failed to authenticate. API Error: 403 Attention Required! | Cloudflare",
+            provider="anthropic",
+        )
+        self.assertEqual(response.get("error_kind"), "provider_challenge")
 
     def test_stderr_is_the_fallback_and_secrets_are_redacted(self):
         stderr = ("thread 'main' panicked at provider.rs:12\n"
