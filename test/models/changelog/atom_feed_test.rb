@@ -58,7 +58,7 @@ class Changelog::AtomFeedTest < ActiveSupport::TestCase
     assert_equal "https://souls.house/changelog-clips/voice.mp4",
       first.at_xpath("atom:link[@rel='enclosure'][@type='video/mp4']/@href", NS).value
 
-    second = nodes.second
+    second = nodes[1]
     assert_equal "https://souls.house/changelog/plain-change", second.at_xpath("atom:id", NS).text
     assert_nil second.at_xpath("atom:link[@rel='enclosure']", NS)
     refute_includes second.at_xpath("atom:content", NS).text, "<img"
