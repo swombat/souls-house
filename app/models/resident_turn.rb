@@ -110,6 +110,8 @@ class ResidentTurn < ApplicationRecord
     return false unless dispatch_deliverable?
     subscription_id = completion_context["telegram_subscription_id"]
     return false if subscription_id && !TelegramSubscription.active.where(id: subscription_id, agent: agent).exists?
+    visit_id = completion_context["visit_id"]
+    return false if visit_id && !Visit.active.where(id: visit_id, agent: agent).exists?
     true
   end
 

@@ -4,6 +4,7 @@
   import AgentSubscriptionSettings from '$lib/components/agents/AgentSubscriptionSettings.svelte';
   import AgentPaidFallbackCard from '$lib/components/agents/AgentPaidFallbackCard.svelte';
   import AgentHookExpectationsCard from '$lib/components/agents/AgentHookExpectationsCard.svelte';
+  import AgentVisitsCard from '$lib/components/agents/AgentVisitsCard.svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import {
@@ -75,6 +76,7 @@
     can_manage_essential: canManageEssential = false,
     paid_fallback_url: paidFallbackUrl = null,
     hook_expectations_url: hookExpectationsUrl = null,
+    visits_url: visitsUrl = null,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
     cost_report: costReport = {},
@@ -368,6 +370,9 @@
       </form>
       {#if activeTab === 'settings' && residentApiKeys}
         <ResidentApiKeys residentName={agent.name} {...residentApiKeys} />
+      {/if}
+      {#if activeTab === 'settings' && visitsUrl}
+        <AgentVisitsCard url={visitsUrl} agentName={agent.name} />
       {/if}
     </div>
   </div>

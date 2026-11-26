@@ -132,6 +132,11 @@ production:
     queue: default
     schedule: every minute
 
+  visit_poll:
+    class: Visits::PollJob
+    queue: default
+    schedule: every minute
+
   resident_turn_dispatch:
     class: ResidentTurnDispatchJob
     queue: resident_dispatch

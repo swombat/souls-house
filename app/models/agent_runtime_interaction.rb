@@ -18,6 +18,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   belongs_to :agent
   belongs_to :chat, optional: true
   has_many :linked_telegram_messages, class_name: "TelegramMessage", dependent: :nullify
+  has_one :visit_wake, dependent: :nullify
   # The live one. A run whose subscription refused before it started and
   # which hopped to the paid fallback (#690) also keeps the retired turn.
   has_one :resident_turn, -> { where(hopped_at: nil) }, dependent: :destroy
@@ -55,6 +56,9 @@ class AgentRuntimeInteraction < ApplicationRecord
   after_update_commit :enqueue_telegram_completion_notice, if: -> {
     trigger_kind == "telegram" && saved_change_to_finished_at? && finished_at.present? && runtime_status == "ok"
   }
+  after_update_commit :enqueue_visit_wake_completion, if: -> {
+    trigger_kind == "visit" && saved_change_to_finished_at? && finished_at.present?
+  }
   # A handoff to this resident is delivered once a run reads it, and blocked
   # if the run meant to read it ends without doing so (MessageHandoff).
   after_update_commit :sync_message_handoffs, if: -> {
@@ -75,6 +79,13 @@ class AgentRuntimeInteraction < ApplicationRecord
   rescue StandardError => error
     Rails.logger.warn("Telegram completion notice enqueue failed for interaction #{id}: #{error.class}")
   end
+
+  def enqueue_visit_wake_completion
+    Visits::CompleteWakeJob.perform_later(id)
+  rescue StandardError => error
+    Rails.logger.warn("Visit wake completion enqueue failed for interaction #{id}: #{error.class}")
+  end
+  private :enqueue_visit_wake_completion
 
   def enqueue_busy_run_retry
     BusyRunRetryJob.set(wait: BusyRunRetryJob::DELAY).perform_later(id)
