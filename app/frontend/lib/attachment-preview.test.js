@@ -6,6 +6,7 @@ const file = (filename, content_type, extra = {}) => ({
   content_type,
   inline_url: '/rails/active_storage/blobs/redirect/x/' + filename + '?disposition=inline',
   text_preview_url: '/attachment_previews/x/' + filename,
+  html_preview_url: '/attachment_html_previews/x/' + filename,
   ...extra,
 });
 
@@ -21,6 +22,13 @@ describe('previewKind', () => {
     expect(previewKind(file('recording.webm', 'audio/webm'))).toBe('audio');
     expect(previewKind(file('clip.mp4', 'video/mp4'))).toBe('video');
     expect(previewKind(file('paper.pdf', 'application/pdf'))).toBe('pdf');
+  });
+
+  it('previews html by type or by extension', () => {
+    expect(previewKind(file('report.html', 'text/html'))).toBe('html');
+    expect(previewKind(file('report.html', 'text/html; charset=utf-8'))).toBe('html');
+    expect(previewKind(file('draft.htm', 'application/octet-stream'))).toBe('html');
+    expect(previewKind(file('PREVIEW.HTML', 'text/plain'))).toBe('html');
   });
 
   it('previews plain text formats as text', () => {
@@ -41,6 +49,7 @@ describe('previewKind', () => {
   it('needs the url its kind reads from', () => {
     expect(previewKind({ filename: 'a.md', content_type: 'text/markdown', inline_url: '/x' })).toBeNull();
     expect(previewKind({ filename: 'a.mp3', content_type: 'audio/mpeg', text_preview_url: '/x' })).toBeNull();
+    expect(previewKind({ filename: 'a.html', content_type: 'text/html', text_preview_url: '/x' })).toBeNull();
   });
 });
 

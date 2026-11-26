@@ -13,10 +13,18 @@
   let error = $state(null);
   let loading = $state(false);
   let loaded = false;
+  let htmlMode = $state('rendered');
 
-  // Read text when the dialog opens; closing it stops an unfinished read.
   $effect(() => {
-    if (!open || loaded || (kind !== 'markdown' && kind !== 'text')) return;
+    if (!open) htmlMode = 'rendered';
+  });
+
+  // Read text when the dialog opens (or when switching an HTML preview to source);
+  // closing it stops an unfinished read.
+  $effect(() => {
+    const wantsText =
+      kind === 'markdown' || kind === 'text' || (kind === 'html' && htmlMode === 'source' && !!file.text_preview_url);
+    if (!open || loaded || !wantsText) return;
     const controller = new AbortController();
     loading = true;
     error = null;
@@ -40,11 +48,48 @@
     data-testid="attachment-preview"
     data-preview-kind={kind}>
     <Dialog.Header class="pr-8">
-      <Dialog.Title class="truncate">{file.filename}</Dialog.Title>
+      <div class="flex items-center justify-between gap-3">
+        <Dialog.Title class="truncate">{file.filename}</Dialog.Title>
+        {#if kind === 'html' && file.text_preview_url}
+          <div
+            class="inline-flex rounded-md border border-border bg-muted/50 p-0.5 shrink-0"
+            role="group"
+            aria-label="HTML preview mode">
+            <button
+              type="button"
+              onclick={() => (htmlMode = 'rendered')}
+              class="px-2.5 py-1 text-xs rounded-sm transition-colors {htmlMode === 'rendered'
+                ? 'bg-background text-foreground shadow-xs font-medium'
+                : 'text-muted-foreground hover:text-foreground'}"
+              aria-pressed={htmlMode === 'rendered'}
+              data-testid="attachment-preview-html-rendered">
+              Rendered
+            </button>
+            <button
+              type="button"
+              onclick={() => (htmlMode = 'source')}
+              class="px-2.5 py-1 text-xs rounded-sm transition-colors {htmlMode === 'source'
+                ? 'bg-background text-foreground shadow-xs font-medium'
+                : 'text-muted-foreground hover:text-foreground'}"
+              aria-pressed={htmlMode === 'source'}
+              data-testid="attachment-preview-html-source">
+              Source
+            </button>
+          </div>
+        {/if}
+      </div>
     </Dialog.Header>
 
     <div class="min-h-0 overflow-auto -mx-6 px-6">
-      {#if kind === 'markdown' || kind === 'text'}
+      {#if kind === 'html' && htmlMode === 'rendered'}
+        <iframe
+          src={file.html_preview_url}
+          title={file.filename}
+          sandbox=""
+          referrerpolicy="no-referrer"
+          class="w-full h-[70vh] rounded-md border border-border bg-white"
+          data-testid="attachment-preview-html"></iframe>
+      {:else if kind === 'markdown' || kind === 'text' || (kind === 'html' && htmlMode === 'source')}
         {#if loading}
           <p class="text-sm text-muted-foreground py-8 text-center">Loading…</p>
         {:else if error}

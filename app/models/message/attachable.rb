@@ -46,6 +46,11 @@ module Message::Attachable
         file_data[:text_preview_url] = url_helpers.attachment_preview_path(
           signed_id: file.blob.signed_id, filename: file.filename.to_param
         )
+        if AttachmentHtmlPreviewsController.previewable_blob?(file.blob)
+          file_data[:html_preview_url] = url_helpers.attachment_html_preview_path(
+            signed_id: file.blob.signed_id, filename: file.filename.to_param
+          )
+        end
 
         if file.variable?
           file_data[:thumb_url] = url_helpers.rails_representation_url(file.variant(:thumb), only_path: true)
