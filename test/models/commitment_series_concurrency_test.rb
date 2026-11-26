@@ -42,17 +42,24 @@ class CommitmentSeriesConcurrencyTest < ActiveSupport::TestCase
       activation = in_thread do
         Commitment.transaction do
           result = Commitment.find(@current.id).activate!
-          @ready.push(true)
+          @ready.push(backend_pid)
           @release.pop
           result.status
         end
       end
-      @ready.pop(timeout: 10) or flunk "activation never ran"
+      activate_pid = @ready.pop(timeout: 10) or flunk "activation never ran"
       successor = Commitment.find_by(previous_commitment_id: @current.id)
       assert_nil successor, "the successor is not visible before the activation commits"
 
-      canceller = in_thread { Commitment.find(@first.id).cancel!(by: @agent).status }
-      wait_until { blocked_count >= 1 }
+      cancel_pids = Queue.new
+      canceller = in_thread do
+        cancel_pids.push(backend_pid)
+        Commitment.find(@first.id).cancel!(by: @agent).status
+      end
+      cancel_pid = cancel_pids.pop(timeout: 10) or flunk "cancel never ran"
+      # Wait until this canceller is blocked by this activation, not by any
+      # unrelated backend on the test server (Mira's review of 90524f74).
+      wait_until { blocking_pids(cancel_pid).include?(activate_pid) }
       @release.push(true)
 
       assert_equal :activated, activation.value
@@ -72,11 +79,13 @@ class CommitmentSeriesConcurrencyTest < ActiveSupport::TestCase
     thread
   end
 
-  def blocked_count
+  def backend_pid
+    ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()").to_i
+  end
+
+  def blocking_pids(pid)
     ActiveRecord::Base.uncached do
-      ActiveRecord::Base.connection.select_value(
-        "SELECT count(*) FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')"
-      ).to_i
+      ActiveRecord::Base.connection.select_values("SELECT unnest(pg_blocking_pids(#{Integer(pid)}))").map(&:to_i)
     end
   end
 
