@@ -148,6 +148,13 @@ class ReviewStatusTest(unittest.TestCase):
         mutations = [c[1] for c in calls if c[0] == "graphql"]
         self.assertEqual(mutations, ["markPullRequestReadyForReview", "enablePullRequestAutoMerge"])
 
+    def test_arming_refuses_while_the_head_is_blocked(self):
+        # Re-arming would mark the draft ready while quorum may still read green.
+        fake = FakeGitHub(pull(draft=True), statuses=[{"context": "review/mira", "state": "failure"}])
+        with self.assertRaisesRegex(review_status.Refused, "stays a draft"):
+            self.run_with(fake, review_status.review, 7, "0123456", "auto-merge", "Lume: builder", "t")
+        self.assertNotIn("graphql", [c[0] for c in fake.calls])
+
     def test_the_quorum_job_drafts_a_pr_blocked_some_other_way(self):
         fake = FakeGitHub(
             pull(),

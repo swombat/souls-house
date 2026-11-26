@@ -15,8 +15,8 @@ still read green. A block therefore turns the PR into a draft first, before
 its status is written: GitHub will not merge a draft and drops its auto-merge,
 and that happens in GitHub's own state, not in a workflow that may be queued.
 The quorum job drafts the PR too when it sees a block written some other way.
-`auto-merge` marks the PR ready again; the quorum still holds while any slot
-on that head is blocked.
+`auto-merge` marks the PR ready again, and refuses while any slot on that
+head still holds a block.
 
     scripts/review-status <pr> <sha> auto-merge "Lume: builder"
     scripts/review-status <pr> <sha> approve "Mira: read the whole diff"
@@ -189,10 +189,20 @@ def write_quorum(sha, auth):
                 convert_to_draft(pull, auth)
 
 
+def refuse_if_blocked(head, auth):
+    """Marking a draft ready while a block stands would undo the brake the block set."""
+    combined = request("GET", f"{API}/repos/{REPO}/commits/{head}/status?per_page=100", auth)
+    state, description = quorum(combined.get("statuses") or [])
+    if state == "failure":
+        raise Refused(f"{head[:12]} is {description}; it stays a draft until that reviewer approves or you push a new head")
+
+
 def review(number, reviewed_sha, verdict, note, auth):
     body = status_body(verdict, note)
     pull = request("GET", f"{API}/repos/{REPO}/pulls/{number}", auth)
     head = check_head(pull, reviewed_sha)
+    if verdict == "auto-merge":
+        refuse_if_blocked(head, auth)
     if verdict == "block":
         # Before the status: the quorum may still read green until its job runs.
         convert_to_draft(pull, auth)
