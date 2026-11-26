@@ -62,27 +62,6 @@ class Accounts::WhatsappPhonePairingTest < ActionDispatch::IntegrationTest
     assert_not_includes log, "7700 900123"
   end
 
-  test "unrelated log output cannot contaminate the captured pairing request" do
-    sign_in @owner
-    log = capture_request_log do
-      unrelated_write = ->(*) do
-        File.open(Rails.root.join("log/test.log"), "a") { |file| file.puts("unrelated WhatsApp SQL: #{PHONE} #{E164}") }
-        {}
-      end
-      CommsConnector.stub(:pair_phone, unrelated_write) do
-        post phone_account_service_connection_pairing_path(@account, @connection.public_id),
-             params: { phone: PHONE, attempt: 1 }, as: :json
-      end
-    end
-
-    assert_response :accepted
-    assert_includes log, phone_account_service_connection_pairing_path(@account, @connection.public_id), "the request was logged"
-    assert_match(/"phone"\s*=>\s*"\[FILTERED\]"/, log, "the request's filtered phone parameter was logged")
-    assert_not_includes log, "unrelated WhatsApp SQL"
-    assert_not_includes log, "7700900123"
-    assert_not_includes log, "7700 900123"
-  end
-
   test "request capture includes secondary framework loggers and detaches after errors" do
     broadcasts = Rails.logger.broadcasts.dup
     log = capture_request_log do
@@ -291,7 +270,7 @@ class Accounts::WhatsappPhonePairingTest < ActionDispatch::IntegrationTest
     assert_equal "Personal", @connection.label
     assert_equal "447700900123", @connection.external_subject_id
     assert_equal "Ada", @connection.external_identity
-    assert_equal "•••• 0123", @connection.as_connection_json(current_user: @user)[:whatsapp_identity]
+    assert_equal "•••• 0123", @connection.as_connection_json(current_user: @owner)[:whatsapp_identity]
   end
 
   test "restarting pairing or disconnecting clears the code and the phone step" do

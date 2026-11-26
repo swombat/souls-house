@@ -166,16 +166,27 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert ResidentBirthOrder.sole.born?
   end
 
-  test "only the owner can pay, and the reasons come back as JSON" do
+  test "only the owner can pay, not another member, and the reasons come back as JSON" do
     Billing.stub(:client, @stripe) do
       post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation" }, as: :json
       assert_response :unprocessable_entity
       assert_equal "Add a card to pay for the plan first.", response.parsed_body.fetch("error")
     end
 
+    # Someone outside the account doesn't find it at all.
     sign_in(users(:regular_user))
     post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation" }, as: :json
-    assert_not response.successful?
+    assert_response :not_found
+
+    # A member of a team account is refused by the owner check itself.
+    team = accounts(:team_account)
+    team.update!(billing_required: true)
+    sign_in(users(:existing_user))
+    Billing.stub(:client, @stripe) do
+      post account_birth_orders_path(team), params: { agent: draft, tier: "conversation" }, as: :json
+    end
+    assert_response :forbidden
+    assert_equal "You don't have permission to change this account", response.parsed_body.fetch("error")
     assert_equal 0, ResidentBirthOrder.count
   end
 

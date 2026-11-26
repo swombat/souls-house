@@ -117,6 +117,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
 
     assert_not ServiceConnection.exists?(provider: "github", account: @account)
     assert_redirected_to account_integrations_path(@account)
+    assert_equal "Unsupported connection ownership", flash[:alert]
   end
 
   test "connects Tailscale with nothing pasted, ignores stray fields, and grants a resident a sign-in entry" do
