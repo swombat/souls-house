@@ -655,18 +655,35 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_equal thread, second.reload.activation_chat
     assert_equal 2, thread.messages.where(role: "system").where("content LIKE ?", "**Commitment due:**%").count
 
-    # Once that conversation is archived, the next occurrence opens a fresh one.
+    # The allowance brake judges the series' thread, not a fresh conversation.
     second.update_columns(wake_state: "delivered")
-    thread.update_columns(archived_at: Time.current)
     third = second.next_commitment
+    braked = ->(_commitment, chat:) { chat == thread ? "skipped_allowance" : nil }
     travel_to(third.due_at + 1.minute) do
       live do
-        assert_difference -> { Chat.count }, 1 do
-          assert_equal :activated, third.activate!.status
+        Agents::AllowanceBrake.stub(:commitment_reason, braked) do
+          assert_no_difference -> { Chat.count } do
+            assert_equal :waiting, third.activate!.status
+          end
         end
       end
     end
-    assert_not_equal thread, third.reload.activation_chat
+    third.reload
+    assert third.scheduled?
+    assert_equal "skipped_allowance", third.waiting_reason
+    assert_nil third.next_commitment
+
+    # Archiving the thread stops the series where it is; it never opens another.
+    thread.update_columns(archived_at: Time.current)
+    travel_to(third.due_at + 2.minutes) do
+      live do
+        assert_no_difference -> { Chat.count } do
+          assert_equal :waiting, third.activate!.status
+        end
+      end
+    end
+    assert_equal "conversation_unavailable", third.reload.waiting_reason
+    assert_nil third.next_commitment
   end
 
   test "a series with a maximum stops by itself after that many occurrences and says why" do

@@ -277,7 +277,12 @@ class Commitment < ApplicationRecord
       next Result.new(status: :not_scheduled) unless scheduled?
       next Result.new(status: :not_due) if due_at > now
 
-      if (reason = waiting_reason_now)
+      # The conversation this occurrence will be delivered into, resolved
+      # before the checks so they (the allowance brake included) judge the
+      # real destination: a recurring new-conversation series' own thread
+      # once it has one (Mira, #1178 review).
+      target = new_conversation? ? series_conversation : source_chat
+      if (reason = waiting_reason_now(target))
         update!(waiting_reason: reason, last_attempted_at: now)
         next Result.new(status: :waiting, reason: reason)
       end
@@ -292,7 +297,7 @@ class Commitment < ApplicationRecord
         next Result.new(status: :waiting, reason: "previous_occurrence_in_progress")
       end
 
-      chat = new_conversation? ? (series_conversation || open_conversation!) : source_chat
+      chat = target || open_conversation!
       # Activated before the successor exists: the unique index allows one
       # scheduled row per text, and the successor carries the same text.
       update!(status: "activated", activated_at: now, activation_chat: chat, waiting_reason: nil, last_attempted_at: now)
@@ -663,14 +668,15 @@ class Commitment < ApplicationRecord
 
   # A recurring series that opens a conversation opens one, on its first
   # delivered occurrence, and later occurrences recur inside it, so a
-  # goal-shaped series keeps one working thread (Reed, eRNlOe eaMwXx). If that
-  # conversation can no longer take the wake, the next occurrence opens a
-  # fresh one and the series carries on there.
+  # goal-shaped series keeps one working thread (Reed, eRNlOe eaMwXx). The
+  # thread goes with the series wherever it is moved. If someone archives it
+  # or removes the resident, that is a stop, not a cue to open another: the
+  # next occurrence waits with the reason showing (Mira, #1178), and the
+  # series ends when it is cancelled.
   def series_conversation
     return unless recurring?
 
-    chat = series_scope.where.not(id: id).where.not(activation_chat_id: nil).order(occurrence: :desc).first&.activation_chat
-    chat if chat&.respondable? && chat.manual_responses? && chat.agents.exists?(agent_id)
+    series_scope.where.not(id: id).where.not(activation_chat_id: nil).order(occurrence: :desc).first&.activation_chat
   end
 
   def open_conversation!

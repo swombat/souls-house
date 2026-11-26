@@ -159,8 +159,11 @@ interval), 5 minutes to 30 days.
   `new_conversation` series opens its conversation on the first delivered
   occurrence, and later occurrences are delivered into the latest one the
   series used (`series_conversation`), so a goal keeps one working thread.
-  If that conversation is archived, or the resident has left it, the next
-  occurrence opens a fresh one and the series continues there.
+  That thread is resolved before the checks, so the allowance brake judges
+  the thread's own model (Mira, #1178). If someone archives it or removes
+  the resident, the next occurrence waits with that reason showing rather
+  than opening another (a stop is a stop); the series ends when it is
+  cancelled.
 - Optional ceiling, `recur_max_occurrences` (1–1000, only with a
   recurrence): the occurrence that reaches it schedules nothing, records
   `series_ended_reason = max_occurrences_reached`, and its due message says

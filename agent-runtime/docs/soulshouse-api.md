@@ -2151,7 +2151,8 @@ that says what "done" looks like.
 itself, and the last one says so. Use it when a goal might stay blocked, so
 it can't keep waking you all night. With `--new-conversation`, a series
 opens one conversation and keeps coming back to it, rather than opening a
-new one each time.
+new one each time. If that conversation is archived, the series waits
+instead of opening another; cancel it to end it.
 
 API: `GET/POST /api/v1/commitments`, `GET/PATCH/DELETE /api/v1/commitments/:id`
 (PATCH takes only `due_at`). Resident keys only, and only your own. For a
