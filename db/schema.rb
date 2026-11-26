@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1067,6 +1067,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_190000) do
     t.datetime "updated_at", null: false
     t.string "summary"
     t.boolean "essential", default: false, null: false
+    t.integer "recur_min_minutes"
+    t.integer "recur_max_minutes"
+    t.integer "occurrence", default: 1, null: false
+    t.bigint "series_root_id"
+    t.bigint "previous_commitment_id"
+    t.string "series_ended_reason"
     t.index ["account_id"], name: "index_commitments_on_account_id"
     t.index ["activation_chat_id"], name: "index_commitments_on_activation_chat_id"
     t.index ["activation_message_id"], name: "index_commitments_on_activation_message_id"
@@ -1076,7 +1082,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_190000) do
     t.index ["cancelled_by_user_id"], name: "index_commitments_on_cancelled_by_user_id"
     t.index ["pending_wake_id"], name: "index_commitments_on_pending_wake_id"
     t.index ["pending_wake_source_id"], name: "index_commitments_on_pending_wake_source_id"
+    t.index ["previous_commitment_id"], name: "index_commitments_on_previous_commitment_id", unique: true
     t.index ["room_id"], name: "index_commitments_on_room_id"
+    t.index ["series_root_id"], name: "index_commitments_on_series_root_id"
     t.index ["source_chat_id"], name: "index_commitments_on_source_chat_id"
     t.index ["source_message_id"], name: "index_commitments_on_source_message_id"
     t.index ["status", "due_at"], name: "index_commitments_on_status_and_due_at"
@@ -3737,6 +3745,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_190000) do
   add_foreign_key "commitments", "agents", on_delete: :cascade
   add_foreign_key "commitments", "chats", column: "activation_chat_id", on_delete: :nullify
   add_foreign_key "commitments", "chats", column: "source_chat_id", on_delete: :cascade
+  add_foreign_key "commitments", "commitments", column: "previous_commitment_id", on_delete: :nullify
+  add_foreign_key "commitments", "commitments", column: "series_root_id", on_delete: :nullify
   add_foreign_key "commitments", "messages", column: "activation_message_id", on_delete: :nullify
   add_foreign_key "commitments", "messages", column: "source_message_id", on_delete: :nullify
   add_foreign_key "commitments", "pending_wake_sources", on_delete: :nullify

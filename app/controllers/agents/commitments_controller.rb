@@ -37,7 +37,11 @@ class Agents::CommitmentsController < ApplicationController
 
   def destroy
     result = @commitment.cancel!(by: Current.user)
-    flash_args = result.status == :cancelled ? { notice: "Commitment cancelled" } : { alert: "This commitment has already been delivered or cancelled" }
+    flash_args = case result.status
+    when :cancelled then { notice: @commitment.recurring? ? "Commitment cancelled; the series has ended" : "Commitment cancelled" }
+    when :series_ended then { notice: "The series has ended; nothing more is scheduled" }
+    else { alert: "This commitment has already been delivered or cancelled" }
+    end
     redirect_to back_path, **flash_args
   end
 

@@ -22,7 +22,25 @@ export const COMMITMENT_WAITING = {
   resident_not_in_conversation: 'the resident has left the conversation',
 };
 
+// A recurring commitment says so after its state: how often, which
+// occurrence this is, and whether the series has ended.
+export function commitmentRecurrenceLine(c) {
+  if (!c.recurrence) return '';
+  const nth = c.occurrence > 1 ? ` (occurrence ${c.occurrence})` : '';
+  if (c.series_ended_reason) {
+    const why = c.series_ended_reason === 'cancelled' ? 'ended' : 'ended: the next occurrence could not be scheduled';
+    return `Recurred ${c.recurrence.phrase}${nth}; the series has ${why}.`;
+  }
+  return `Recurs ${c.recurrence.phrase}${nth} until cancelled.`;
+}
+
 export function commitmentStatusLine(c, agentName = 'This resident') {
+  const line = commitmentStateLine(c, agentName);
+  const recurrence = commitmentRecurrenceLine(c);
+  return recurrence ? `${line} ${recurrence}` : line;
+}
+
+function commitmentStateLine(c, agentName) {
   const when = (value) => commitmentWhen(value, c.timezone);
   if (c.status === 'cancelled') {
     const what = c.wake_state === 'withdrawn' ? 'Stopped after it was posted' : 'Cancelled';

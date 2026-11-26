@@ -159,6 +159,45 @@ module Api
         assert_response :forbidden
       end
 
+      test "a resident makes a recurring commitment, fixed or a range, and the receipt says so" do
+        post api_v1_commitments_url, params: attrs(recur_min_minutes: 60, recur_max_minutes: 90), headers: @headers, as: :json
+        assert_response :created
+        body = response.parsed_body
+        assert_equal({ "min_minutes" => 60, "max_minutes" => 90, "phrase" => "every 60–90 minutes" }, body.dig("commitment", "recurrence"))
+        assert_match(/recurs every 60–90 minutes after each delivery until you cancel it/, body["receipt"])
+        assert_match(/ · recurs every 60–90 minutes\z/, @chat.messages.where(role: "system").last.content)
+
+        post api_v1_commitments_url, params: attrs(text: "Fixed", recur_every_minutes: "45"), headers: @headers, as: :json
+        assert_response :created
+        assert_equal [ 45, 45 ], Commitment.find(response.parsed_body.dig("commitment", "id")).values_at(:recur_min_minutes, :recur_max_minutes)
+      end
+
+      test "a malformed recurrence is refused with a reason" do
+        [
+          [ { recur_min_minutes: 60 }, /go together/ ],
+          [ { recur_every_minutes: 30, recur_min_minutes: 20, recur_max_minutes: 40 }, /not both/ ],
+          [ { recur_every_minutes: "an hour" }, /whole numbers/ ],
+          [ { recur_every_minutes: 1 }, /between 5 minutes/ ],
+          [ { recur_min_minutes: 90, recur_max_minutes: 60 }, /minimum cannot be more/ ]
+        ].each_with_index do |(recurrence, message), i|
+          post api_v1_commitments_url, params: attrs(text: "Bad #{i}", **recurrence), headers: @headers, as: :json
+          assert_response :unprocessable_entity
+          assert_match message, response.parsed_body["errors"].join
+        end
+      end
+
+      test "deleting a delivered occurrence ends the series" do
+        post api_v1_commitments_url, params: attrs(recur_every_minutes: 30), headers: @headers, as: :json
+        first = Commitment.find(response.parsed_body.dig("commitment", "id"))
+        upcoming = first.update_columns(status: "activated", wake_state: "delivered") &&
+          Commitment.create!(agent: @agent, source_chat: @chat, text: first.text, due_at: @due + 30.minutes,
+                             recur_min_minutes: 30, recur_max_minutes: 30, series_root: first, previous_commitment: first, occurrence: 2)
+        delete api_v1_commitment_url(first), headers: @headers
+        assert_response :ok
+        assert response.parsed_body["series_ended"]
+        assert upcoming.reload.cancelled?
+      end
+
       private
 
       def attrs(**overrides)

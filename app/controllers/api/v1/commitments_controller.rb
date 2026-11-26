@@ -31,7 +31,7 @@ module Api
         attributes = {
           agent: current_api_agent, source_chat: chat, text: params[:text], summary: params[:summary],
           due_at: parse_due_at(params[:due_at]), destination: params[:destination].presence || "same_conversation"
-        }
+        }.merge(parse_recurrence)
         if params[:source_message_id].present?
           attributes[:source_message] = chat.messages.find(params[:source_message_id])
         end
@@ -46,7 +46,7 @@ module Api
         else
           render json: { errors: commitment.errors.full_messages }, status: :unprocessable_entity
         end
-      rescue RoomSelectorError, InvalidDueAt => error
+      rescue RoomSelectorError, InvalidDueAt, InvalidRecurrence => error
         render json: { errors: [ error.message ] }, status: :unprocessable_entity
       end
 
@@ -68,8 +68,8 @@ module Api
 
       def destroy
         result = @commitment.cancel!(by: current_api_agent)
-        if result.status == :cancelled
-          render json: { commitment: @commitment.as_json }
+        if result.status.in?(%i[cancelled series_ended])
+          render json: { commitment: @commitment.reload.as_json, series_ended: @commitment.recurring? }
         else
           render json: { errors: [ "Only a commitment not yet delivered can be cancelled (this one is #{@commitment.status}#{@commitment.wake_state ? ", wake #{@commitment.wake_state}" : ""})" ] }, status: :conflict
         end
@@ -95,6 +95,30 @@ module Api
         Time.iso8601(value.strip).utc
       rescue ArgumentError
         raise InvalidDueAt, message
+      end
+
+      class InvalidRecurrence < StandardError; end
+
+      # recur_every_minutes for a fixed interval, or recur_min_minutes with
+      # recur_max_minutes for a random pick in that range. Nothing given is a
+      # one-shot commitment.
+      def parse_recurrence
+        every, min, max = params.values_at(:recur_every_minutes, :recur_min_minutes, :recur_max_minutes).map(&:presence)
+        return {} if [ every, min, max ].all?(&:nil?)
+        if every && (min || max)
+          raise InvalidRecurrence, "Give recur_every_minutes, or recur_min_minutes with recur_max_minutes, not both"
+        end
+
+        min, max = every, every if every
+        raise InvalidRecurrence, "recur_min_minutes and recur_max_minutes go together" unless min && max
+
+        { recur_min_minutes: whole_minutes(min), recur_max_minutes: whole_minutes(max) }
+      end
+
+      def whole_minutes(value)
+        Integer(value.to_s, 10)
+      rescue ArgumentError
+        raise InvalidRecurrence, "Recurrence minutes must be whole numbers"
       end
 
       # The unique index is the last word on duplicates: a race between two

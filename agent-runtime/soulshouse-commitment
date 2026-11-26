@@ -11,6 +11,7 @@ your attention; what to do then is your call. Delivery is not completion.
 Usage:
   soulshouse-commitment add --in 30m --summary 'Check the deploy receipt' --text 'Check the deploy receipt and tell Daniel'
   soulshouse-commitment add --at 2026-11-03T03:00:00+01:00 --summary 'Night sweep of open PRs' --text-file brief.md
+  soulshouse-commitment add --in 60m --every 60-90m --summary 'Carry #1180 to deploy' --text 'Keep going on #1180 until it is live'
   soulshouse-commitment add --in 2h --new-conversation --room Ops --summary 'Rebuild check' --text-file -
   soulshouse-commitment list [--scheduled]
   soulshouse-commitment reschedule ID (--in 1h | --at ISO8601)
@@ -69,6 +70,19 @@ def due_at(at=None, within=None, now=None):
     return when.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def recurrence(every):
+    """recur_* payload fields from --every: 90m, 2h, or a range 60-90m."""
+    match = re.fullmatch(r"\s*(\d+)\s*(?:-\s*(\d+)\s*)?([mh]?)\s*", every or "")
+    if not match:
+        raise ValueError("--every takes minutes or hours, fixed or a range: 90m, 2h, 60-90m")
+    factor = 60 if match.group(3) == "h" else 1
+    low = int(match.group(1)) * factor
+    high = int(match.group(2)) * factor if match.group(2) else low
+    if low == high:
+        return {"recur_every_minutes": low}
+    return {"recur_min_minutes": low, "recur_max_minutes": high}
+
+
 def commitment_path(commitment_id=None):
     if commitment_id is None:
         return "/api/v1/commitments"
@@ -121,6 +135,8 @@ def build_add_payload(args, environ):
     summary = getattr(args, "summary", None)
     if summary and summary.strip():
         payload["summary"] = summary.strip()
+    if getattr(args, "every", None):
+        payload.update(recurrence(args.every))
     if args.source_message:
         payload["source_message_id"] = args.source_message
     if args.new_conversation:
@@ -137,7 +153,7 @@ def build_add_payload(args, environ):
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="soulshouse-commitment",
-        description="Make, list, reschedule and cancel your own one-shot commitments.",
+        description="Make, list, reschedule and cancel your own commitments, one-shot or recurring.",
         epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -148,6 +164,8 @@ def main() -> int:
     text_group.add_argument("--text", help="what you are committing to")
     text_group.add_argument("--text-file", metavar="PATH", help="read the text from PATH, or '-' for stdin")
     add.add_argument("--summary", help="five to ten words; the 'Commitment due' message shows only this")
+    add.add_argument("--every", metavar="INTERVAL",
+                     help="recur after each delivery until cancelled: 90m, 2h, or a random pick in a range, 60-90m")
     add.add_argument("--conversation", help="conversation id (default: the one you are running in)")
     add.add_argument("--source-message", help="the message id you are committing under")
     add.add_argument("--new-conversation", action="store_true", help="deliver into a new conversation")
@@ -161,7 +179,7 @@ def main() -> int:
     reschedule.add_argument("id")
     _add_when(reschedule)
 
-    cancel = subparsers.add_parser("cancel", help="cancel a scheduled commitment")
+    cancel = subparsers.add_parser("cancel", help="cancel a scheduled commitment; for a recurring one, end the series")
     cancel.add_argument("id")
 
     args = parser.parse_args()

@@ -529,6 +529,111 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_not commitment.manageable_by?(nil)
   end
 
+  # Recurrence (eRNlOe)
+
+  test "a recurrence needs both bounds, at least the floor, and min no more than max" do
+    assert build("A", at: @now + 1.hour, recur_min_minutes: 60, recur_max_minutes: 90).valid?
+    assert build("B", at: @now + 1.hour, recur_min_minutes: 60, recur_max_minutes: 60).valid?
+    assert_not build("C", at: @now + 1.hour, recur_min_minutes: 60).valid?
+    assert_not build("D", at: @now + 1.hour, recur_min_minutes: 2, recur_max_minutes: 3).valid?
+    assert_not build("E", at: @now + 1.hour, recur_min_minutes: 90, recur_max_minutes: 60).valid?
+    assert_not build("F", at: @now + 1.hour, recur_min_minutes: 60, recur_max_minutes: Commitment::RECUR_MAX_MINUTES + 1).valid?
+  end
+
+  test "a recurring commitment schedules its next occurrence when it activates, inside the range, same text" do
+    commitment = commit("Keep going on #1180 until it is live", at: @now + 1.minute, summary: "Carry #1180",
+                        recur_min_minutes: 60, recur_max_minutes: 90, essential: true)
+    activated_at = @now + 2.minutes
+    travel_to(activated_at) { live { assert_equal :activated, commitment.activate!.status } }
+
+    commitment.reload
+    upcoming = commitment.next_commitment
+    assert upcoming.scheduled?
+    assert_equal commitment.text, upcoming.text
+    assert_equal "Carry #1180", upcoming.summary
+    assert upcoming.essential
+    assert_equal 2, upcoming.occurrence
+    assert_equal commitment.id, upcoming.series_root_id
+    assert upcoming.due_at.between?(activated_at + 60.minutes, activated_at + 90.minutes)
+    assert_match(/recurs every 60–90 minutes, next \d\d:\d\d/, commitment.activation_message.content)
+    assert_match(/The next is commitment #{upcoming.to_param}/, commitment.cue_text)
+    assert_includes commitment.cue_text, "soulshouse-commitment cancel #{upcoming.to_param}"
+
+    # The third hangs off the second and shares the series root.
+    travel_to(upcoming.due_at + 1.minute) { live { upcoming.activate! } }
+    third = upcoming.reload.next_commitment
+    assert_equal commitment.id, third.series_root_id
+    assert_equal 3, third.occurrence
+    assert_equal 1, commitment.series_scope.scheduled.count
+  end
+
+  test "a fixed interval is exact" do
+    commitment = commit("Every half hour", at: @now + 1.minute, recur_min_minutes: 30, recur_max_minutes: 30)
+    travel_to(@now + 2.minutes) { live { commitment.activate! } }
+    assert_equal @now + 32.minutes, commitment.reload.next_commitment.due_at
+  end
+
+  test "a recurrence waiting on a pause makes it late, never a backlog" do
+    commitment = commit("Keep at it", at: @now + 1.minute, recur_min_minutes: 10, recur_max_minutes: 10)
+    @lume.update!(paused: true)
+    travel_to(@now + 3.hours) { live { assert_equal :waiting, commitment.activate!.status } }
+    assert_equal 1, Commitment.where(agent: @lume).count
+    @lume.update!(paused: false)
+    travel_to(@now + 3.hours + 1.minute) { live { commitment.activate! } }
+    assert_equal 2, Commitment.where(agent: @lume).count
+    assert_equal @now + 3.hours + 11.minutes, commitment.reload.next_commitment.due_at
+  end
+
+  test "cancelling any occurrence ends the series, even one already delivered" do
+    commitment = commit("Until the goal is met", at: @now + 1.minute, recur_min_minutes: 15, recur_max_minutes: 15)
+    travel_to(@now + 2.minutes) { live { commitment.activate! } }
+    upcoming = commitment.reload.next_commitment
+    commitment.update_columns(wake_state: "delivered")
+
+    result = commitment.reload.cancel!(by: @lume)
+    assert_equal :series_ended, result.status
+    assert upcoming.reload.cancelled?
+    assert_equal "cancelled", upcoming.series_ended_reason
+    assert_equal @lume, upcoming.cancelled_by_agent
+    assert_equal "activated", commitment.reload.status
+
+    # Nothing follows a cancelled occurrence.
+    travel_to(upcoming.due_at + 1.minute) { live { assert_equal :not_scheduled, upcoming.activate!.status } }
+    assert_equal 0, Commitment.scheduled.where(agent: @lume).count
+  end
+
+  test "cancelling the scheduled occurrence itself ends the series" do
+    commitment = commit("Stop me", at: @now + 1.minute, recur_min_minutes: 15, recur_max_minutes: 15)
+    travel_to(@now + 2.minutes) { live { commitment.activate! } }
+    upcoming = commitment.reload.next_commitment
+    assert_equal :cancelled, upcoming.cancel!(by: @lume).status
+    assert_equal "cancelled", upcoming.reload.series_ended_reason
+  end
+
+  test "a one-shot commitment schedules nothing after it" do
+    commitment = commit("Once", at: @now + 1.minute)
+    travel_to(@now + 2.minutes) { live { commitment.activate! } }
+    assert_nil commitment.reload.next_commitment
+    assert_not_includes commitment.activation_message.content, "recurs"
+    assert_not_includes commitment.cue_text, "recur"
+  end
+
+  test "a successor the house cannot save ends the series with a reason and the activation stands" do
+    commitment = commit("Fragile", at: @now + 1.minute, recur_min_minutes: 15, recur_max_minutes: 15)
+    unsaveable = Object.new
+    def unsaveable.save!(**) = raise(ActiveRecord::StatementInvalid, "boom")
+    travel_to(@now + 2.minutes) do
+      live do
+        Commitment.stub(:new, unsaveable) { commitment.activate! }
+      end
+    end
+    commitment.reload
+    assert_equal "activated", commitment.status
+    assert_nil commitment.next_commitment
+    assert_equal "next_occurrence_failed", commitment.series_ended_reason
+    assert_includes commitment.activation_message.content, "could not be scheduled"
+  end
+
   private
 
   def build(text, at:, agent: @lume, **attrs)

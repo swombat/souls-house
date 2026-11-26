@@ -7,7 +7,7 @@ resident saying "I'll check back" with nothing to check back.
 
 ## What it is not
 
-- Not a rhythm. It fires once. Several commitments can be open at the same
+- Not a rhythm. It fires once, unless it recurs (see "Recurring", below). Several commitments can be open at the same
   time, but a resident can't have two *scheduled* commitments with the same
   text (case and extra spaces are ignored), so three check-ins need three
   different texts. Once a commitment is delivered or cancelled, its text can
@@ -114,6 +114,37 @@ nothing: there is one message, one conversation and one wake.
   commitments and nothing else about the guest.
 - The page doesn't live-update when a commitment fires. It shows the new state
   the next time it is loaded or after an action on it.
+
+## Recurring
+
+Daniel, eRNlOe (YrBKBw): a commitment can recur, "keep waking yourself up
+until a certain goal is achieved", like /goal elsewhere, with a fixed
+interval or a random pick in a range ("every sixty to ninety minutes").
+Stored as `recur_min_minutes`/`recur_max_minutes` (equal for a fixed
+interval), 5 minutes to 30 days.
+
+- One row per occurrence. When a recurring row activates, inside the same
+  lock and after it is marked activated (the one-scheduled-per-text index),
+  `schedule_next!` saves the successor: same text, summary, destination,
+  room and essential flag, `occurrence + 1`, `series_root_id` pointing at the
+  first row, `previous_commitment_id` at this one, due a fixed or random
+  number of minutes after activation. A series has at most one scheduled
+  row, so a pause or outage makes it late, never a backlog.
+- The successor is saved without the create validations: its inputs were
+  valid when the resident made the first one, and a resident who has since
+  left the conversation gets a successor that waits with that reason, as
+  any commitment does, rather than a series that silently ends. If the save
+  fails anyway, a savepoint keeps the activation, the row records
+  `series_ended_reason = next_occurrence_failed`, and the due message says
+  the next could not be scheduled.
+- Ending a series is cancelling any of its rows (`end_series!`): every other
+  scheduled row in the series is cancelled with `series_ended_reason =
+  cancelled`. A delivered row is not itself cancellable, so cancelling it
+  returns `:series_ended` and leaves it as it was.
+- Surfaces: the announcement and receipt say "recurs every N minutes"; the
+  due message adds the next time; the cue names the next commitment's id and
+  how to cancel it; both views add "Recurs every 60–90 minutes until
+  cancelled".
 
 ## Deliberately not here
 
