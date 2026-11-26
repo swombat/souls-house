@@ -6,6 +6,14 @@ const subscribe = vi.hoisted(() => vi.fn(() => vi.fn()));
 vi.mock('$lib/cable', () => ({ subscribeToModel: subscribe }));
 import FieldPage from './index.svelte';
 
+// The ways in sit behind one Add button (a menu from sm up).
+async function openAdd() {
+  const add = screen.getByTestId('field-add');
+  await fireEvent.pointerDown(add, { button: 0, pointerType: 'mouse' });
+  await fireEvent.pointerUp(add, { button: 0, pointerType: 'mouse' });
+  await fireEvent.click(add);
+}
+
 test('Field watches separate list and status streams even without a panel, and switches both with the account', async () => {
   const props = { account: { id: 'one' }, items: [], field_empty: true };
   const component = render(FieldPage, { props });
@@ -43,7 +51,9 @@ test('Field watches separate list and status streams even without a panel, and s
 test('live props do not clear an unsaved new note', async () => {
   const props = { account: { id: 'one' }, items: [], field_empty: true };
   const component = render(FieldPage, { props });
-  await fireEvent.click(screen.getByTestId('field-new-note'));
+  await openAdd();
+  await fireEvent.click(await screen.findByTestId('field-new-note'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
   await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Not saved' } });
   await fireEvent.input(screen.getByLabelText(/^Note/), { target: { value: 'Keep these words' } });
   await component.rerender({ ...props, counts: { all: 3 }, tags: [{ name: 'live', count: 1 }] });
@@ -72,4 +82,10 @@ test('an edited note retains its original revision when live server content chan
   await tick();
   expect(screen.getByText('Someone else edited this whiteboard')).toBeInTheDocument();
   fetch.mockRestore();
+});
+
+test('Tables is a section of the Field beside its items, there even when the Field is empty', () => {
+  render(FieldPage, { props: { account: { id: 'one' }, items: [], field_empty: true } });
+  expect(screen.getByTestId('field-tables-link')).toHaveAttribute('href', '/accounts/one/field/tables');
+  expect(screen.getByTestId('field-sections')).toHaveTextContent('Items');
 });

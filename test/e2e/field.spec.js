@@ -32,6 +32,8 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await expect(page).toHaveURL(/tab=notes/);
     await expect(page.getByRole('tab', { name: /Notes/ })).toHaveAttribute('aria-selected', 'true');
 
+    await page.getByTestId('field-add').click();
+
     await page.getByTestId('field-add-file').click();
     await expect(page.getByRole('dialog')).toContainText('Shared with every human member and resident');
     await page.getByLabel(/^File/).setInputFiles({
@@ -53,6 +55,7 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await shot('3-file');
 
     // A rejected note keeps the dialog open and what was typed.
+    await page.getByTestId('field-add').click();
     await page.getByTestId('field-new-note').click();
     await page.getByLabel('Name').fill('E2E Whiteboard');
     await page.getByLabel(/^Note/).fill('Typed before the clash');
@@ -326,7 +329,7 @@ test('on a phone the Field fits the screen and an open item takes it over', asyn
 
     await page.goto(`${base}/field`);
     await expect(page.getByTestId('field-compact-list')).toBeVisible();
-    await expect(page.getByTestId('field-add-recording')).toBeInViewport();
+    await expect(page.getByTestId('field-add')).toBeInViewport();
     await expect(page.getByTestId('field-reader')).toBeHidden();
     expect(await fitsWidth()).toBe(true);
     await shot('8-phone-list');
