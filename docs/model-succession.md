@@ -19,7 +19,7 @@ A `RoomModelDefault` row whose model has left the resident's list is never rewri
 
 ## No successor
 
-The pin stays. Each refused run gets the room line, and for a rhythm the account's owner is emailed once per rhythm seat and stale model (`StaleRhythmPinNotice`, latched by an audit row under a lock on the seat), because rhythm runs are conversation runs and the scheduled-run streak email (`ScheduledRunFailureNotice`) doesn't count them.
+The pin stays. Each refused run gets the room line, and for a rhythm the account's owner is emailed once per rhythm seat and stale model (`StaleRhythmPinNotice`, latched by an audit row under a lock on the seat), because rhythm runs are conversation runs and the scheduled-run streak email (`ScheduledRunFailureNotice`) doesn't count them. A pin with nowhere to go never runs, so the allowance brake doesn't measure it (`ModelSuccession.unresolvable?`): a low reading on the retired model can't skip the slot before the refusal and the email happen.
 
 ## What never moves
 

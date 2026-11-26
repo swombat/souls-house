@@ -20,9 +20,11 @@ class StaleRhythmPinNotice
     return unless occurrence&.rhythm_id
 
     seat = RhythmAgent.find_by(rhythm_id: occurrence.rhythm_id, agent_id: agent.id)
-    return unless seat && seat.model_id == model_id.to_s
+    return unless seat
 
     seat.with_lock do
+      # with_lock reloads the seat: a pin changed meanwhile is not stale.
+      next unless seat.model_id == model_id.to_s
       next if AuditLog.where(action: ACTION, auditable: seat).where("data->>'model_id' = ?", model_id.to_s).exists?
 
       owner = seat.rhythm.account.owner

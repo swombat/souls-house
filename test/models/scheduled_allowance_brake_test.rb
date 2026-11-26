@@ -2,6 +2,8 @@ require "test_helper"
 
 class ScheduledAllowanceBrakeTest < ActiveSupport::TestCase
 
+  include ActionMailer::TestHelper
+
   setup do
     @agent = agents(:research_assistant)
     @account = @agent.account
@@ -136,6 +138,7 @@ class ScheduledAllowanceBrakeTest < ActiveSupport::TestCase
   end
 
   test "seat override reads its actual model evidence, not default evidence" do
+    @agent.update!(switchable_model_ids: [ "openai/gpt-5.5" ])
     @rhythm.rhythm_agents.first.update_column(:model_id, "openai/gpt-5.5")
     assert_nil Agents::AllowanceBrake.rhythm_reason(@rhythm)
     AllowanceBrakeReading.find_by!(agent: @agent, provider: "openai", model: "gpt-5.5")
@@ -201,6 +204,31 @@ class ScheduledAllowanceBrakeTest < ActiveSupport::TestCase
     pin_rhythm_to_retired_sol!(old_remaining: 90, new_remaining: 10)
 
     assert_equal "skipped_allowance", @rhythm.fire!.reason
+  end
+
+  # The third case: retired pin braked, nothing to move to. The pin never
+  # runs, so its allowance is not measured; the slot reaches the turn's
+  # refusal and the owner hears about it once.
+  test "a braked retired pin with no successor reaches the refusal and the owner notice" do
+    pin_rhythm_to_retired_sol!(old_remaining: 10, new_remaining: 90)
+    @agent.update!(switchable_model_ids: [])
+
+    occurrence = @rhythm.fire!.occurrence
+    assert occurrence, "the slot is not skipped on the retired pin's allowance"
+    dispatch = occurrence.message_dispatch
+    assert_difference "AgentRuntimeInteraction.count", 1 do
+      dispatch.reserve!
+    end
+    assert_nil dispatch.reload.reason
+
+    interaction = dispatch.runtime_interactions.sole
+    ExternalAgentResponseRequest.new(agent: @agent, chat: occurrence.chat, interaction: interaction,
+      wake_source_kinds: interaction.wake_source_kinds).call
+
+    assert_equal "model_not_on_list", interaction.reload.failure_category
+    assert_equal "openai/gpt-6.1-sol", @rhythm.rhythm_agents.sole.reload.model_id
+    assert_equal 1, AuditLog.where(action: StaleRhythmPinNotice::ACTION).count
+    assert_enqueued_emails 1
   end
 
 end

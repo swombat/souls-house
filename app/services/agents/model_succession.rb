@@ -100,6 +100,17 @@ module Agents
       successor_for(agent, model_id) || model_id
     end
 
+    # A pin that has left the resident's list and has no successor on it.
+    # Its turn is refused before any provider is called, so the gates before
+    # the turn must let it through to that refusal (and its owner notice)
+    # rather than measure a model that will never run (Mira, JlRlKe).
+    def self.unresolvable?(agent, model_id)
+      return false if model_id.blank? || model_id.to_s == agent.model_id.to_s
+      return false if agent.switchable_model_ids.include?(model_id.to_s)
+
+      successor_for(agent, model_id).nil?
+    end
+
     # Call when a turn starts, before its model is resolved. Returns the Move
     # it committed, or nil when nothing moved.
     def self.repair!(agent, chat:)
