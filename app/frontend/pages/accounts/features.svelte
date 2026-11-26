@@ -2,6 +2,7 @@
   import { page } from '@inertiajs/svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
+  import StalledThreadWakeCapCard from '$lib/components/accounts/StalledThreadWakeCapCard.svelte';
   import TelegramBotWakeLimitCard from '$lib/components/accounts/TelegramBotWakeLimitCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
   import ChatCodesCard from '$lib/components/accounts/ChatCodesCard.svelte';
@@ -20,6 +21,7 @@
     account,
     can_manage = false,
     resident_handoff_cap = 6,
+    stalled_thread_wake_cap = 3,
     telegram_bot_wake_limit = 3,
     reflexes_enabled = false,
     reflexes_site_scope = 'account_choice',
@@ -43,6 +45,7 @@
         'account',
         'can_manage',
         'resident_handoff_cap',
+        'stalled_thread_wake_cap',
         'telegram_bot_wake_limit',
         'reflexes_enabled',
         'show_chat_codes',
@@ -126,6 +129,7 @@
         <p class="text-sm text-muted-foreground">Numbers to leave alone unless something is going wrong.</p>
       </div>
       <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
+      <StalledThreadWakeCapCard accountId={account.id} cap={stalled_thread_wake_cap} canManage={can_manage} />
       <TelegramBotWakeLimitCard accountId={account.id} limit={telegram_bot_wake_limit} canManage={can_manage} />
     </div>
   </section>

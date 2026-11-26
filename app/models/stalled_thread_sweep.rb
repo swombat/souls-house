@@ -14,10 +14,17 @@ class StalledThreadSweep < ApplicationRecord
 
   # What a woken run is told. Grants nothing; points at the room.
   def nudge_text
+    cap = account.stalled_thread_wake_cap
+    cap_sentence = if cap <= 1
+      "This wake grants no new permissions, and the check will not wake you again in this room until a person posts."
+    else
+      "This wake grants no new permissions. The check can wake a resident at most #{cap} times in this room between messages from a person."
+    end
+
     <<~TEXT.strip
       STALLED-THREAD CHECK (platform, not a person). Conversation #{chat.to_param} has been quiet for #{quiet_minutes} minutes since its last message (#{message.obfuscated_id}). A check of the room judged that you may have a step to take that is already authorised: something you said you would do, a review or request addressed to you, or approved work to merge.
 
-      First read the room and check whether that is so. If there is nothing for you to do, or the next move is a person's, say nothing, or one line if it helps. If there is, take it now within the authorisation you already had, or say plainly what is blocking it. This wake grants no new permissions, and the check will not wake you again in this room until a person posts.
+      First read the room and check whether that is so. If there is nothing for you to do, or the next move is a person's, say nothing, or one line if it helps. If there is, take it now within the authorisation you already had, or say plainly what is blocking it. #{cap_sentence}
     TEXT
   end
 

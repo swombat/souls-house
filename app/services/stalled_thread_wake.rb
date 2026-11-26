@@ -5,11 +5,13 @@
 #
 # A chain is the stretch of a room since its last message from a person.
 # Brakes, all within one chain:
-# - One wake per resident. If a resident judged to have a step was already
-#   woken in this chain, the chain stops: the room is told once that this
-#   check won't wake anyone there again until someone posts, and from then on
-#   nobody is woken in that chain, by this sweep or any later one. The notice
-#   speaks for this check only; it doesn't claim other automation is quiet.
+# - Per-resident wake cap (Account#stalled_thread_wake_cap, default 3; 0 turns
+#   stalled-thread wakes off for the account). If a resident judged to have a
+#   step has already reached that wake cap in this chain, the chain stops: the
+#   room is told once that this check won't wake anyone there again until
+#   someone posts, and from then on nobody is woken in that chain, by this
+#   sweep or any later one. The notice speaks for this check only; it doesn't
+#   claim other automation is quiet.
 # - Sweeper wakes and resident handoffs share the account's handoff cap.
 #   Wakes are counted as runs carrying a sweep since the last person's
 #   message, so a reservation made a moment ago in this same sweep counts,
@@ -33,12 +35,14 @@ class StalledThreadWake
   end
 
   # Why waking may not act in this room at all now, or nil. Read fresh.
-  def self.room_refusal_reason(chat)
+  def self.room_refusal_reason(chat, account: nil)
     setting = Setting.uncached { Setting.first }
     return "wake_off" unless setting&.stalled_sweep_wake?
     return "sweep_off" unless setting.stalled_sweep_minutes.to_i.positive?
-    return "account_not_opted_in" unless Account.where(id: chat.account_id, stalled_sweep_enabled: true).exists?
-    return "account_disabled" if chat.account.reload.disabled?
+    account ||= Account.uncached { Account.find_by(id: chat.account_id) }
+    return "account_not_opted_in" unless account&.stalled_sweep_enabled?
+    return "account_disabled" if account.disabled?
+    return "wake_cap_zero" if account.stalled_thread_wake_cap.zero?
 
     nil
   end
@@ -80,15 +84,16 @@ class StalledThreadWake
 
       # The feature and account gates come before anything with a side
       # effect, the stop notice included.
-      if (reason = self.class.room_refusal_reason(@chat))
+      account = Account.uncached { Account.find_by(id: @chat.account_id) }
+      if (reason = self.class.room_refusal_reason(@chat, account: account))
         agents.each { |agent| hold(agent, reason) }
       elsif chain_stopped?
         agents.each { |agent| hold(agent, "chain_stopped") }
-      elsif (repeat = agents.find { |agent| woken_in_chain?(agent) })
+      elsif (repeat = agents.find { |agent| wake_cap_reached_for?(agent, account.stalled_thread_wake_cap) })
         stop!(repeat)
         agents.each { |agent| hold(agent, agent == repeat ? "already_woken_in_chain" : "chain_stopped") }
       else
-        agents.each { |agent| consider(agent) }
+        agents.each { |agent| consider(agent, account) }
       end
       @sweep.save!
     end
@@ -96,21 +101,23 @@ class StalledThreadWake
 
   def nudge_notice(agent)
     "[System Notice] Stalled-thread check: this room has been quiet for #{@sweep.quiet_minutes} minutes, and it looks " \
-      "like #{agent.name} has a step to take. Waking #{agent.name} once to pick it up or say what's blocking."
+      "like #{agent.name} has a step to take. Waking #{agent.name} to pick it up or say what's blocking."
   end
 
   def stopped_notice(agent)
-    "[System Notice] Stalled-thread check: #{agent.name} was already woken once here since the last message from a " \
+    count = wake_count_in_chain(agent)
+    times = count == 1 ? "once" : "#{count} times"
+    "[System Notice] Stalled-thread check: #{agent.name} was already woken #{times} here since the last message from a " \
       "person, and the room still looks stuck. This check won't wake anyone here again until someone posts."
   end
 
   private
 
-  def consider(agent)
+  def consider(agent, account)
     agent.lock!
     reason = self.class.refusal_reason(chat: @chat, agent: agent)
     return hold(agent, reason) if reason
-    return hold(agent, "loop_cap") if loop_cap_reached?
+    return hold(agent, "loop_cap") if loop_cap_reached?(account)
 
     # Reserve first: if the resident can't be woken, no notice claims it was.
     AgentRuntimeInteraction.reserve!(agent: agent, chat: @chat, enqueue: true, stalled_thread_sweep: @sweep)
@@ -139,12 +146,16 @@ class StalledThreadWake
     @sweep.stopped || chain_sweeps.where(stopped: true).exists?
   end
 
-  def woken_in_chain?(agent)
-    self.class.wakes_in_chain(@chat).where(agent: agent).exists?
+  def wake_count_in_chain(agent)
+    self.class.wakes_in_chain(@chat).where(agent: agent).count
   end
 
-  def loop_cap_reached?
-    cap = @chat.account.resident_handoff_cap
+  def wake_cap_reached_for?(agent, cap)
+    wake_count_in_chain(agent) >= cap
+  end
+
+  def loop_cap_reached?(account)
+    cap = account.resident_handoff_cap
     return true if cap.zero?
 
     MessageHandoff.counted_since_last_human_message(@chat) + self.class.wakes_in_chain(@chat).count >= cap

@@ -96,6 +96,22 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 3, @team_account.reload.resident_handoff_cap
   end
 
+  test "the stalled-thread wake cap defaults to three and can be changed, within range" do
+    assert_equal 3, @team_account.stalled_thread_wake_cap
+    patch account_path(@team_account), params: { account: { stalled_thread_wake_cap: "5" } }
+    assert_redirected_to account_features_path(@team_account)
+    assert_equal 5, @team_account.reload.stalled_thread_wake_cap
+
+    patch account_path(@team_account), params: { account: { stalled_thread_wake_cap: "0" } }
+    assert_equal 0, @team_account.reload.stalled_thread_wake_cap
+
+    [ "51", "-1", "lots" ].each do |value|
+      patch account_path(@team_account), params: { account: { stalled_thread_wake_cap: value } }
+      assert_redirected_to account_features_path(@team_account)
+      assert_equal 0, @team_account.reload.stalled_thread_wake_cap, value
+    end
+  end
+
   test "the Telegram bot answer limit defaults to three and can be changed, within range" do
     assert_equal 3, @team_account.telegram_bot_wake_limit
     patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: "20" } }

@@ -19,6 +19,7 @@ class Accounts::FeaturesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "enabled", props["voice_mode_site_scope"]
     assert_equal "account_choice", props["speech_engine_site_scope"]
     assert_equal @account.resident_handoff_cap, props["resident_handoff_cap"]
+    assert_equal @account.stalled_thread_wake_cap, props["stalled_thread_wake_cap"]
   end
 
   test "General no longer carries the feature switches" do
@@ -26,6 +27,7 @@ class Accounts::FeaturesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_nil inertia_shared_props["show_chat_codes"]
     assert_nil inertia_shared_props["resident_handoff_cap"]
+    assert_nil inertia_shared_props["stalled_thread_wake_cap"]
   end
 
   test "a feature switch returns to Features and a rename returns to General" do

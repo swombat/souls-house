@@ -98,7 +98,7 @@ class AccountsController < ApplicationController
 
   # The settings on the Features tab, which save here too.
   FEATURE_SETTINGS = %w[
-    resident_handoff_cap telegram_bot_wake_limit reflexes_enabled voice_mode_enabled speech_engine
+    resident_handoff_cap stalled_thread_wake_cap telegram_bot_wake_limit reflexes_enabled voice_mode_enabled speech_engine
     eleven_labs_api_key plan_offer_enabled show_chat_codes show_room_chat_counts
   ].freeze
 
@@ -133,7 +133,8 @@ class AccountsController < ApplicationController
     @account = find_current_user_account!(params[:id])
   end
 
-  # The resident handoff cap (MessageHandoff), the Telegram bot answer limit
+  # The resident handoff cap (MessageHandoff), the stalled-thread wake cap
+  # (StalledThreadWake), the Telegram bot answer limit
   # (TelegramSubscription#bot_wake_limit), the reflexes switch
   # (ReflexCheck) and the voice mode switch (VoiceMode) are changed only by
   # someone who can manage the account, as are showing conversation codes
