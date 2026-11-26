@@ -31,6 +31,16 @@ class GuestDirectoryTest < ActiveSupport::TestCase
     assert_refreshes(@home, @receiving) { membership.destroy! }
   end
 
+  test "changing invite_to_new_conversations refreshes only the receiving side while destroying still refreshes both" do
+    membership = join
+    assert_refreshes(@receiving) { membership.update!(invite_to_new_conversations: true) }
+    assert_refreshes(@home, @receiving) { GuestMembership.find(membership.id).destroy! }
+
+    second = join
+    assert_refreshes(@receiving) { second.update!(invite_to_new_conversations: true) }
+    assert_refreshes(@home, @receiving) { second.destroy! }
+  end
+
   test "helper deduplicates recipients and skips deleted or missing accounts" do
     assert_refreshes(@home, @receiving) do
       GuestDirectory.refresh!([ @home.id, nil, @home.id, @receiving.id, -1 ])

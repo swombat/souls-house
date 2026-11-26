@@ -50,10 +50,11 @@ class GuestDirectoryMutationsTest < ActionDispatch::IntegrationTest
     membership = join
     sign_in @user
     assert_no_broadcasts(stream(@home)) do
-      assert_equal [ { "action" => "refresh" } ], capture_broadcasts(stream(@receiving)) do
+      receiving_messages = capture_broadcasts(stream(@receiving)) do
         patch account_guest_membership_path(@receiving, membership), params: { invite_to_new_conversations: true }
         assert_redirected_to account_agents_path(@receiving)
       end
+      assert_equal [ { "action" => "refresh" } ], receiving_messages
     end
   end
 

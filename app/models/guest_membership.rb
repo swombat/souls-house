@@ -31,7 +31,7 @@ class GuestMembership < ApplicationRecord
   end
 
   def refresh_guest_directory
-    if (saved_changes.keys & %w[id account_id agent_id]).empty?
+    if !destroyed? && saved_change_to_invite_to_new_conversations? && (saved_changes.keys & %w[id account_id agent_id]).empty?
       GuestDirectory.refresh!([ account_id ])
       return
     end
