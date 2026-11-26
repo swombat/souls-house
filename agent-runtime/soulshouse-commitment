@@ -137,6 +137,12 @@ def build_add_payload(args, environ):
         payload["summary"] = summary.strip()
     if getattr(args, "every", None):
         payload.update(recurrence(args.every))
+    if getattr(args, "max", None) is not None:
+        if not getattr(args, "every", None):
+            raise ValueError("--max needs --every")
+        if args.max < 1:
+            raise ValueError("--max must be at least 1")
+        payload["recur_max_occurrences"] = args.max
     if args.source_message:
         payload["source_message_id"] = args.source_message
     if args.new_conversation:
@@ -166,6 +172,8 @@ def main() -> int:
     add.add_argument("--summary", help="five to ten words; the 'Commitment due' message shows only this")
     add.add_argument("--every", metavar="INTERVAL",
                      help="recur after each delivery until cancelled: 90m, 2h, or a random pick in a range, 60-90m")
+    add.add_argument("--max", type=int, metavar="N",
+                     help="with --every: stop by itself after N occurrences, so a stuck goal cannot keep waking you")
     add.add_argument("--conversation", help="conversation id (default: the one you are running in)")
     add.add_argument("--source-message", help="the message id you are committing under")
     add.add_argument("--new-conversation", action="store_true", help="deliver into a new conversation")

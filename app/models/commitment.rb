@@ -70,6 +70,7 @@ class Commitment < ApplicationRecord
   # Rhythm is the better tool.
   RECUR_MIN_MINUTES = 5
   RECUR_MAX_MINUTES = 30 * 24 * 60
+  RECUR_MAX_OCCURRENCES = 1000
 
   Result = Struct.new(:status, :reason, keyword_init: true) do
     def activated? = status == :activated
@@ -276,7 +277,12 @@ class Commitment < ApplicationRecord
       next Result.new(status: :not_scheduled) unless scheduled?
       next Result.new(status: :not_due) if due_at > now
 
-      if (reason = waiting_reason_now)
+      # The conversation this occurrence will be delivered into, resolved
+      # before the checks so they (the allowance brake included) judge the
+      # real destination: a recurring new-conversation series' own thread
+      # once it has one (Mira, #1178 review).
+      target = new_conversation? ? series_conversation : source_chat
+      if (reason = waiting_reason_now(target))
         update!(waiting_reason: reason, last_attempted_at: now)
         next Result.new(status: :waiting, reason: reason)
       end
@@ -291,7 +297,7 @@ class Commitment < ApplicationRecord
         next Result.new(status: :waiting, reason: "previous_occurrence_in_progress")
       end
 
-      chat = new_conversation? ? open_conversation! : source_chat
+      chat = target || open_conversation!
       # Activated before the successor exists: the unique index allows one
       # scheduled row per text, and the successor carries the same text.
       update!(status: "activated", activated_at: now, activation_chat: chat, waiting_reason: nil, last_attempted_at: now)
@@ -343,7 +349,7 @@ class Commitment < ApplicationRecord
     upcoming = live_successor
     if upcoming
       next_local = upcoming.due_at.in_time_zone(timezone)
-      "\n\nThis commitment recurs #{recurrence_phrase} (this is occurrence #{occurrence}). The next is commitment " \
+      "\n\nThis commitment recurs #{recurrence_phrase} (this is occurrence #{occurrence}#{" of at most #{recur_max_occurrences}" if recur_max_occurrences}). The next is commitment " \
         "#{upcoming.to_param}, due #{next_local.strftime('%-d %b %H:%M')} #{timezone}. If what it is for is done, " \
         "end the series: `soulshouse-commitment cancel #{upcoming.to_param}`. Otherwise do nothing and it comes back."
     else
@@ -386,7 +392,7 @@ class Commitment < ApplicationRecord
       cancelled_by: cancelled_by_agent&.name || cancelled_by_user&.full_name.presence,
       cancellable: cancellable?,
       reschedule_count: reschedule_count,
-      recurrence: recurring? ? { min_minutes: recur_min_minutes, max_minutes: recur_max_minutes, phrase: recurrence_phrase } : nil,
+      recurrence: recurring? ? { min_minutes: recur_min_minutes, max_minutes: recur_max_minutes, max_occurrences: recur_max_occurrences, phrase: recurrence_phrase } : nil,
       occurrence: occurrence,
       series_id: recurring? ? Commitment.new(id: series_key).to_param : nil,
       previous_commitment_id: previous_commitment&.to_param,
@@ -449,11 +455,16 @@ class Commitment < ApplicationRecord
   # savepoint so a failure ends the series with a reason and never undoes
   # the activation.
   def schedule_next!(now)
+    if recur_max_occurrences && occurrence >= recur_max_occurrences
+      self.series_ended_reason = "max_occurrences_reached"
+      return nil
+    end
+
     minutes = next_interval_minutes
     successor = Commitment.new(
       account: account, agent: agent, source_chat: source_chat, source_message: source_message,
       text: text, summary: summary, destination: destination, room: room, essential: essential,
-      recur_min_minutes: recur_min_minutes, recur_max_minutes: recur_max_minutes,
+      recur_min_minutes: recur_min_minutes, recur_max_minutes: recur_max_minutes, recur_max_occurrences: recur_max_occurrences,
       series_root_id: series_key, previous_commitment: self, occurrence: occurrence + 1,
       due_at: now + minutes.minutes
     )
@@ -483,6 +494,9 @@ class Commitment < ApplicationRecord
   end
 
   def recurrence_valid
+    if recur_max_occurrences && (recur_min_minutes.nil? || !recur_max_occurrences.between?(1, RECUR_MAX_OCCURRENCES))
+      errors.add(:base, "A maximum number of occurrences needs a recurrence, and must be between 1 and #{RECUR_MAX_OCCURRENCES}")
+    end
     return if recur_min_minutes.nil? && recur_max_minutes.nil?
 
     if recur_min_minutes.nil? || recur_max_minutes.nil?
@@ -652,6 +666,19 @@ class Commitment < ApplicationRecord
     Agents::AllowanceBrake.commitment_reason(self, chat: chat)
   end
 
+  # A recurring series that opens a conversation opens one, on its first
+  # delivered occurrence, and later occurrences recur inside it, so a
+  # goal-shaped series keeps one working thread (Reed, eRNlOe eaMwXx). The
+  # thread goes with the series wherever it is moved. If someone archives it
+  # or removes the resident, that is a stop, not a cue to open another: the
+  # next occurrence waits with the reason showing (Mira, #1178), and the
+  # series ends when it is cancelled.
+  def series_conversation
+    return unless recurring?
+
+    series_scope.where.not(id: id).where.not(activation_chat_id: nil).order(occurrence: :desc).first&.activation_chat
+  end
+
   def open_conversation!
     account.chats.create_with_message!(
       { title: conversation_title, manual_responses: true, room: destination_room },
@@ -688,6 +715,8 @@ class Commitment < ApplicationRecord
     end
     recurs = if successor
       " · recurs #{recurrence_phrase}, next #{successor.due_at.in_time_zone(timezone).strftime('%H:%M')}"
+    elsif recurring? && series_ended_reason == "max_occurrences_reached"
+      " · recurring, and this is the last of #{recur_max_occurrences} occurrences"
     elsif recurring?
       " · recurring, but the next occurrence could not be scheduled"
     else

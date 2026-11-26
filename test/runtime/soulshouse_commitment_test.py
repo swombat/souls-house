@@ -16,7 +16,7 @@ NOW = datetime.datetime(2026, 11, 2, 7, 30, 15, 999, tzinfo=datetime.timezone.ut
 
 def args(**overrides):
     base = dict(conversation=None, text="Check it", text_file=None, at=None, within="30m",
-                source_message=None, new_conversation=False, room=None, room_id=None, summary=None, every=None)
+                source_message=None, new_conversation=False, room=None, room_id=None, summary=None, every=None, max=None)
     base.update(overrides)
     return argparse.Namespace(**base)
 
@@ -34,6 +34,12 @@ class CommitmentTests(unittest.TestCase):
         payload = cli.build_add_payload(args(every="60-90m"), {"SOULSHOUSE_RUNTIME_CHAT_ID": "JrBDwJ"})
         self.assertEqual((60, 90), (payload["recur_min_minutes"], payload["recur_max_minutes"]))
         self.assertNotIn("recur_min_minutes", cli.build_add_payload(args(), {"SOULSHOUSE_RUNTIME_CHAT_ID": "JrBDwJ"}))
+
+    def test_max_caps_a_recurrence_and_needs_one(self):
+        payload = cli.build_add_payload(args(every="30m", max=6), {"SOULSHOUSE_RUNTIME_CHAT_ID": "JrBDwJ"})
+        self.assertEqual(6, payload["recur_max_occurrences"])
+        with self.assertRaises(ValueError):
+            cli.build_add_payload(args(max=6), {"SOULSHOUSE_RUNTIME_CHAT_ID": "JrBDwJ"})
 
     def test_in_is_relative_to_now_in_utc(self):
         self.assertEqual("2026-11-02T08:00:15Z", cli.due_at(within="30m", now=NOW))

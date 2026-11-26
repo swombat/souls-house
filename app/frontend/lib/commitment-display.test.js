@@ -17,5 +17,8 @@ describe('commitment recurrence', () => {
   it('says when the series has ended, and why when it was not a cancel', () => {
     expect(commitmentRecurrenceLine({ ...recurring, series_ended_reason: 'cancelled' })).toBe('Recurred every 60–90 minutes; the series has ended.');
     expect(commitmentRecurrenceLine({ ...recurring, series_ended_reason: 'next_occurrence_failed' })).toMatch(/could not be scheduled/);
+    const capped = { ...recurring, recurrence: { ...recurring.recurrence, max_occurrences: 6 } };
+    expect(commitmentRecurrenceLine(capped)).toBe('Recurs every 60–90 minutes, at most 6 times, until cancelled.');
+    expect(commitmentRecurrenceLine({ ...capped, series_ended_reason: 'max_occurrences_reached' })).toBe('Recurred every 60–90 minutes; the series has ended after 6 occurrences.');
   });
 });

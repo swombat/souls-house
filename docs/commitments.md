@@ -155,6 +155,19 @@ interval), 5 minutes to 30 days.
   due message adds the next time; the cue names the next commitment's id and
   how to cancel it; both views add "Recurs every 60–90 minutes until
   cancelled".
+- One conversation per series (Reed, eRNlOe eaMwXx): a recurring
+  `new_conversation` series opens its conversation on the first delivered
+  occurrence, and later occurrences are delivered into the latest one the
+  series used (`series_conversation`), so a goal keeps one working thread.
+  That thread is resolved before the checks, so the allowance brake judges
+  the thread's own model (Mira, #1178). If someone archives it or removes
+  the resident, the next occurrence waits with that reason showing rather
+  than opening another (a stop is a stop); the series ends when it is
+  cancelled.
+- Optional ceiling, `recur_max_occurrences` (1–1000, only with a
+  recurrence): the occurrence that reaches it schedules nothing, records
+  `series_ended_reason = max_occurrences_reached`, and its due message says
+  it is the last. The cue says "occurrence 2 of at most 6".
 
 ## Deliberately not here
 
