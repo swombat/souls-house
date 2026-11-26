@@ -805,6 +805,7 @@ Rails.application.routes.draw do
   get "companion" => "pages#companion", as: :companion
   get "computers" => "computers_redirects#show", as: :computers
   get "changelog" => "pages#changelog", as: :changelog
+  get "changelog/:slug" => "pages#changelog_entry", as: :changelog_entry, constraints: { slug: /[a-z0-9]+(?:-[a-z0-9]+)*/ }
   get "privacy" => "pages#privacy", as: :privacy
   get "self-host" => "pages#self_host", as: :self_host
   get "pricing" => "pages#pricing", as: :pricing

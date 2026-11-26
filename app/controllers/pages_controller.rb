@@ -24,6 +24,15 @@ class PagesController < ApplicationController
     render inertia: "changelog", props: { changelog: Changelog.entries }
   end
 
+  # Public: one changelog entry, so a post about one change can link to that change.
+  def changelog_entry
+    entry = Changelog.find(params[:slug])
+    raise ActiveRecord::RecordNotFound, "no changelog entry #{params[:slug]}" unless entry
+
+    @link_preview = LinkPreview.for_changelog_entry(entry)
+    render inertia: "changelog-entry", props: { entry:, description: @link_preview.description }
+  end
+
   def privacy
     render inertia: "privacy"
   end

@@ -1,11 +1,13 @@
-<%# Link previews for a public page (pricing, features, changelog, tool shed). Crawlers
-    read this HTML and never run the page, so the words are written here on the server.
+<%# Link previews for a public page (pricing, features, changelog and each entry's page,
+    tool shed). Crawlers read this HTML and never run the page, so the words are written
+    here on the server. An entry with a clip offers its poster as the image and the clip
+    as og:video.
     The homepage has its own, with the film: layouts/_share_video. %>
 <% base = request.base_url %>
 <% site = Setting.instance.site_name %>
 <% title = link_preview.page_title(site) %>
 <% url = "#{base}#{request.path}" %>
-<% image = "#{base}#{LinkPreview::IMAGE_PATH}" %>
+<% image = "#{base}#{link_preview.image_path}" %>
 <meta name="description" content="<%= link_preview.description %>">
 <meta property="og:site_name" content="<%= site %>">
 <meta property="og:type" content="website">
@@ -15,6 +17,14 @@
 <meta property="og:image" content="<%= image %>">
 <meta property="og:image:width" content="<%= LinkPreview::IMAGE_WIDTH %>">
 <meta property="og:image:height" content="<%= LinkPreview::IMAGE_HEIGHT %>">
+<% if link_preview.video_path %>
+<% video = "#{base}#{link_preview.video_path}" %>
+<meta property="og:video" content="<%= video %>">
+<meta property="og:video:secure_url" content="<%= video %>">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="<%= LinkPreview::IMAGE_WIDTH %>">
+<meta property="og:video:height" content="<%= LinkPreview::IMAGE_HEIGHT %>">
+<% end %>
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="<%= title %>">
 <meta name="twitter:description" content="<%= link_preview.description %>">

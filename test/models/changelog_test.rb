@@ -77,4 +77,39 @@ class ChangelogTest < ActiveSupport::TestCase
     assert_equal with_clip, Changelog.clipped(with_clip.size + 5)
   end
 
+  # Each entry's page is /changelog/<slug>; a second file with the same slug would
+  # silently shadow the first, so the slugs must stay unique across the whole changelog.
+  test "every entry's slug is unique" do
+    slugs = Changelog.entry_files.map { |path| Changelog.slug_for(path) }
+    assert slugs.all?(&:present?)
+    duplicates = slugs.tally.select { |_, count| count > 1 }.keys
+    assert_empty duplicates, "Changelog slugs must be unique (the page is /changelog/<slug>); rename: #{duplicates.join(', ')}"
+  end
+
+  test "entries carry their slug, the filename without date, time and extension" do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "2026-11-25-0900-a-new-thing.yml"), "date: 2026-11-25\ntitle: A\nbody: B.\n")
+
+      assert_equal "a-new-thing", Changelog.entries(dir:).first[:slug]
+    end
+  end
+
+  test "find returns one entry with the entries either side, and nil for an unknown slug" do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "2026-11-25-1200-newest.yml"), "date: 2026-11-25\ntitle: Newest\nbody: N.\n")
+      File.write(File.join(dir, "2026-11-25-1100-middle.yml"), "date: 2026-11-25\ntitle: Middle\nbody: M.\nclip: one\n")
+      File.write(File.join(dir, "2026-11-24-1000-oldest.yml"), "date: 2026-11-24\ntitle: Oldest\nbody: O.\n")
+
+      middle = Changelog.find("middle", dir:)
+      assert_equal "Middle", middle[:title]
+      assert_equal "/changelog-clips/one.jpg", middle[:clip][:poster]
+      assert_equal({ slug: "newest", title: "Newest", date: "2026-11-25" }, middle[:newer])
+      assert_equal({ slug: "oldest", title: "Oldest", date: "2026-11-24" }, middle[:older])
+
+      assert_nil Changelog.find("newest", dir:)[:newer]
+      assert_nil Changelog.find("oldest", dir:)[:older]
+      assert_nil Changelog.find("missing", dir:)
+    end
+  end
+
 end

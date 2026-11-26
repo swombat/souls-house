@@ -33,9 +33,14 @@
         {formatDate(group.date)}
       </time>
       <ul class="space-y-4">
-        {#each group.entries as entry (entry.title)}
+        {#each group.entries as entry (entry.slug)}
           <li data-testid="changelog-entry">
-            <p class="font-medium">{entry.title}</p>
+            <p class="font-medium">
+              <a
+                href={`/changelog/${entry.slug}`}
+                class="hover:underline underline-offset-4"
+                data-testid="changelog-entry-link">{entry.title}</a>
+            </p>
             <p class="mt-1 text-sm leading-relaxed text-muted-foreground">{entry.body}</p>
             {#if entry.clip}
               <div class="group relative mt-3 max-w-xl overflow-hidden rounded-xl border bg-muted">
