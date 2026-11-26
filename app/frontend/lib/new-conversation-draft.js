@@ -8,6 +8,12 @@ function browserStorage() {
   }
 }
 
+function defaultSelectedAgentIds(agents) {
+  return agents
+    .filter((agent) => agent.paused !== true && agent.invite_to_new_conversations !== false)
+    .map((agent) => agent.id);
+}
+
 // One browser-local slot, not the revisioned/server-synced chat draft protocol.
 export class NewConversationDraft {
   constructor({ userId, accountId, agents, onchange, storage = browserStorage() }) {
@@ -16,10 +22,11 @@ export class NewConversationDraft {
     this.storage = storage;
     this.onchange = onchange;
     this.storageError = false;
+    this.customAgentSelection = false;
     this.content = {
       message: '',
       title: '',
-      selectedAgentIds: agents.filter((agent) => agent.paused !== true).map((agent) => agent.id),
+      selectedAgentIds: defaultSelectedAgentIds(agents),
       submissionId: null,
     };
     if (!this.key) return;
@@ -33,15 +40,31 @@ export class NewConversationDraft {
           typeof saved.message !== 'string' ||
           typeof saved.title !== 'string' ||
           !Array.isArray(saved.selectedAgentIds) ||
-          !saved.selectedAgentIds.every((id) => typeof id === 'string')
+          !saved.selectedAgentIds.every((id) => typeof id === 'string') ||
+          ('customAgentSelection' in saved && typeof saved.customAgentSelection !== 'boolean')
         ) {
           throw new Error('Invalid draft');
         }
-        const available = new Set(agents.map((agent) => agent.id));
+        const byId = new Map(agents.map((agent) => [agent.id, agent]));
+        let selectedAgentIds;
+        if (saved.customAgentSelection === true) {
+          this.customAgentSelection = true;
+          selectedAgentIds = saved.selectedAgentIds.filter((id) => byId.has(id));
+        } else if (saved.customAgentSelection === false) {
+          this.customAgentSelection = false;
+          selectedAgentIds = defaultSelectedAgentIds(agents);
+        } else {
+          // Legacy drafts predating selection provenance keep stored choices except opted-out guests.
+          this.customAgentSelection = null;
+          selectedAgentIds = saved.selectedAgentIds.filter((id) => {
+            const agent = byId.get(id);
+            return Boolean(agent && agent.invite_to_new_conversations !== false);
+          });
+        }
         this.content = {
           message: saved.message,
           title: saved.title,
-          selectedAgentIds: saved.selectedAgentIds.filter((id) => available.has(id)),
+          selectedAgentIds,
           submissionId: typeof saved.submissionId === 'string' ? saved.submissionId : null,
         };
       }
@@ -81,7 +104,11 @@ export class NewConversationDraft {
 
   persist() {
     if (!this.canWrite()) return null;
-    const raw = JSON.stringify({ ...this.content, version: crypto.randomUUID() });
+    const raw = JSON.stringify({
+      ...this.content,
+      ...(typeof this.customAgentSelection === 'boolean' ? { customAgentSelection: this.customAgentSelection } : {}),
+      version: crypto.randomUUID(),
+    });
     try {
       this.storage.setItem(this.key, raw);
       this.storageError = false;
@@ -94,6 +121,9 @@ export class NewConversationDraft {
 
   edit(values) {
     if (this.disposed || this.suppressPersistence) return;
+    if ('selectedAgentIds' in values) {
+      this.customAgentSelection = true;
+    }
     this.content = { ...this.content, ...values, submissionId: null };
     this.persist();
     this.emit();

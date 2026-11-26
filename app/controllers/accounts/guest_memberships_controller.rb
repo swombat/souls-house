@@ -1,8 +1,10 @@
 # Bringing a resident from one of your other accounts into this one as a guest,
-# and ending that arrangement from either side.
+# choosing whether new conversations invite them automatically, and ending that
+# arrangement from either side.
 class Accounts::GuestMembershipsController < ApplicationController
 
   require_feature_enabled :agents
+  before_action :require_account_manager!, only: :update
 
   def create
     agent = GuestMembership.candidates_for(account: current_account, user: Current.user)
@@ -12,6 +14,19 @@ class Accounts::GuestMembershipsController < ApplicationController
     redirect_to account_agents_path(current_account), notice: "#{agent.name} is now a guest here"
   rescue ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid
     redirect_to account_agents_path(current_account), alert: "That resident can't be added as a guest here"
+  end
+
+  def update
+    membership = current_account.guest_memberships.find(params[:id])
+    invited = GuestMembership.boolean_param(guest_membership_source[:invite_to_new_conversations])
+    if invited.nil?
+      redirect_to account_agents_path(current_account), alert: "Could not update guest settings"
+      return
+    end
+
+    membership.update!(invite_to_new_conversations: invited)
+    audit("update_guest_resident", membership, agent_id: membership.agent_id, invite_to_new_conversations: membership.invite_to_new_conversations)
+    redirect_to account_agents_path(current_account)
   end
 
   # The receiving account removes its guest, or the hosting account withdraws
@@ -26,6 +41,12 @@ class Accounts::GuestMembershipsController < ApplicationController
     membership.destroy!
     audit("remove_guest_resident", membership, agent_id: membership.agent_id, account_id: membership.account_id)
     redirect_to account_agents_path(current_account), notice: "#{membership.agent.name} is no longer a guest in #{membership.account.name}"
+  end
+
+  private
+
+  def guest_membership_source
+    params[:guest_membership].is_a?(ActionController::Parameters) ? params[:guest_membership] : params
   end
 
 end

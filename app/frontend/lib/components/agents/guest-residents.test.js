@@ -1,4 +1,5 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { vi } from 'vitest';
 import { router } from '@inertiajs/svelte';
 import GuestResidents from './guest-residents.svelte';
 
@@ -71,4 +72,46 @@ test('an away seat whose account the viewer cannot open shows the count without 
   const rhythms = screen.getByTestId('away-rhythms');
   expect(rhythms.tagName).toBe('SPAN');
   expect(rhythms).toHaveTextContent('1 rhythm with Lume in X');
+});
+
+test('guest rows offer the Invite to new conversations checkbox while away rows do not', async () => {
+  vi.spyOn(router, 'patch').mockImplementation(() => {});
+  const guests = [
+    {
+      id: 'membership-1',
+      agent: { id: 'chris', name: 'Chris' },
+      home_account: { name: 'Nexus' },
+      invite_to_new_conversations: false,
+    },
+  ];
+  const away = [
+    {
+      id: 'away-1',
+      agent: { id: 'lume', name: 'Lume' },
+      account: { id: 'dana', name: 'Dana' },
+      invite_to_new_conversations: true,
+    },
+  ];
+  const component = render(GuestResidents, { accountId: 'receiving', guests, away });
+  const checkboxes = screen.getAllByRole('checkbox', { name: 'Invite to new conversations' });
+  expect(checkboxes).toHaveLength(1);
+  expect(checkboxes[0]).not.toBeChecked();
+
+  await fireEvent.click(checkboxes[0]);
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/receiving/guest_memberships/membership-1',
+    { invite_to_new_conversations: true },
+    expect.objectContaining({ preserveScroll: true, onFinish: expect.any(Function) })
+  );
+  expect(checkboxes[0]).toBeDisabled();
+
+  router.patch.mock.calls[0][2].onFinish();
+  await component.rerender({
+    accountId: 'receiving',
+    guests: [{ ...guests[0], invite_to_new_conversations: true }],
+    away,
+  });
+  expect(screen.getByRole('checkbox', { name: 'Invite to new conversations' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Invite to new conversations' })).not.toBeDisabled();
+  vi.restoreAllMocks();
 });
