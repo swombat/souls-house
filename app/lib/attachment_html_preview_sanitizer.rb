@@ -119,7 +119,7 @@ class AttachmentHtmlPreviewSanitizer
     document = Nokogiri::HTML5.parse(utf8, nil, "UTF-8", max_tree_depth: MAX_DEPTH)
     sanitize_children(document)
     document.to_html
-  rescue Nokogiri::XML::SyntaxError, ArgumentError => error
+  rescue Nokogiri::XML::SyntaxError, ArgumentError, EncodingError => error
     raise Invalid, error.message
   end
 
@@ -131,8 +131,17 @@ class AttachmentHtmlPreviewSanitizer
     return utf8 if utf8.valid_encoding?
 
     declared = detect_declared_charset(bytes)
-    encoding = resolve_encoding(declared) || Encoding::Windows_1252
-    bytes.dup.force_encoding(encoding).encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
+    encoding = resolve_encoding(declared)
+    if encoding
+      begin
+        return bytes.dup.force_encoding(encoding).encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
+      rescue Encoding::ConverterNotFoundError
+        # Ruby recognizes some encodings (e.g. dummy encodings such as UTF-7)
+        # that have no UTF-8 converter; fall back to Windows-1252 below.
+      end
+    end
+
+    bytes.dup.force_encoding(Encoding::Windows_1252).encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
   end
 
   def self.detect_declared_charset(bytes)

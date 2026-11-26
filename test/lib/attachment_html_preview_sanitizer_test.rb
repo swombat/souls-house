@@ -96,6 +96,20 @@ class AttachmentHtmlPreviewSanitizerTest < ActiveSupport::TestCase
     assert_includes sanitized, 'charset="utf-8"'
   end
 
+  test "falls back to windows-1252 when a declared charset has no utf-8 converter" do
+    raw = "<!doctype html><html><head><meta charset=\"utf-7\"></head><body><p>Caf\xE9</p></body></html>".b
+    assert_raises(Encoding::ConverterNotFoundError) do
+      raw.dup.force_encoding(Encoding.find("utf-7")).encode(Encoding::UTF_8, invalid: :replace, undef: :replace)
+    end
+
+    sanitized = AttachmentHtmlPreviewSanitizer.sanitize(raw)
+
+    assert_equal Encoding::UTF_8, sanitized.encoding
+    assert sanitized.valid_encoding?
+    assert_includes sanitized, "Café"
+    assert_includes sanitized, 'charset="utf-8"'
+  end
+
   test "rejects html larger than MAX_BYTES" do
     oversized = "a" * (AttachmentHtmlPreviewSanitizer::MAX_BYTES + 1)
     assert_raises(AttachmentHtmlPreviewSanitizer::TooLarge) do
