@@ -363,7 +363,7 @@ GEM
       minitest (~> 6.0)
     padded_cell (0.4.0-x86_64-linux-musl)
       minitest (~> 6.0)
-    pagy (43.8.2)
+    pagy (43.8.7)
       json
       uri
       yaml
@@ -680,7 +680,7 @@ DEPENDENCIES
   minitest (~> 6.1)
   minitest-mock
   padded_cell (~> 0.4.0)
-  pagy (~> 43.8.2)
+  pagy (~> 43.8.5)
   paper_trail (~> 17.0)
   pg (~> 1.7)
   public_suffix (~> 7.0)
