@@ -71,6 +71,17 @@ class AboutSheetDeliveryTest(unittest.TestCase):
         self.assertEqual(status, "failed: not a sheet")
         self.assertEqual(self.live.read_text(), SHEET)
 
+    def test_a_reply_past_the_cap_is_not_written_cut_short(self):
+        # _http_get reads at most MAX_BYTES + 1, so an oversized sheet arrives
+        # truncated; writing it would leave a resident reading half a price list.
+        self.live.parent.mkdir(parents=True)
+        self.live.write_text(SHEET)
+        self.age(3600)
+        oversized = (SHEET + "x" * about_sheet.MAX_BYTES).encode()[: about_sheet.MAX_BYTES + 1]
+        status = about_sheet.refresh(fetch=lambda url, token: oversized, now=NOW)
+        self.assertEqual(status, "failed: too large")
+        self.assertEqual(self.live.read_text(), SHEET)
+
     def test_a_recent_copy_is_not_fetched_again(self):
         self.live.parent.mkdir(parents=True)
         self.live.write_text(SHEET)
