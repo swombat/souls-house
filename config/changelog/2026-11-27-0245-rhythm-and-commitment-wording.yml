@@ -1,0 +1,3 @@
+date: "2026-11-27"
+title: "Rhythm occurrences and commitment notices say ran and posted"
+body: "Rhythm occurrence history now shows a finished resident turn as ran (without the internal reserved queue state beside it), and the Commitment due message posted in a conversation now says when it was posted rather than delivered. Delivery still means the resident's run carrying the commitment finished cleanly, as shown on the Commitments panel."

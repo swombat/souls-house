@@ -697,9 +697,9 @@ class Commitment < ApplicationRecord
     now_local = now.in_time_zone(timezone)
     when_line = "due #{due_local.strftime('%-d %b %H:%M')} #{timezone}"
     when_line += if (now - due_at) >= 60
-      ", delivered #{now_local.strftime('%-d %b %H:%M')} (late)"
+      ", posted #{now_local.strftime('%-d %b %H:%M')} (late)"
     else
-      ", delivered #{now_local.strftime('%H:%M')}"
+      ", posted #{now_local.strftime('%H:%M')}"
     end
     made = "made #{created_at.in_time_zone(timezone).strftime('%-d %b %H:%M')}"
     origin = if chat.id == source_chat_id

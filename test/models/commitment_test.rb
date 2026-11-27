@@ -141,6 +141,8 @@ class CommitmentTest < ActiveSupport::TestCase
     message = commitment.activation_message
     assert_equal "system", message.role
     assert_match(/\A\*\*Commitment due:\*\* Check the rebuild receipt and tell Daniel\n\nLume · due /, message.content)
+    assert_includes message.content, ", posted "
+    assert_not_includes message.content, ", delivered "
     assert_includes message.content, "made "
     assert_includes message.content, " here"
     # Mira is not woken by Lume's commitment.
@@ -439,7 +441,16 @@ class CommitmentTest < ActiveSupport::TestCase
     commitment = commit("Late one", at: @now + 1.minute)
     travel_to(@now + 45.minutes) { live { commitment.activate! } }
     content = commitment.reload.activation_message.content
-    assert_match(/due .*, delivered .* \(late\)/, content)
+    assert_match(/due .*, posted .* \(late\)/, content)
+  end
+
+  test "an on-time activation says when it was posted without calling it late or delivered" do
+    commitment = commit("Right on time", at: @now + 1.minute)
+    travel_to(@now + 1.minute + 10.seconds) { live { commitment.activate! } }
+    content = commitment.reload.activation_message.content
+    assert_match(/due .*, posted \d{2}:\d{2} · made /, content)
+    assert_not_includes content, "(late)"
+    assert_not_includes content, "delivered"
   end
 
   test "an undeliverable commitment posts nothing, records why, and fires once it can" do
