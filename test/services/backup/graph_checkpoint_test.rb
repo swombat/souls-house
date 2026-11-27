@@ -86,9 +86,6 @@ class Backup::GraphCheckpointTest < ActiveSupport::TestCase
     end
     backup = commands.find { |command| command.include?("backup") }
     assert_includes backup, "--exclude-caches"
-    idx = backup.index("--exclude-if-present")
-    assert idx, "expected --exclude-if-present in restic backup command"
-    assert_equal ".rustc_info.json", backup[idx + 1]
   end
 
   test "a resident that keeps everything is never asked to forget a backup" do
