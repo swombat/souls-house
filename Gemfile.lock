@@ -244,7 +244,7 @@ GEM
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
     ice_nine (0.11.2)
-    image_processing (2.2.0)
+    image_processing (2.2.2)
     imprimatur (0.9.1)
       rb_sys (~> 0.9.130)
     imprimatur (0.9.1-aarch64-linux-gnu)
@@ -670,7 +670,7 @@ DEPENDENCIES
   fiddle (~> 1.1)
   hashids
   honeybadger (~> 6.10)
-  image_processing (~> 2.2.0)
+  image_processing (~> 2.2.2)
   imprimatur (= 0.9.1)
   inertia_rails (~> 3.22)
   jbuilder
