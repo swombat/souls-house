@@ -15,7 +15,7 @@ gem "railties", rails_version
 
 # State machines for Ruby objects and persisted Active Record lifecycles.
 gem "state_machines", "~> 0.305.0"
-gem "state_machines-activerecord", "~> 0.200.0"
+gem "state_machines-activerecord", "~> 0.304.0"
 
 # Resilience patterns: rate limiting, retries with backoff, circuit breaking,
 # and gated feature rollout.
