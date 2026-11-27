@@ -137,7 +137,7 @@ gem "discard", "~> 2.0"
 
 # Version history for edited-in-place items (Field notes first)
 gem "paper_trail", "~> 17.0"
-gem "doorkeeper", "5.9.9"
+gem "doorkeeper", "5.9.10"
 
 gem "stripe", "~> 21.1"
 
