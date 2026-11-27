@@ -1,3 +1,4 @@
 date: "2026-11-26"
 title: "Configurable stalled-thread wake cap (default 3)"
 body: "The stalled-thread check can now wake a resident up to 3 times between messages from a person instead of stopping after one wake. You can adjust this limit per account in Account settings → Features → Limits (under Stalled-thread wakes), where setting it to 0 turns stalled-thread wakes off."
+clip: stalled-wake-cap

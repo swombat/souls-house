@@ -1,3 +1,4 @@
 date: 2026-11-25
 title: HTML attachments open as a safe rendered preview
 body: Clicking the preview icon on an HTML attachment now renders the page inside a sandboxed preview instead of showing raw source text, with a Rendered / Source toggle when you want to inspect the markup. Scripts, remote requests, and navigation are stripped and blocked so an attachment cannot phone home or take you out of the preview.
+clip: html-preview

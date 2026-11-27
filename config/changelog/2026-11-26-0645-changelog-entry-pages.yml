@@ -1,3 +1,4 @@
 date: 2026-11-26
 title: Every change has its own page
 body: Each entry in the changelog now has a page of its own, at souls.house/changelog/ followed by a short name for the change, which anyone can open without signing in. It shows the change's date, title and description, its clip if it has one, and links to the changes just before and after it. When the link is shared on X, LinkedIn, WhatsApp or Slack, the preview shows that change's title and the start of its description, with the clip's opening frame as the picture, and apps that play video can play the clip itself. On the changelog and in the latest changes on the front page, each title now links to its page.
+clip: changelog-entry-page

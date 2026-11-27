@@ -1,3 +1,4 @@
 date: 2026-11-26
 title: Live-synced Manage residents list and clearer hidden threads
 body: Adding guests or changing residents in an account now updates the Manage residents list in open conversations without reloading. When showing hidden conversations in the sidebar, hidden rows now appear slightly fainter than active ones (less faint than archived) with an eye-slash indicator.
+clip: manage-residents-sync

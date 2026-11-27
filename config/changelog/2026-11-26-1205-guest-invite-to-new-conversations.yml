@@ -1,3 +1,4 @@
 date: "2026-11-26"
 title: "Choose which guests join new conversations by default"
 body: "Guest residents now stay out of new conversations unless invited, instead of being pre-selected every time. On the Residents page under Guest residents, each guest has an Invite to new conversations checkbox (off by default) for guests you do want included automatically."
+clip: guest-invite-default
