@@ -300,6 +300,64 @@ class RhythmStatusActivityTest < ActiveSupport::TestCase
     end
   end
 
+  test "a run's booked return shows its time only, and its quiet reason in its own words" do
+    run = build_run
+    run.save!
+    commitment = Commitment.create!(agent: @agent, source_chat: @chat, text: "Synthetic private promise text",
+      summary: "Synthetic headline", due_at: 2.days.from_now)
+    run.record_quiet_reason!("Nothing new to add today.")
+    run.update!(execution_state: "completed", finished_at: Time.current)
+
+    note = presented_runs.sole
+    assert_equal @agent.name, note[:name]
+    assert_equal commitment.due_at.iso8601, note[:returns_at]
+    assert_equal false, note[:returned]
+    assert_equal "Nothing new to add today.", note[:quiet_reason][:text]
+    assert_not_includes note.to_json, "Synthetic private promise text"
+    assert_not_includes note.to_json, "Synthetic headline"
+  end
+
+  test "a quiet reason follows the activity card's rule and recording one refreshes the row" do
+    run = build_run
+    run.save!
+    run.record_quiet_reason!("Synthetic reason")
+    assert_empty presented_runs, "not shown while the run is still going"
+
+    run.update!(execution_state: "failed", finished_at: Time.current)
+    assert_empty presented_runs, "not shown on a run that failed"
+
+    other = build_run
+    other.save!
+    other.update!(execution_state: "completed", finished_at: Time.current)
+    assert_refresh_after_commit { other.update!(quiet_reason: "Synthetic late reason", quiet_reason_at: Time.current) }
+    assert_equal [ "Synthetic late reason" ], presented_runs.map { |note| note[:quiet_reason][:text] }
+  end
+
+  test "a return booked outside the run, or cancelled, is not the run's" do
+    run = build_run
+    run.started_at = 1.hour.ago
+    run.save!
+    run.update!(execution_state: "completed", finished_at: 30.minutes.ago)
+    Commitment.create!(agent: @agent, source_chat: @chat, text: "Synthetic later promise", due_at: 1.day.from_now)
+    travel_to(45.minutes.ago) do
+      Commitment.create!(agent: @agent, source_chat: @chat, text: "Synthetic cancelled promise", due_at: 1.day.from_now)
+        .cancel!(by: @user)
+    end
+
+    assert_empty presented_runs
+  end
+
+  test "a private conversation shows no run notes on the rhythm" do
+    run = build_run
+    run.save!
+    Commitment.create!(agent: @agent, source_chat: @chat, text: "Synthetic promise", due_at: 1.day.from_now)
+    run.update!(execution_state: "completed", finished_at: Time.current)
+    assert_equal 1, presented_runs.size
+
+    @chat.update_columns(private: true)
+    assert_empty presented_runs
+  end
+
   private
 
   def stream(account = @account)
@@ -328,9 +386,17 @@ class RhythmStatusActivityTest < ActiveSupport::TestCase
   end
 
   def presented_status
+    presented_occurrence.fetch(:status)
+  end
+
+  def presented_runs
+    presented_occurrence.fetch(:runs)
+  end
+
+  def presented_occurrence
     rhythm = Rhythm.find(@rhythm.id)
     RhythmPresentation.new(rhythm, user: @user).as_json(history: true)[:occurrences]
-      .find { |occurrence| occurrence[:id] == @occurrence.id.to_s }.fetch(:status)
+      .find { |occurrence| occurrence[:id] == @occurrence.id.to_s }
   end
 
   def build_source

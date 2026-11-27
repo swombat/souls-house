@@ -42,7 +42,7 @@ class AgentRuntimeInteraction < ApplicationRecord
     previously_new_record? || destroyed? || saved_change_to_finished_at? || saved_change_to_execution_state?
   }
   after_save :broadcast_rhythm_activity_after_commit, if: -> {
-    saved_changes.keys.intersect?(%w[id execution_state agent_id message_dispatch_id])
+    saved_changes.keys.intersect?(%w[id execution_state agent_id message_dispatch_id quiet_reason])
   }
   after_destroy :broadcast_rhythm_activity_after_commit
   after_save :refresh_account_cost_activity, if: -> {
@@ -717,8 +717,9 @@ class AgentRuntimeInteraction < ApplicationRecord
   private
 
   def broadcast_rhythm_activity_after_commit
-    # The occurrence renders the dispatch's run list and execution states,
-    # not token usage, transport results, leases or telemetry snapshots.
+    # The occurrence renders the dispatch's run list, execution states and
+    # each run's quiet reason, not token usage, transport results, leases or
+    # telemetry snapshots.
     dispatch_ids = [ message_dispatch_id ]
     dispatch_ids << message_dispatch_id_before_last_save if !destroyed? && saved_change_to_message_dispatch_id?
     dispatch_ids = dispatch_ids.compact.uniq
