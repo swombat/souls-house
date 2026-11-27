@@ -147,18 +147,21 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
       stdout = if args.include?("du")
         Agents::VolumeSet.new(@agent).names.keys.map { |key| "1\t/measure/#{key}\n" }.join
       else
-        "#{4 * gb}\t/measure/work/chaos-review/target\n" \
-          "#{25 * gb}\t/measure/work/.cargo-target\n" \
-          "512\t/measure/work/small/target\n" \
-          "#{2 * gb}\t/measure/state/tools/chaos-target\n"
+        "cachedir_tag\t#{4 * gb}\t/measure/work/chaos-review/target\n" \
+          "cachedir_tag\t#{25 * gb}\t/measure/work/.cargo-target\n" \
+          "cachedir_tag\t512\t/measure/work/small/target\n" \
+          "cargo\t#{2 * gb}\t/measure/state/tools/chaos-target\n"
       end
       { ok: true, stdout:, stderr: "" }
     end
     @service.stub(:capture, capture) do
       result = @service.call
       assert_equal "measured", result[:status]
-      assert_equal [ [ "work", ".cargo-target", 25 ], [ "work", "chaos-review/target", 4 ], [ "state", "tools/chaos-target", 2 ] ],
-        result[:cache_dirs].map { |dir| [ dir["volume"], dir["path"], dir["bytes"] / 1.gigabyte ] }
+      assert_equal [
+        [ "work", ".cargo-target", 25, "cachedir_tag" ],
+        [ "work", "chaos-review/target", 4, "cachedir_tag" ],
+        [ "state", "tools/chaos-target", 2, "cargo" ]
+      ], result[:cache_dirs].map { |dir| [ dir["volume"], dir["path"], dir["bytes"] / 1.gigabyte, dir["marker"] ] }
       assert_not result.key?(:cache_dirs_failure)
     end
     walk = runs.last
@@ -167,6 +170,29 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
     assert walk.grep(/type=volume/).all? { |mount| mount.end_with?(",readonly") && mount.match?(%r{dst=/measure/(work|state),}) }
     assert_includes walk, "--read-only"
     assert_equal %w[/measure/work /measure/state], walk.last(2)
+  end
+
+  test "deduplicates cargo markers against tagged dirs and nested ancestors" do
+    gb = 1024 * 1024
+    capture = lambda do |*args, **|
+      next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
+      next { ok: true, stdout: Agents::VolumeSet.new(@agent).names.keys.map { |key| "1\t/measure/#{key}\n" }.join, stderr: "" } if args.include?("du")
+
+      stdout =
+        "cargo\t#{10 * gb}\t/measure/work/dup/target\n" \
+        "cachedir_tag\t#{10 * gb}\t/measure/work/dup/target\n" \
+        "cargo\t#{8 * gb}\t/measure/work/dup/target/x86_64-unknown-linux-gnu\n" \
+        "cargo\t#{5 * gb}\t/measure/state/cache/chaos-target\n" \
+        "cargo\t#{4 * gb}\t/measure/state/cache/chaos-target/aarch64-unknown-linux-gnu\n"
+      { ok: true, stdout:, stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call
+      assert_equal [
+        [ "work", "dup/target", 10, "cachedir_tag" ],
+        [ "state", "cache/chaos-target", 5, "cargo" ]
+      ], result[:cache_dirs].map { |dir| [ dir["volume"], dir["path"], dir["bytes"] / 1.gigabyte, dir["marker"] ] }
+    end
   end
 
   test "a failed cache walk keeps the home's total and says the list was not taken" do
@@ -186,7 +212,11 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
   end
 
   test "an unreadable cache line keeps the home's total: non-UTF-8 and forged records" do
-    [ "#{2 * 1024 * 1024}\t/measure/work/bad-\xFF/target\n".b, "12\t/measure/identity\n" ].each do |cache_output|
+    [
+      "cachedir_tag\t#{2 * 1024 * 1024}\t/measure/work/bad-\xFF/target\n".b,
+      "cachedir_tag\t12\t/measure/identity\n",
+      "unknown\t#{2 * 1024 * 1024}\t/measure/work/a/target\n"
+    ].each do |cache_output|
       capture = lambda do |*args, **|
         next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
         next { ok: true, stdout: cache_output, stderr: "" } unless args.include?("du")
@@ -205,7 +235,7 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
 
   test "a cache walk that exits 0 with partial output and stderr is a failed walk" do
     # BusyBox find drops an earlier -exec batch's failure from its exit status.
-    partial = "#{2 * 1024 * 1024}\t/measure/work/a/target\n"
+    partial = "cachedir_tag\t#{2 * 1024 * 1024}\t/measure/work/a/target\n"
     capture = lambda do |*args, **|
       next { ok: true, stdout: "", stderr: "" } unless args.first == "run"
       next { ok: true, stdout: partial, stderr: "find: sh: Argument list too long\n" } unless args.include?("du")
@@ -227,12 +257,43 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
       deep = File.join(dir, "work", *Array.new(10) { |i| "d#{i}" }, "target")
       FileUtils.mkdir_p(deep)
       File.write(File.join(deep, "CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n")
+      File.write(File.join(deep, ".rustc_info.json"), "{}\n")
+      FileUtils.mkdir_p(File.join(deep, "debug", ".fingerprint"))
+      FileUtils.mkdir_p(File.join(deep, "release", ".fingerprint"))
+
+      untagged = File.join(dir, "work", "chaos-target")
+      FileUtils.mkdir_p(File.join(untagged, "debug", ".fingerprint"))
+      FileUtils.mkdir_p(File.join(untagged, "release", ".fingerprint"))
+      File.write(File.join(untagged, ".rustc_info.json"), "{}\n")
+
+      cross = File.join(dir, "work", "cross-target")
+      FileUtils.mkdir_p(File.join(cross, "x86_64-unknown-linux-gnu", "release", ".fingerprint"))
+      File.write(File.join(cross, ".rustc_info.json"), "{}\n")
+      File.write(File.join(cross, ".cargo-lock"), "")
+
+      fingerprint_only = File.join(dir, "work", "fp-only")
+      FileUtils.mkdir_p(File.join(fingerprint_only, "debug", ".fingerprint"))
+      FileUtils.mkdir_p(File.join(fingerprint_only, "release", ".fingerprint"))
+
+      unrelated = File.join(dir, "work", "not-cargo")
+      FileUtils.mkdir_p(unrelated)
+      File.write(File.join(unrelated, ".rustc_info.json"), "{}\n")
       run = ->(*roots) { Open3.capture3("sh", "-c", Agents::StorageUsage::CACHE_SCRIPT, "cache-dirs", *roots) }
 
       out, err, status = run.call(File.join(dir, "work"))
       assert status.success?
       assert_empty err
-      assert_match %r{\A\d+\t#{Regexp.escape(deep)}\n\z}, out
+      rows = out.lines.map do |line|
+        match = line.match(/\A(cachedir_tag|cargo)\t\d+\t([^\n]+)\n\z/)
+        assert match, "unexpected output line: #{line.inspect}"
+        [ match[1], match[2] ]
+      end
+      assert_equal [
+        [ "cachedir_tag", deep ],
+        [ "cargo", cross ],
+        [ "cargo", fingerprint_only ],
+        [ "cargo", untagged ]
+      ].sort, rows.sort
 
       _, err, status = run.call(File.join(dir, "work"), File.join(dir, "missing"))
       assert_not status.success?, "a missing root must fail the walk, not drop out of it"
