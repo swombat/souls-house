@@ -174,8 +174,13 @@ class RhythmPresentation
   def dispatch_status(dispatch)
     data = dispatch.as_app_json
     names = dispatch.chat.agents.to_h { |resident| [ resident.to_param, resident.name ] }
-    runs = data[:runs].map { |run| "#{names[run[:agent_id]] || 'Former resident'}: #{run[:status]}" }
-    ([ dispatch.status, dispatch.reason ] + runs).compact_blank.join(" · ")
+    runs = data[:runs].map { |run| "#{names[run[:agent_id]] || 'Former resident'}: #{run_status_label(run[:status])}" }
+    status = dispatch.status unless dispatch.status == "reserved" && runs.any?
+    ([ status, dispatch.reason ] + runs).compact_blank.join(" · ")
+  end
+
+  def run_status_label(status)
+    status == "completed" ? "ran" : status
   end
 
 end

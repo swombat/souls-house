@@ -32,7 +32,7 @@ plain database work with no model call. Under the row lock it:
    scheduled for the next sweep. That covers outages: a missed slot fires late
    instead of being skipped.
 2. Posts a house (system) message, **Commitment due**, containing the
-   commitment's headline, the due time and the delivery time (marked late if
+   commitment's headline, the due time and the posted time (marked late if
    it's more than a minute late), and where the commitment was made. The
    headline is the resident's `summary` (at most 100 characters, five to ten
    words asked for), or, without one, the text's first sentence cut to twelve

@@ -78,9 +78,9 @@ class RhythmStatusActivityTest < ActiveSupport::TestCase
       assert_refresh_after_commit { @dispatch.reserve! }
     end
     run = @dispatch.reload.runtime_interactions.sole
-    assert_includes presented_status, "#{@agent.name}: queued"
+    assert_equal "#{@agent.name}: queued", presented_status
     assert_refresh_after_commit { assert run.claim_dispatch! }
-    assert_includes presented_status, "#{@agent.name}: preparing"
+    assert_equal "#{@agent.name}: preparing", presented_status
   end
 
   test "dispatch recovery expiry targets and singular run pointer are not displayed status changes" do
@@ -119,7 +119,8 @@ class RhythmStatusActivityTest < ActiveSupport::TestCase
           run.finish_execution!(state)
         end
       end
-      assert_includes presented_status, "#{@agent.name}: #{state}"
+      expected = state == "completed" ? "ran" : state
+      assert_includes presented_status, "#{@agent.name}: #{expected}"
     end
   end
 
@@ -140,8 +141,18 @@ class RhythmStatusActivityTest < ActiveSupport::TestCase
       run.record_result!(status: 200, body: { "status" => "ok", "returncode" => 0,
         "telemetry" => { "schema_version" => 1, "usage" => { "scope" => "invocation", "output_tokens" => 12 } } })
     end
-    assert_includes presented_status, "#{@agent.name}: completed"
+    assert_includes presented_status, "#{@agent.name}: ran"
     assert_equal 12, run.output_tokens
+  end
+
+  test "reserved dispatch omits queue plumbing alongside runs and labels completed runs as ran" do
+    ManualAgentResponseJob.stub(:perform_later, nil) { @dispatch.reserve! }
+    run = @dispatch.reload.runtime_interactions.sole
+    run.finish_execution!("completed")
+    assert_equal "#{@agent.name}: ran", presented_status
+
+    @dispatch.update!(reason: "Synthetic note")
+    assert_equal "Synthetic note · #{@agent.name}: ran", presented_status
   end
 
   test "telemetry transport leases finish timestamp and run identity alone do not refresh rhythms" do
