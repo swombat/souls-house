@@ -17,9 +17,13 @@ module Agents
     # host twice (98 GB on 11 Nov, 56.5 GB on 20 Nov). A second, separate
     # walk lists every directory carrying a CACHEDIR.TAG (cargo writes one at
     # the root of every target dir, whatever it is named: target/,
-    # chaos-target/, the image's shared .cargo-target) in the work and state
-    # volumes, at any depth, with its size. Metadata only: names and sizes,
-    # never contents. It has its own budget and its own failure, so it can
+    # chaos-target/, the image's shared .cargo-target) or Cargo's own target
+    # markers (.rustc_info.json beside debug/, release/, or .cargo-lock; or
+    # debug/.fingerprint / release/.fingerprint when Cargo did not create the
+    # directory itself and skipped CACHEDIR.TAG, #1134) in the work and state
+    # volumes, at any depth, with its size and marker ("cachedir_tag" or
+    # "cargo"). Metadata only: names and sizes, never contents. It has its own
+    # budget and its own failure, so it can
     # never cost the home's total. Any traversal or sizing error, and any
     # tag path with a newline in it, fails the whole walk: a partial list
     # must never read as a complete one.
@@ -42,12 +46,42 @@ module Agents
       status=0
       for root in "$@"; do
         [ -d "$root" ] || { echo "cache-dirs: missing root" >&2; exit 3; }
-        find "$root" -xdev -type f -name CACHEDIR.TAG -exec sh -c '
+        find "$root" -xdev \( \
+          \( -type f \( -name CACHEDIR.TAG -o -name .rustc_info.json \) \) \
+          -o \( -type d -name .fingerprint \) \
+        \) -exec sh -c '
           nl="
       "
-          for tag; do
-            case "$tag" in *"$nl"*) echo "cache-du: newline in path" >&2; exit 4 ;; esac
-            du -sk "${tag%/CACHEDIR.TAG}" || { echo "cache-du: du failed" >&2; exit 5; }
+          for p; do
+            case "$p" in *"$nl"*) echo "cache-du: newline in path" >&2; exit 4 ;; esac
+            case "$p" in
+              */CACHEDIR.TAG)
+                marker=cachedir_tag
+                dir=${p%/CACHEDIR.TAG}
+                ;;
+              */.rustc_info.json)
+                dir=${p%/.rustc_info.json}
+                [ -f "$dir/CACHEDIR.TAG" ] && continue
+                [ -d "$dir/debug" ] || [ -d "$dir/release" ] || [ -f "$dir/.cargo-lock" ] || continue
+                marker=cargo
+                ;;
+              */debug/.fingerprint|*/release/.fingerprint)
+                parent=${p%/.fingerprint}
+                dir=${parent%/*}
+                if [ -f "$dir/CACHEDIR.TAG" ] || [ -f "$dir/.rustc_info.json" ]; then continue; fi
+                if [ -f "$dir/../CACHEDIR.TAG" ]; then continue; fi
+                if [ -f "$dir/../.rustc_info.json" ] && { [ -d "$dir/../debug" ] || [ -d "$dir/../release" ] || [ -f "$dir/../.cargo-lock" ]; }; then continue; fi
+                case "$parent" in
+                  */release) [ -d "$dir/debug/.fingerprint" ] && continue ;;
+                esac
+                marker=cargo
+                ;;
+              *)
+                continue
+                ;;
+            esac
+            out=$(du -sk "$dir") || { echo "cache-du: du failed" >&2; exit 5; }
+            printf "%s\t%s\n" "$marker" "$out"
           done
         ' cache-du {} + || { echo "cache-dirs: find failed" >&2; status=1; }
       done
@@ -118,7 +152,7 @@ module Agents
 
     private
 
-    # { cache_dirs: [{ "volume", "path", "bytes" }, ...] } largest first, or
+    # { cache_dirs: [{ "volume", "path", "bytes", "marker" }, ...] } largest first, or
     # { cache_dirs_failure: reason } with no list when the walk didn't finish:
     # an absent list is "not looked", never "nothing there".
     def cache_dirs(existing)
@@ -142,13 +176,14 @@ module Agents
       stdout = result[:stdout].to_s.dup.force_encoding(Encoding::UTF_8)
       return { cache_dirs_failure: "unreadable" } unless stdout.valid_encoding?
 
-      dirs = stdout.lines.filter_map do |line|
-        match = line.match(%r{\A(\d+)\t/measure/(work|state)/([^\n]+)\n?\z})
+      parsed = stdout.lines.map do |line|
+        match = line.match(%r{\A(cachedir_tag|cargo)\t(\d+)\t/measure/(work|state)/([^\n]+)\n?\z})
         return { cache_dirs_failure: "unreadable" } unless match
 
-        bytes = Integer(match[1]) * 1024
-        { "volume" => match[2], "path" => match[3], "bytes" => bytes } if bytes >= CACHE_MIN_BYTES
+        bytes = Integer(match[2]) * 1024
+        { "volume" => match[3], "path" => match[4], "bytes" => bytes, "marker" => match[1] }
       end
+      dirs = dedupe_cache_dirs(parsed).select { |dir| dir["bytes"] >= CACHE_MIN_BYTES }
       { cache_dirs: dirs.sort_by { |dir| -dir["bytes"] }.first(CACHE_LIMIT), cache_dirs_more: [ dirs.size - CACHE_LIMIT, 0 ].max }
     rescue Timeout::Error
       { cache_dirs_failure: "timeout" }
@@ -158,6 +193,23 @@ module Agents
       { cache_dirs_failure: "unreadable" }
     ensure
       remove_helper(@cache_helper_name) if @cache_helper_name
+    end
+
+    def dedupe_cache_dirs(dirs)
+      by_key = {}
+      dirs.each do |dir|
+        key = [ dir["volume"], dir["path"] ]
+        existing = by_key[key]
+        by_key[key] = dir if existing.nil? || (existing["marker"] != "cachedir_tag" && dir["marker"] == "cachedir_tag")
+      end
+      unique = by_key.values
+      unique.reject do |dir|
+        next false unless dir["marker"] == "cargo"
+
+        unique.any? do |other|
+          other["volume"] == dir["volume"] && dir["path"].start_with?("#{other["path"]}/")
+        end
+      end
     end
 
     def elapsed(started)

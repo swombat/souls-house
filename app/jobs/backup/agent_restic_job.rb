@@ -130,8 +130,11 @@ module Backup
         Backup::AgentRestic::IMAGE, "backup", "/data",
         # Skip directories marked with CACHEDIR.TAG (Cargo's target/, and
         # other tools' caches): rebuildable output that bloats every resident's
-        # backups and dedups badly.
+        # backups and dedups badly. Also skip untagged Cargo target directories
+        # (pre-created dirs where Cargo does not write CACHEDIR.TAG) via Cargo's
+        # own .rustc_info.json marker.
         "--exclude-caches",
+        "--exclude-if-present", ".rustc_info.json",
         "--tag", "agent_id=#{agent.uuid}",
         "--tag", "agent_slug=#{agent.name.to_s.parameterize}",
         "--tag", "helixkit_volume_set=v1",

@@ -1012,6 +1012,7 @@ def run_backup(payload, host, *, signed_request, docker=None,
                 remaining()
                 ok, output = restic([
                     "backup", "/data", "--exclude-caches",
+                    "--exclude-if-present", ".rustc_info.json",
                     # Every file in the volume set gets a new ctime at the same
                     # instant when the runtime starts (observed on Alanis, most
                     # likely a recursive chown), while inode, mtime and size
