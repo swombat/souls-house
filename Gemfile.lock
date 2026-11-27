@@ -98,7 +98,7 @@ GEM
     bindex (0.8.1)
     bootsnap (1.26.1)
       msgpack (~> 1.5)
-    brakeman (8.1.0)
+    brakeman (8.1.1)
       racc
     breaker_machines (0.30.1)
       deadline_machines (>= 0.2.0)
