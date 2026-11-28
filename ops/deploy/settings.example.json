@@ -15,5 +15,6 @@
   "backup_wait_seconds": 2400,
   "roll_concurrency": 6,
   "vm_roll_concurrency": 32,
-  "vm_restart_wait_seconds": 3600
+  "vm_restart_wait_seconds": 3600,
+  "build_cache_keep_gb": 30
 }

@@ -184,6 +184,23 @@ wait entirely.
 This lives in the root-installed worker, so it takes effect after
 `sudo ops/deploy/install` on the host, not on merge.
 
+### Build caches (#1133)
+
+A successful run, still under the deployment lock and before it reports
+success (so the gate never sees a finished run whose unit is still pruning),
+trims the two build caches a deploy fills to `build_cache_keep_gb` (settings.json, default 30) each: the
+daemon's default builder (runtime images, `docker builder prune
+--max-used-space`) and Kamal's local BuildKit container
+`buildx_buildkit_kamal-local-docker-container0` (Rails images, `buildctl prune
+--keep-storage`). BuildKit drops least recently used records first, and the
+registry cache in `config/deploy.yml` still holds every Rails layer, so a trim
+costs build time, never a build. The outcome is in the run's private log; a
+run that ends partial, failed or deferred leaves the trim to the next one.
+`sudo /opt/house-deploy/worker.py prune-caches` does the same by hand, when no
+deploy or sweep holds the lock. Images are not touched: Kamal already keeps
+only the last few `souls-house` app tags, and the runtime's `deploy-<run>`
+tags are named by residents, VMs and the sweep queue.
+
 ## Authority and installation
 
 See issue #144 and the scoped amendment to ADR 0002. Production secrets stay in

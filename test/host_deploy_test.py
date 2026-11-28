@@ -19,6 +19,7 @@ import gate
 import worker
 
 REAL_MOUNTED_SOURCES = worker.mounted_sources
+REAL_PRUNE_BUILD_CACHES = worker.prune_build_caches
 
 
 class WorkflowAuthorityTest(unittest.TestCase):
@@ -615,7 +616,8 @@ class WorkerTest(unittest.TestCase):
                         # No Docker or systemd here: no container mounts
                         # anything, and every latched unit has exited.
                         patch.object(worker, "mounted_sources", return_value=set()),
-                        patch.object(worker, "unit_exited", return_value=True)]
+                        patch.object(worker, "unit_exited", return_value=True),
+                        patch.object(worker, "prune_build_caches", return_value={"default": "pruned"})]
         for p in self.patches:
             p.start()
             self.addCleanup(p.stop)
@@ -754,6 +756,98 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(self.w.repo.exists())
         self.assertTrue((old / "repo").exists())
         self.assertIn("checkouts kept", (self.w.directory / "private.log").read_text())
+
+    def test_a_successful_run_trims_the_build_caches_before_it_reports_success(self):
+        # #1133, Reed on #1201: under the lock and while the run is still
+        # running, so the gate never sees success with the unit still busy
+        # pruning. The settings' limit; the outcome goes to the private log only.
+        self.w.settings["build_cache_keep_gb"] = 12
+        seen = []
+        def prune(limit):
+            seen.append((limit, self.w.data["state"], self.w.data["step"]))
+            return {"default": "pruned", "kamal": "absent"}
+        with patch.object(worker, "prune_build_caches", side_effect=prune), \
+             patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        self.assertEqual([(12, "starting", "trimming build caches")], seen)
+        self.assertEqual("success", self.w.data["state"])
+        log = (self.w.directory / "private.log").read_text()
+        self.assertIn('build caches: {"default": "pruned", "kamal": "absent"}', log)
+        self.assertNotIn("pruned", json.dumps(self.w.data))
+
+    def test_a_failed_partial_or_deferred_run_leaves_the_trim_to_the_next(self):
+        def partial():
+            self.w.report("busy", state="partial", skipped=[7])
+        def deferred():
+            raise worker.BackupsDeferred("backups still running at the wait limit")
+        for name, step in (("failed", dict(deploy_rails=RuntimeError("SECRET"))),
+                           ("partial", dict(update_chaos=partial)),
+                           ("deferred", dict(deploy_rails=deferred))):
+            with self.subTest(name), \
+                 patch.object(worker, "prune_build_caches",
+                              side_effect=AssertionError("trimmed after a terminal state")), \
+                 patch.object(self.w, "checkout"), \
+                 patch.object(self.w, "deploy_rails", side_effect=step.get("deploy_rails")), \
+                 patch.object(self.w, "update_chaos", side_effect=step.get("update_chaos")):
+                self.w.data.update(state="starting")
+                self.w.execute()
+                self.assertEqual(name, self.w.data["state"])
+                self.w.log = (self.w.directory / "private.log").open("a")
+
+    def test_an_unreadable_cache_limit_is_logged_not_raised(self):
+        for limit in (None, "lots", 0):
+            with self.subTest(limit=limit):
+                self.w.settings["build_cache_keep_gb"] = limit
+                with patch.object(worker, "prune_build_caches", side_effect=REAL_PRUNE_BUILD_CACHES), \
+                     patch.object(worker.subprocess, "run") as run:
+                    self.w.trim_build_caches()
+                run.assert_not_called()
+                self.w.log.flush()
+                self.assertIn("build caches: {\"error\"", (self.w.directory / "private.log").read_text())
+
+    def test_build_caches_are_not_trimmed_while_another_holder_has_the_lock(self):
+        import fcntl
+        self.w.settings["sweep_lock_wait_seconds"] = 0
+        with (self.root / "deployment.lock").open("a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.object(worker, "prune_build_caches",
+                              side_effect=AssertionError("prune without the lock")):
+                self.w.execute()
+        self.assertEqual("failed", self.w.data["state"])
+
+    def test_prune_build_caches_limits_both_builders(self):
+        done = subprocess.CompletedProcess([], 0, "", "")
+        running = subprocess.CompletedProcess([], 0, "true\n", "")
+        with patch.object(worker.subprocess, "run", side_effect=[done, running, done]) as run:
+            self.assertEqual({"default": "pruned", "kamal": "pruned"}, REAL_PRUNE_BUILD_CACHES(30))
+        default, inspect, kamal = (c.args[0] for c in run.call_args_list)
+        self.assertEqual(["docker", "builder", "prune", "--force", "--max-used-space", "30g"], default)
+        self.assertNotIn("--all", default)
+        self.assertEqual(worker.KAMAL_BUILDER, inspect[-1])
+        self.assertEqual(["docker", "exec", worker.KAMAL_BUILDER, "buildctl", "prune",
+                          "--keep-storage", "30000"], kamal)
+        for c in run.call_args_list:
+            self.assertLessEqual(c.kwargs["timeout"], worker.PRUNE_TIMEOUT)
+
+    def test_prune_build_caches_reports_a_missing_stopped_or_failing_builder(self):
+        done = subprocess.CompletedProcess([], 0, "", "")
+        failed = subprocess.CompletedProcess([], 1, "", "boom")
+        missing = subprocess.CompletedProcess([], 1, "", "Error: No such container: x")
+        stopped = subprocess.CompletedProcess([], 0, "false\n", "")
+        running = subprocess.CompletedProcess([], 0, "true\n", "")
+        cases = (([done, missing], {"default": "pruned", "kamal": "absent"}),
+                 ([failed, stopped], {"default": "failed", "kamal": "stopped"}),
+                 ([done, failed], {"default": "pruned", "kamal": "failed"}),
+                 ([subprocess.TimeoutExpired("docker", 600), running, failed],
+                  {"default": "failed", "kamal": "failed"}))
+        for answers, expected in cases:
+            with self.subTest(expected=expected), \
+                 patch.object(worker.subprocess, "run", side_effect=answers):
+                self.assertEqual(expected, REAL_PRUNE_BUILD_CACHES(30))
+        with self.assertRaises(ValueError), patch.object(worker.subprocess, "run") as run:
+            REAL_PRUNE_BUILD_CACHES(0)
+        run.assert_not_called()
 
     def test_mounted_sources_reads_every_container_and_fails_closed(self):
         listed = subprocess.CompletedProcess([], 0, "c1\nc2\n", "")
