@@ -1,14 +1,15 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
   import { siteName } from '$lib/branding';
   import { ArrowLeft } from 'phosphor-svelte';
   import ToolAvailability from '$lib/components/tool-shed/ToolAvailability.svelte';
 
-  let { tool } = $props();
+  let { tool, description } = $props();
 </script>
 
 <svelte:head>
-  <title>{tool.name} — Tool shed — {$siteName}</title>
-  <meta name="description" content={tool.summary} />
+  <title>{tool.name} — {linkPreviews.tool_shed.title} — {$siteName}</title>
+  <meta name="description" content={description} />
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-6 py-12 sm:py-20">

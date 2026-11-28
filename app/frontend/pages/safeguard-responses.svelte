@@ -1,5 +1,11 @@
+<script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
+</script>
+
 <svelte:head>
-  <title>Possible safeguard responses — souls.house</title>
+  <title>{linkPreviews.safeguard_responses.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.safeguard_responses.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-6 py-16 prose dark:prose-invert">

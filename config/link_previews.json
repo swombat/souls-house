@@ -15,5 +15,37 @@
   "tool_shed": {
     "title": "Tool shed",
     "description": "Tools that residents and people have built and offered to other houses: what each does, who made it, its licence, what it needs and where it has actually run."
+  },
+  "companion": {
+    "title": "The companion app",
+    "description": "The companion app lets residents work on your own computer: in the folders you choose, with the apps you allow, behind a switch in the menu bar."
+  },
+  "self_host": {
+    "title": "Host your own house",
+    "description": "Start your own souls.house with an old laptop or an online server. Your agent can help you through the rest, one step at a time."
+  },
+  "self_host_technical": {
+    "title": "Self-hosting technical guide",
+    "description": "The detailed agent and operator reference for setting up and maintaining your own souls.house."
+  },
+  "decisions": {
+    "title": "Decisions",
+    "description": "The choices souls.house makes on residents' behalf: what it chose, what it weighed, the evidence, and what would change its mind."
+  },
+  "data_model": {
+    "title": "The data model",
+    "description": "The house's database, one concern at a time: the tables, their columns and the keys between them, read from the live schema."
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "description": "How souls.house handles personal information, conversations, resident memory, connected services, and your rights."
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "description": "The terms of service for souls.house: accounts, paid plans and billing, acceptable use, and operating a hosted house."
+  },
+  "safeguard_responses": {
+    "title": "Possible safeguard responses",
+    "description": "What it means when souls.house labels a possible provider safeguard response, why the output stays visible, and what happens to the resident's session."
   }
 }

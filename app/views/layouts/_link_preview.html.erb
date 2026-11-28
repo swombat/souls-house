@@ -1,7 +1,6 @@
-<%# Link previews for a public page (pricing, features, changelog and each entry's page,
-    tool shed). Crawlers read this HTML and never run the page, so the words are written
-    here on the server. An entry with a clip offers its poster as the image and the clip
-    as og:video.
+<%# Link previews for a public page. Crawlers read this HTML and never run the page, so
+    the words are written here on the server. An entry with a clip offers its poster as
+    the image and the clip as og:video.
     The homepage has its own, with the film: layouts/_share_video. %>
 <% base = request.base_url %>
 <% site = Setting.instance.site_name %>

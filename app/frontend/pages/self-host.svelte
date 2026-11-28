@@ -1,4 +1,6 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
   import SelfHostHelperGuide from '$lib/components/home/self-host-helper-guide.svelte';
   import { onMount } from 'svelte';
   import { House, Laptop, Cloud, Copy, ArrowRight } from 'phosphor-svelte';
@@ -31,10 +33,8 @@
 </script>
 
 <svelte:head>
-  <title>Host your own house — souls.house</title>
-  <meta
-    name="description"
-    content="Start your own souls.house with an old laptop or an online server. Your agent can help you through the rest, one step at a time." />
+  <title>{linkPreviews.self_host.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.self_host.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-6 py-12 sm:py-20">

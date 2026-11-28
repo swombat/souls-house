@@ -16,6 +16,7 @@ class PagesController < ApplicationController
   end
 
   def companion
+    @link_preview = LinkPreview.for(:companion)
     render inertia: "companion"
   end
 
@@ -51,14 +52,17 @@ class PagesController < ApplicationController
   end
 
   def privacy
+    @link_preview = LinkPreview.for(:privacy)
     render inertia: "privacy"
   end
 
   def self_host
+    @link_preview = LinkPreview.for(:self_host)
     render inertia: "self-host"
   end
 
   def self_host_technical
+    @link_preview = LinkPreview.for(:self_host_technical)
     render inertia: "self-host-technical"
   end
 
@@ -68,11 +72,13 @@ class PagesController < ApplicationController
     area = params[:area] ? DataModel.find(params[:area]) : DataModel.areas.first
     raise ActiveRecord::RecordNotFound, "no data-model area #{params[:area]}" unless area
 
+    @link_preview = params[:area].present? ? LinkPreview.for_data_model_area(area) : LinkPreview.for(:data_model)
     render inertia: "data-model", props: {
       areas: DataModel.areas_json,
       area: DataModel.area_json(area),
       table_count: DataModel.schema_tables.size,
-      map_url: DataModel::REPOSITORY_PATH
+      map_url: DataModel::REPOSITORY_PATH,
+      preview: { title: @link_preview.title, description: @link_preview.description }
     }
   end
 
@@ -96,10 +102,12 @@ class PagesController < ApplicationController
   end
 
   def terms
+    @link_preview = LinkPreview.for(:terms)
     render inertia: "terms"
   end
 
   def safeguard_responses
+    @link_preview = LinkPreview.for(:safeguard_responses)
     render inertia: "safeguard-responses"
   end
 

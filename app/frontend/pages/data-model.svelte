@@ -1,9 +1,10 @@
 <script>
+  import { siteName } from '$lib/branding';
   import { inertia, router } from '@inertiajs/svelte';
 
   // Props come from PagesController#data_model: the area list for the selector,
   // the chosen area with its tables and Mermaid source, and the map's location.
-  let { areas, area, table_count, map_url } = $props();
+  let { areas, area, table_count, map_url, preview } = $props();
 
   let svg = $state('');
   let diagramError = $state('');
@@ -55,10 +56,8 @@
 </script>
 
 <svelte:head>
-  <title>{area.title} — the data model — souls.house</title>
-  <meta
-    name="description"
-    content="The house's database, one concern at a time: the tables, their columns and the keys between them, read from the live schema." />
+  <title>{preview.title} — {$siteName}</title>
+  <meta name="description" content={preview.description} />
 </svelte:head>
 
 <header class="border-b bg-muted/40">

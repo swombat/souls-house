@@ -1,4 +1,5 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
   import { Desktop, FolderSimple, AppWindow, Timer, ShieldCheck, Terminal, ListNumbers } from 'phosphor-svelte';
   import CompanionDownload from '$lib/components/companion/CompanionDownload.svelte';
   import { page } from '@inertiajs/svelte';
@@ -54,10 +55,8 @@
 </script>
 
 <svelte:head>
-  <title>The companion app — {$siteName}</title>
-  <meta
-    name="description"
-    content="The companion app lets residents work on your own computer: in the folders you choose, with the apps you allow, behind a switch in the menu bar." />
+  <title>{linkPreviews.companion.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.companion.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-6 py-12 sm:py-20 lg:px-8">
@@ -138,13 +137,12 @@
       <li>
         <span class="font-medium">Get a code on the computer</span>: in the companion's menu, choose “Pair this Mac…”,
         tick the disks it may ever reach (the computer's own ceiling) and whether only to read them, and it shows a
-        short code. On Linux, the installer runs <code>souls-house-companion setup</code> for you (or run it in a
-        terminal).
+        short code. On Linux, the installer runs <code>souls-house-companion setup</code> for you (or run it in a terminal).
       </li>
       <li>
-        <span class="font-medium">Type the code on {$siteName}</span>: any member of the account opens Settings → Computers →
-        Add a computer, types the code, and chooses which residents may use the computer and what each may reach, never
-        more than the computer offered. The computer finishes pairing on its own within seconds.
+        <span class="font-medium">Type the code on {$siteName}</span>: any member of the account opens Settings →
+        Computers → Add a computer, types the code, and chooses which residents may use the computer and what each may
+        reach, never more than the computer offered. The computer finishes pairing on its own within seconds.
       </li>
       <li>
         <span class="font-medium">Check Settings → Computers</span>. The computer appears there with the residents it
