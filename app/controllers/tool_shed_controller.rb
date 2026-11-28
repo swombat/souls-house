@@ -8,7 +8,9 @@ class ToolShedController < ApplicationController
   end
 
   def show
-    render inertia: "tool-shed/show", props: { tool: ToolShedEntry.find(params[:slug]) }
+    tool = ToolShedEntry.find(params[:slug])
+    @link_preview = LinkPreview.for_tool_shed_entry(tool)
+    render inertia: "tool-shed/show", props: { tool:, description: @link_preview.description }
   end
 
 end

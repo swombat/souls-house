@@ -30,6 +30,23 @@ class LinkPreview
         image_path: clip&.dig(:poster) || IMAGE_PATH, video_path: clip&.dig(:src))
   end
 
+  def self.for_decision(decision)
+    new(key: "decision", title: decision[:title],
+        description: decision[:summary].squish.truncate(DESCRIPTION_LENGTH, separator: " "))
+  end
+
+  def self.for_data_model_area(area)
+    section = entries.fetch("data_model").fetch("title")
+    new(key: "data_model_area", title: "#{area.title} — #{section}",
+        description: area.summary.squish.truncate(DESCRIPTION_LENGTH, separator: " "))
+  end
+
+  def self.for_tool_shed_entry(tool)
+    section = entries.fetch("tool_shed").fetch("title")
+    new(key: "tool_shed_entry", title: "#{tool[:name]} — #{section}",
+        description: tool[:summary].squish.truncate(DESCRIPTION_LENGTH, separator: " "))
+  end
+
   def initialize(key:, title:, description:, image_path: IMAGE_PATH, video_path: nil)
     @key = key
     @title = title

@@ -1,8 +1,9 @@
 <script>
+  import { siteName } from '$lib/branding';
   import { ArrowLeft } from 'phosphor-svelte';
   import DecisionStatus from '$lib/components/decisions/DecisionStatus.svelte';
 
-  let { decision } = $props();
+  let { decision, description } = $props();
 
   const date = $derived(
     new Date(`${decision.date}T12:00:00Z`).toLocaleDateString('en-GB', {
@@ -15,8 +16,8 @@
 </script>
 
 <svelte:head>
-  <title>{decision.title} — souls.house</title>
-  <meta name="description" content={decision.summary} />
+  <title>{decision.title} — {$siteName}</title>
+  <meta name="description" content={description} />
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-6 py-12 sm:py-20">

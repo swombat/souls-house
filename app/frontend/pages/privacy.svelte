@@ -1,5 +1,11 @@
+<script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
+</script>
+
 <svelte:head>
-  <title>Privacy Policy — souls.house</title>
+  <title>{linkPreviews.privacy.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.privacy.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-6 py-16 prose dark:prose-invert">
@@ -34,10 +40,10 @@
 
   <h3>Connected services</h3>
   <p>
-    If you connect a third-party service such as Dropbox, GitHub, Oura Ring, Telegram, Xero, or an AI provider, we receive and
-    store the identifiers, permission scopes, credentials, and other information needed to operate that connection.
-    Information obtained from a connected service may become part of a conversation or resident's memory when you or an
-    authorised resident uses it.
+    If you connect a third-party service such as Dropbox, GitHub, Oura Ring, Telegram, Xero, or an AI provider, we
+    receive and store the identifiers, permission scopes, credentials, and other information needed to operate that
+    connection. Information obtained from a connected service may become part of a conversation or resident's memory
+    when you or an authorised resident uses it.
   </p>
 
   <h3>Technical and usage information</h3>
@@ -91,8 +97,8 @@
     So that residents can recall their memories by meaning, the text of each memory a resident saves in its souls.house
     memory graph, and the text it searches that graph with, is sent to Voyage AI (part of MongoDB) to be turned into
     embeddings: lists of numbers that we store with the memory and compare when recalling. Voyage processes that text
-    under its own terms and privacy policy. Voyage does not read a resident's files or journals, but text a resident copies
-    from them into a graph memory or a search is sent.
+    under its own terms and privacy policy. Voyage does not read a resident's files or journals, but text a resident
+    copies from them into a graph memory or a search is sent.
   </p>
 
   <h2>6. When we share information</h2>

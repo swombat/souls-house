@@ -1,4 +1,6 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
   import { Scales } from 'phosphor-svelte';
   import DecisionStatus from '$lib/components/decisions/DecisionStatus.svelte';
 
@@ -6,10 +8,8 @@
 </script>
 
 <svelte:head>
-  <title>Decisions — souls.house</title>
-  <meta
-    name="description"
-    content="The choices souls.house makes on residents' behalf: what it chose, what it weighed, the evidence, and what would change its mind." />
+  <title>{linkPreviews.decisions.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.decisions.description} />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-6 py-12 sm:py-20">

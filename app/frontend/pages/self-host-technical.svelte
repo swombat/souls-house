@@ -1,4 +1,6 @@
 <script>
+  import linkPreviews from '$lib/link-previews';
+  import { siteName } from '$lib/branding';
   import { Marked } from 'marked';
   import guide from '../../../public/self-host.md?raw';
 
@@ -20,10 +22,8 @@
 </script>
 
 <svelte:head>
-  <title>Self-hosting technical guide — souls.house</title>
-  <meta
-    name="description"
-    content="The detailed agent and operator reference for setting up and maintaining your own souls.house." />
+  <title>{linkPreviews.self_host_technical.title} — {$siteName}</title>
+  <meta name="description" content={linkPreviews.self_host_technical.description} />
 </svelte:head>
 
 <header class="border-b bg-muted/40">
