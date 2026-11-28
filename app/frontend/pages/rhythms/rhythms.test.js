@@ -180,6 +180,38 @@ test('a resident-created invitation shows its author without granting a viewing 
   expect(screen.queryByRole('button', { name: /Start one now/ })).not.toBeInTheDocument();
 });
 
+test('an occurrence row shows a booked return time and the run’s own stated reason', () => {
+  const occurrence = {
+    id: '1',
+    title: 'Morning run',
+    scheduled_for: '2026-11-27T08:00:00Z',
+    created_at: '2026-11-27T08:00:00Z',
+    manual: false,
+    late: false,
+    chat_url: '/accounts/a/chats/c',
+    status: 'completed · Mira: ran',
+    runs: [
+      {
+        agent_id: 'mira',
+        name: 'Mira',
+        returns_at: '2026-11-28T09:30:00Z',
+        returned: false,
+        quiet_reason: { text: 'Nothing new since yesterday.', at: '2026-11-27T08:05:00Z' },
+      },
+      { agent_id: 'reed', name: 'Reed', returns_at: '2026-11-27T07:00:00Z', returned: true, quiet_reason: null },
+    ],
+  };
+  render(RhythmShow, { account, rhythm: rhythmFixture({ occurrences: [occurrence] }) });
+  const notes = screen.getAllByTestId('occurrence-run-note');
+  expect(notes).toHaveLength(2);
+  expect(notes[0]).toHaveTextContent(/Mira returns .*28 Nov/);
+  expect(within(notes[0]).getByTestId('occurrence-quiet-reason')).toHaveTextContent(
+    "Stated reason for not replying (Mira's own account, not verified): Nothing new since yesterday.",
+  );
+  expect(notes[1]).toHaveTextContent(/Reed returned /);
+  expect(within(notes[1]).queryByTestId('occurrence-quiet-reason')).not.toBeInTheDocument();
+});
+
 test('an empty resident invitation stays active and says why its last slot was skipped', () => {
   const last_skip = {
     at: '2026-10-26T08:00:00Z',

@@ -167,8 +167,42 @@ class RhythmPresentation
       created_at: occurrence.created_at.iso8601, manual: occurrence.manual,
       late: !occurrence.manual && occurrence.created_at > occurrence.scheduled_for + 15.minutes,
       chat_url: occurrence.chat && account_chat_path(occurrence.chat.account, occurrence.chat),
-      status: dispatch ? dispatch_status(dispatch) : "Conversation created; no activation recorded"
+      status: dispatch ? dispatch_status(dispatch) : "Conversation created; no activation recorded",
+      runs: dispatch ? run_notes(dispatch, occurrence.chat) : []
     }
+  end
+
+  # What each run left on the row in its own terms (jERngJ, from the Nexus
+  # answers in jaXPge): when it booked itself a return in this conversation,
+  # and its own line on why it ended without a reply. The house adds no
+  # judgement of its own. Only the time of a return is shown, never the
+  # commitment's text, and the quiet reason follows the activity card's rule
+  # (AgentRuntimeInteraction#visible_quiet_reason). A private or discarded
+  # conversation shows neither here; its own card is where it is read.
+  def run_notes(dispatch, chat)
+    return [] if chat.nil? || chat.private? || chat.discarded?
+
+    dispatch.runtime_interactions.includes(:agent).order(:id).filter_map do |run|
+      quiet = run.visible_quiet_reason
+      returns = booked_return(run, chat)
+      next unless quiet || returns
+
+      { agent_id: run.agent&.to_param, name: run.agent&.name || "Former resident",
+        returns_at: returns&.due_at&.iso8601, returned: returns ? returns.status == "activated" : nil,
+        quiet_reason: quiet }
+    end
+  end
+
+  # A commitment has no pointer to the run that made it, so "made by this
+  # run" is the same resident, in this conversation, created while the run
+  # was going. The earliest such return that has not been cancelled.
+  def booked_return(run, chat)
+    from = run.started_at || run.created_at
+    return unless from
+
+    to = run.finished_at || Time.current
+    Commitment.where(agent_id: run.agent_id, source_chat_id: chat.id, created_at: from..to)
+      .where(status: %w[scheduled activated]).order(:due_at, :id).first
   end
 
   def dispatch_status(dispatch)

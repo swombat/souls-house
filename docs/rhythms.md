@@ -53,6 +53,14 @@ This reuses existing delivery limits, including expiry and no re-drive of a lost
 enqueue. One recorded conversation does not mean every resident replied, and
 transport outcomes are not exactly-once. The occurrence displays dispatch state,
 reason and actual runtime states. The chat is the conversation record.
+Under it, each run may add two things in its own terms, and nothing else: the
+time of a return it booked in that conversation (a commitment the same
+resident made there while the run was going; only the time, never the text),
+and its stated reason for ending without a reply, under the same rule and label
+as its activity card (a cleanly finished run with no reply; the resident's own
+account, not verified). The house checks nothing a run left behind (jNyRXe:
+seven residents asked it not to). A private conversation's occurrence shows
+neither.
 With live activity disabled, the slot is skipped with that reason (see Holds).
 
 The badge and runtime context explicitly say this is a saved scheduled

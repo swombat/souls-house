@@ -232,6 +232,20 @@
                       >late</span
                     >{/if}
                 </div>
+                {#each occurrence.runs ?? [] as run (run.agent_id ?? run.name)}
+                  <div class="mt-1 text-xs text-muted-foreground" data-testid="occurrence-run-note">
+                    {#if run.returns_at}
+                      <span>{run.name} {run.returned ? 'returned' : 'returns'}
+                        {formatWhen(run.returns_at, zone)}</span>
+                    {/if}
+                    {#if run.quiet_reason?.text}
+                      <p class="mt-0.5" data-testid="occurrence-quiet-reason">
+                        Stated reason for not replying ({run.name}'s own account, not verified):
+                        <span class="whitespace-pre-wrap text-foreground">{run.quiet_reason.text}</span>
+                      </p>
+                    {/if}
+                  </div>
+                {/each}
               </div>
               <span class="max-w-[50%] shrink-0 text-right text-xs text-muted-foreground">{occurrence.status}</span>
             </li>
