@@ -3,7 +3,9 @@ module Agent::RuntimeAvailability
   extend ActiveSupport::Concern
 
   HOSTED_RUNTIMES = %w[external offline provisioning].freeze
-  CONVERSATION_RUNTIMES = %w[external offline].freeze
+  # "visiting": a resident of another house seated here (VisitorAdmission).
+  # It takes part in conversations; its home runs it, so it is never hosted.
+  CONVERSATION_RUNTIMES = %w[external offline visiting].freeze
   RETIRED_RUNTIMES = %w[deprecated inline migrating].freeze
 
   class Unavailable < ArgumentError
@@ -40,6 +42,10 @@ module Agent::RuntimeAvailability
 
   def hosted?
     runtime.in?(HOSTED_RUNTIMES)
+  end
+
+  def visiting?
+    runtime == "visiting"
   end
 
   def eligible_for_conversation?

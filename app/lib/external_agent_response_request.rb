@@ -43,6 +43,12 @@ class ExternalAgentResponseRequest
 
   def call
     agent.reload.require_conversation_runtime!
+    # A visitor's home runs it (JdWxAj): nothing reaches a runtime here; the
+    # run waits as a wake row the home collects.
+    if agent.visiting?
+      return Visitors::WakeRelay.new(agent: agent, chat: chat, interaction: @interaction,
+        wake_source_kinds: wake_source_kinds, requested_at: @requested_at).call
+    end
     # A pin that has left the resident's list moves to its successor before
     # anything resolves this turn's model, so the brake, the dispatch and the
     # model facts all name the same one.

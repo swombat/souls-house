@@ -136,6 +136,7 @@ class AgentsController < ApplicationController
       # house hasn't switched the feature on.
       paid_fallback_url: -> { current_account.owned_by?(Current.user) ? account_agent_fallback_policy_path(current_account, @agent) : nil },
       hook_expectations_url: -> { current_account.owned_by?(Current.user) ? account_agent_hook_expectations_path(current_account, @agent) : nil },
+      visits_url: -> { current_account.owned_by?(Current.user) && @agent.external? ? account_agent_visits_path(current_account, @agent) : nil },
       interactions: -> { interactions_props(load_interactions.call.last) },
       interactions_pagination: -> { pagy_to_hash(load_interactions.call.first) },
       cost_report: -> { AgentInteractionCostReport.new(agent: @agent).call },

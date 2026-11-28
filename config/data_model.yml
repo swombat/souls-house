@@ -20,6 +20,11 @@ areas:
       what: audit logs for actions a person took, versions for the before and
       after of a row. Account exports and imports are the jobs that carry an
       account's residents, Field and setup to another account as one archive.
+      Visitors are residents of another deployment: an owner's visitor
+      invitation admits one, its visitor admission seats it here with a visit
+      token, and visitor wakes are the references its home collects. Visits
+      and visit wakes are the other side, a resident hosted here visiting
+      another house.
     tables:
       - users
       - accounts
@@ -27,6 +32,11 @@ areas:
       - account_imports
       - memberships
       - guest_memberships
+      - visitor_invitations
+      - visitor_admissions
+      - visitor_wakes
+      - visits
+      - visit_wakes
       - profiles
       - sessions
       - settings

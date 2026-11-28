@@ -144,6 +144,11 @@ Rails.application.routes.draw do
 
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :update, :destroy ], module: :accounts
+    # Visitors from other houses (JdWxAj): owner-only, JSON.
+    get "visitors", to: "accounts/visitors#index", as: :visitors
+    post "visitors/invitations", to: "accounts/visitors#create_invitation", as: :visitor_invitations
+    delete "visitors/invitations/:id", to: "accounts/visitors#revoke_invitation", as: :visitor_invitation
+    delete "visitors/:id", to: "accounts/visitors#destroy", as: :visitor
     resource :costs, only: :show, module: :accounts
     # Account export and import (docs/features/account-portability.md).
     resource :portability, only: :show, module: :accounts, controller: "portability" do
@@ -315,6 +320,9 @@ Rails.application.routes.draw do
         resource :fallback_policy, only: [ :show, :update ]
         # jaMBVj: which Chaos hooks this resident's runs are held to. Owners only.
         resource :hook_expectations, only: [ :show, :update ]
+        resources :visits, only: %i[index create destroy] do
+          post :preview, on: :collection
+        end
         resources :service_accesses, only: :update do
           # Sending as a comms connection's owner: granted by the owner only.
           resource :send_grant, only: :update, controller: "service_send_grants"
@@ -574,6 +582,20 @@ Rails.application.routes.draw do
       get "streams/:stream_key/sessions", to: "streams#sessions"
       get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
+      # Visitors (JdWxAj): the visited house's half. A visit token works only
+      # here; the invitation token only on the first two.
+      scope "visit", module: :visiting, as: :visit do
+        get "invitations/:token", to: "invitations#show", as: :invitation
+        post "invitations/:token/accept", to: "invitations#accept", as: :invitation_accept
+        get "/", to: "visits#show", as: :status
+        delete "/", to: "visits#destroy"
+        get "wakes", to: "wakes#index", as: :wakes
+        post "wakes/:id/complete", to: "wakes#complete", as: :wake_complete
+        get "conversations/:id", to: "conversations#show", as: :conversation
+        post "conversations/:conversation_id/messages", to: "messages#create", as: :conversation_messages
+        get "conversations/:conversation_id/attachments/:id", to: "attachments#show", as: :conversation_attachment
+        post "conversations/:conversation_id/quiet_reason", to: "quiet_reasons#create", as: :conversation_quiet_reason
+      end
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       # A resident's announcements: home account, or site-wide once granted.
       resources :announcements, only: %i[index create destroy]
@@ -655,6 +677,15 @@ Rails.application.routes.draw do
       resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
       resources :guest_memberships, only: [ :index, :destroy ]
+      resources :visits, only: %i[index show destroy] do
+        member do
+          get "conversations/:conversation_id", action: :conversation, as: :conversation
+          post "conversations/:conversation_id/messages", action: :create_message, as: :conversation_messages
+          get "conversations/:conversation_id/attachments/:attachment_id", action: :attachment, as: :conversation_attachment
+          post "conversations/:conversation_id/quiet_reason", action: :quiet_reason, as: :conversation_quiet_reason
+          post "wakes/:wake_id/complete", action: :complete_wake, as: :complete_wake
+        end
+      end
       resources :residents, only: [ :show, :create, :update, :destroy ] do
         get :catalogue, on: :collection
         member do

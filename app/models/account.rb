@@ -60,7 +60,13 @@ class Account < ApplicationRecord
   # Where conversations residents start land unless they choose; nil is Main.
   belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
-  has_many :agents, dependent: :destroy
+  # Residents hosted here. A visitor (runtime "visiting", VisitorAdmission)
+  # carries this account's id so everything that reads agent.account stays
+  # safe, but it is not one of the account's residents.
+  has_many :agents, -> { where.not(runtime: "visiting") }, dependent: :destroy
+  has_many :visiting_agents, -> { where(runtime: "visiting") }, class_name: "Agent", dependent: :destroy
+  has_many :visitor_invitations, dependent: :delete_all
+  has_many :visitor_admissions, dependent: :delete_all
   has_many :account_exports, dependent: :destroy
   has_many :account_imports, dependent: :destroy
   has_many :resident_birth_orders, dependent: :destroy
