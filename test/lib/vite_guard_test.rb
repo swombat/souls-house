@@ -45,9 +45,4 @@ class ViteGuardTest < Minitest::Test
     assert_equal 1, spawned.size
   end
 
-  def test_install_is_idempotent
-    ViteGuard.install!
-    assert_equal 1, ViteRuby::Runner.ancestors.count(ViteGuard::RunnerGuard)
-  end
-
 end

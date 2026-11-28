@@ -11,7 +11,6 @@ class InstanceCommandTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   RUBY = RbConfig.ruby
   RUNNER = File.join(ROOT, "config/instance_command.rb")
-  CLI = File.join(ROOT, "bin/instance")
 
   def setup
     # Exercise real CLI locks without contending with other parallel test cases
@@ -160,9 +159,11 @@ class InstanceCommandTest < Minitest::Test
   end
 
   def test_setup_and_browser_runner_require_bun_before_database_work
+    # Setup runs against the temporary checkout and home: if the Bun check
+    # ever stopped coming first, a red run must not set up the real checkout.
     Dir.mktmpdir do |directory|
-      [ [ CLI, "setup" ], [ File.join(ROOT, "playwright/run-backend.rb"), "e2e" ] ].each do |arguments|
-        output, status = Open3.capture2e({ "PATH" => directory }, RUBY, *arguments)
+      [ [ @cli, "setup" ], [ File.join(ROOT, "playwright/run-backend.rb"), "e2e" ] ].each do |arguments|
+        output, status = Open3.capture2e(@env.merge("PATH" => directory), RUBY, *arguments, chdir: @checkout)
         refute status.success?
         assert_includes output, "Bun is required for setup/frontend commands"
       end

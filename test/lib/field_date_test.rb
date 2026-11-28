@@ -2,8 +2,12 @@ require "test_helper"
 
 class FieldDateTest < ActiveSupport::TestCase
 
+  # The app's zone is UTC, so these run in another zone: in UTC, "the app's
+  # zone" and "UTC" can't be told apart.
   test "a day is midnight in the app's zone" do
-    assert_equal Time.zone.local(2019, 3, 14), FieldDate.parse("2019-03-14", param: "dated_at")
+    Time.use_zone("Europe/Madrid") do
+      assert_equal Time.utc(2019, 3, 13, 23), FieldDate.parse("2019-03-14", param: "dated_at")
+    end
   end
 
   test "a time keeps its offset, and one without an offset is in the app's zone" do
@@ -12,7 +16,10 @@ class FieldDateTest < ActiveSupport::TestCase
     assert_equal Time.utc(2019, 3, 14, 7, 30), FieldDate.parse("2019-03-14T09:30:00+0200", param: "dated_at")
     assert_equal Time.utc(2019, 3, 14, 7, 30), FieldDate.parse("2019-03-14T09:30+02", param: "dated_at")
     assert_equal Time.utc(2019, 3, 14, 14, 0), FieldDate.parse("2019-03-14T09:00:00-05:00", param: "dated_at")
-    assert_equal Time.zone.local(2019, 3, 14, 9, 30), FieldDate.parse("2019-03-14T09:30", param: "dated_at")
+    Time.use_zone("Europe/Madrid") do
+      assert_equal Time.utc(2019, 3, 14, 8, 30), FieldDate.parse("2019-03-14T09:30", param: "dated_at")
+      assert_equal Time.utc(2019, 3, 14, 9, 30), FieldDate.parse("2019-03-14T09:30:00Z", param: "dated_at")
+    end
     assert_equal Rational(1, 2), FieldDate.parse("2019-03-14T09:30:00.5Z", param: "dated_at").subsec
   end
 
