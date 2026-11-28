@@ -7,8 +7,10 @@ module Agents
     class MeasurementError < StandardError; end
 
     # du's own budget inside the helper. Large homes (130–150 GB of work
-    # volume) take 16–30 s on the host; the margin covers a cold cache.
-    DU_SECONDS = 300
+    # volume) have taken 16–30 s on the host, but Mira's 215 GB home ran out
+    # of the old 300 s budget at 301.5 s on its daily walk (#1200). 900 s is
+    # almost three times that walk.
+    DU_SECONDS = 900
     # The docker CLI call that runs du gets a little longer than du itself,
     # so the helper's own timeout fires first and the reason is ours.
     RUN_SECONDS = DU_SECONDS + 30
@@ -34,8 +36,15 @@ module Agents
     # review of f9adedb, 1,700 tags: 449 rows, exit 0). So every failure in
     # the script also writes to stderr, and any stderr at all fails the walk.
     # The exit status alone is not trusted.
-    CACHE_SECONDS = 240
+    # Raised with DU_SECONDS (Reed, #1200): it walks the same work volume
+    # straight after du, so a home du can just finish would otherwise time
+    # out here instead.
+    CACHE_SECONDS = 600
     CACHE_RUN_SECONDS = CACHE_SECONDS + 30
+    # The longest one call can take: both walks to their outer limits, plus
+    # the short docker calls around them. AgentStorageUsageJob's concurrency
+    # lock must outlast it.
+    MAX_CALL_SECONDS = RUN_SECONDS + CACHE_RUN_SECONDS + 10 * COMMAND_SECONDS
     CACHE_VOLUMES = %w[work state].freeze
     CACHE_MIN_BYTES = 1.gigabyte
     # The list keeps the largest CACHE_LIMIT; cache_dirs_more counts the rest.

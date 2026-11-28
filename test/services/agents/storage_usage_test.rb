@@ -47,7 +47,7 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
     # Without --init busybox timeout execs du as PID 1, which ignores SIGTERM.
     assert_includes run, "--init"
     assert_equal "1", run[run.index("--cpus") + 1]
-    assert_equal %w[nice -n 19 timeout 300 du -sk], run[run.index("busybox:1.37") + 1, 7]
+    assert_equal [ "nice", "-n", "19", "timeout", Agents::StorageUsage::DU_SECONDS.to_s, "du", "-sk" ], run[run.index("busybox:1.37") + 1, 7]
     assert_operator seconds, :>, Agents::StorageUsage::DU_SECONDS
     assert calls.reject { |args, _| args.first == "run" }.all? { |_, s| s == Agents::StorageUsage::COMMAND_SECONDS }
   end

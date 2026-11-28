@@ -15,6 +15,14 @@ class AgentStorageUsageJobTest < ActiveJob::TestCase
     service.verify
   end
 
+  test "the per-home lock outlasts the longest walk (#1200)" do
+    # Mira's 215 GB home took 301.5 s, past the old 300 s budget; both walks
+    # now have room for it, and the lock must cover both to their limits.
+    assert_operator Agents::StorageUsage::DU_SECONDS, :>=, 2.5 * 301.5
+    assert_operator Agents::StorageUsage::CACHE_SECONDS, :>, 301.5
+    assert_operator AgentStorageUsageJob.concurrency_duration, :>, Agents::StorageUsage::MAX_CALL_SECONDS.seconds
+  end
+
   test "deleted agents are ignored" do
     Agents::StorageUsage.stub(:new, ->(*) { flunk "must not measure missing agent" }) do
       assert_nil AgentStorageUsageJob.perform_now(-1)

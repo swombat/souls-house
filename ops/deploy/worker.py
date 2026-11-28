@@ -169,6 +169,58 @@ def prune_checkouts(mounted=None):
     return removed
 
 
+# The two build caches a deploy fills (#1133). Rails images are built by
+# Kamal's local BuildKit container, which Kamal creates (and recreates) as
+# the builder `kamal-local-docker-container`; its cache lives in that
+# container's own state volume, outside the daemon's. Runtime images are
+# built by `docker build`, in the daemon's default builder. Neither had a
+# limit: on 28 Nov 2026 they held 99.7 GB and 85.4 GB. Kamal's registry
+# cache (config/deploy.yml, mode=max) still has every layer, so what the
+# limit drops locally is a slower build, never a lost one. BuildKit drops
+# the least recently used records first and never one a build is using.
+KAMAL_BUILDER = "buildx_buildkit_kamal-local-docker-container0"
+BUILD_CACHE_KEEP_GB = 30
+# Bounded so a deploy waiting for the lock never waits on a long prune. After
+# the first one (by hand: `worker.py prune-caches`), each prune drops about
+# one build's worth.
+PRUNE_TIMEOUT = 600
+
+
+def prune_build_caches(keep_gb=BUILD_CACHE_KEEP_GB):
+    """Trim both caches to keep_gb each. Only under the deployment lock, so
+    no deploy is building. Returns {"default": outcome, "kamal": outcome},
+    each "pruned", "failed", or for Kamal's builder "absent" (never created
+    on this host, or removed) or "stopped" (BuildKit isn't running to ask)."""
+    keep_gb = int(keep_gb)
+    if keep_gb < 1:
+        raise ValueError("build cache limit must be at least 1 GB")
+
+    def ok(args):
+        try:
+            return subprocess.run(args, capture_output=True, text=True,
+                                  timeout=PRUNE_TIMEOUT).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    outcomes = {"default": "pruned" if ok(["docker", "builder", "prune", "--force",
+                                           "--max-used-space", f"{keep_gb}g"]) else "failed"}
+    try:
+        state = subprocess.run(["docker", "container", "inspect", "--format", "{{.State.Running}}",
+                                KAMAL_BUILDER], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        outcomes["kamal"] = "failed"
+        return outcomes
+    if state.returncode:
+        outcomes["kamal"] = "absent" if "No such" in (state.stderr or "") else "failed"
+    elif state.stdout.strip() != "true":
+        outcomes["kamal"] = "stopped"
+    else:
+        # buildctl's limit is in MB.
+        outcomes["kamal"] = "pruned" if ok(["docker", "exec", KAMAL_BUILDER, "buildctl", "prune",
+                                            "--keep-storage", str(keep_gb * 1000)]) else "failed"
+    return outcomes
+
+
 def github(path):
     request = urllib.request.Request("https://api.github.com/repos/seuros/chaos/" + path,
                                      headers={"Accept": "application/vnd.github+json",
@@ -1062,6 +1114,15 @@ class Worker:
         if pruned:
             self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
 
+    def trim_build_caches(self):
+        """Under the deployment lock, after the checkouts (#1133). What each
+        cache did goes to the private log only."""
+        try:
+            outcomes = prune_build_caches(self.settings.get("build_cache_keep_gb", BUILD_CACHE_KEEP_GB))
+        except ValueError as error:
+            outcomes = {"error": str(error)}
+        self.log.write("\nbuild caches: " + json.dumps(outcomes, sort_keys=True) + "\n")
+
     def execute(self):
         try:
             # Same lock for manual runtime operations, as documented.
@@ -1109,6 +1170,7 @@ class Worker:
                         self.log.write("\ncheckouts kept: the deployment lock was held\n")
                     else:
                         self.clean_checkouts()
+                        self.trim_build_caches()
             except OSError as error:
                 self.log.write(f"\ncheckout cleanup incomplete: {type(error).__name__}\n")
             self.log.close()
@@ -1422,6 +1484,18 @@ if __name__ == "__main__":
             except BlockingIOError:
                 sys.exit("A deploy or sweep holds the deployment lock; try again")
             print(json.dumps({"removed": len(prune_checkouts())}))
+        sys.exit(0)
+    if sys.argv[1:] == ["prune-caches"]:
+        # Host root, by hand: the first trim of the caches left before #1133.
+        # Afterwards every run does it in its cleanup. Never alongside a
+        # deploy or a sweep pass.
+        settings = json.loads((CONFIG / "settings.json").read_text())
+        with (ROOT / "deployment.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                sys.exit("A deploy or sweep holds the deployment lock; try again")
+            print(json.dumps(prune_build_caches(settings.get("build_cache_keep_gb", BUILD_CACHE_KEEP_GB))))
         sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)
