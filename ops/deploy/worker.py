@@ -1115,12 +1115,12 @@ class Worker:
             self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
 
     def trim_build_caches(self):
-        """Under the deployment lock, after the checkouts (#1133). What each
-        cache did goes to the private log only."""
+        """Under the deployment lock, before the run's terminal report
+        (#1133). What each cache did goes to the private log only."""
         try:
             outcomes = prune_build_caches(self.settings.get("build_cache_keep_gb", BUILD_CACHE_KEEP_GB))
-        except ValueError as error:
-            outcomes = {"error": str(error)}
+        except (TypeError, ValueError) as error:
+            outcomes = {"error": type(error).__name__}
         self.log.write("\nbuild caches: " + json.dumps(outcomes, sort_keys=True) + "\n")
 
     def execute(self):
@@ -1144,6 +1144,13 @@ class Worker:
                 if self.data["operation"] == "runtime":
                     self.rebuild_residents()
                 if self.data["state"] != "partial":
+                    # Still under the deployment lock and before any terminal
+                    # state (Reed, #1201): the gate refuses the next request
+                    # while this unit is active, and a chained rebuild starts
+                    # as soon as it reads success. A run that ends partial,
+                    # failed or deferred leaves its trim to the next run.
+                    self.report("trimming build caches")
+                    self.trim_build_caches()
                     self.report("verified", state="success")
         except BackupsDeferred as error:
             # Its step already says why. Not a failure: nothing switched, and
@@ -1170,7 +1177,6 @@ class Worker:
                         self.log.write("\ncheckouts kept: the deployment lock was held\n")
                     else:
                         self.clean_checkouts()
-                        self.trim_build_caches()
             except OSError as error:
                 self.log.write(f"\ncheckout cleanup incomplete: {type(error).__name__}\n")
             self.log.close()

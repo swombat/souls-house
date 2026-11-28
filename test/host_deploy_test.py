@@ -757,24 +757,54 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue((old / "repo").exists())
         self.assertIn("checkouts kept", (self.w.directory / "private.log").read_text())
 
-    def test_every_run_trims_the_build_caches_under_the_lock(self):
-        # #1133: in the cleanup, whatever the run's outcome, with the
-        # settings' limit; what happened goes to the private log only.
+    def test_a_successful_run_trims_the_build_caches_before_it_reports_success(self):
+        # #1133, Reed on #1201: under the lock and while the run is still
+        # running, so the gate never sees success with the unit still busy
+        # pruning. The settings' limit; the outcome goes to the private log only.
         self.w.settings["build_cache_keep_gb"] = 12
-        for failure in (None, RuntimeError("SECRET")):
-            with self.subTest(failure=failure):
-                self.w.data.update(state="running")
-                with patch.object(worker, "prune_build_caches",
-                                  return_value={"default": "pruned", "kamal": "absent"}) as prune, \
-                     patch.object(self.w, "checkout", side_effect=self.clone), \
-                     patch.object(self.w, "deploy_rails", side_effect=failure), \
-                     patch.object(self.w, "update_chaos"):
-                    self.w.execute()
-                prune.assert_called_once_with(12)
-                log = (self.w.directory / "private.log").read_text()
-                self.assertIn('build caches: {"default": "pruned", "kamal": "absent"}', log)
-                self.assertNotIn("build_caches", json.dumps(self.w.data))
+        seen = []
+        def prune(limit):
+            seen.append((limit, self.w.data["state"], self.w.data["step"]))
+            return {"default": "pruned", "kamal": "absent"}
+        with patch.object(worker, "prune_build_caches", side_effect=prune), \
+             patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        self.assertEqual([(12, "starting", "trimming build caches")], seen)
+        self.assertEqual("success", self.w.data["state"])
+        log = (self.w.directory / "private.log").read_text()
+        self.assertIn('build caches: {"default": "pruned", "kamal": "absent"}', log)
+        self.assertNotIn("pruned", json.dumps(self.w.data))
+
+    def test_a_failed_partial_or_deferred_run_leaves_the_trim_to_the_next(self):
+        def partial():
+            self.w.report("busy", state="partial", skipped=[7])
+        def deferred():
+            raise worker.BackupsDeferred("backups still running at the wait limit")
+        for name, step in (("failed", dict(deploy_rails=RuntimeError("SECRET"))),
+                           ("partial", dict(update_chaos=partial)),
+                           ("deferred", dict(deploy_rails=deferred))):
+            with self.subTest(name), \
+                 patch.object(worker, "prune_build_caches",
+                              side_effect=AssertionError("trimmed after a terminal state")), \
+                 patch.object(self.w, "checkout"), \
+                 patch.object(self.w, "deploy_rails", side_effect=step.get("deploy_rails")), \
+                 patch.object(self.w, "update_chaos", side_effect=step.get("update_chaos")):
+                self.w.data.update(state="starting")
+                self.w.execute()
+                self.assertEqual(name, self.w.data["state"])
                 self.w.log = (self.w.directory / "private.log").open("a")
+
+    def test_an_unreadable_cache_limit_is_logged_not_raised(self):
+        for limit in (None, "lots", 0):
+            with self.subTest(limit=limit):
+                self.w.settings["build_cache_keep_gb"] = limit
+                with patch.object(worker, "prune_build_caches", side_effect=REAL_PRUNE_BUILD_CACHES), \
+                     patch.object(worker.subprocess, "run") as run:
+                    self.w.trim_build_caches()
+                run.assert_not_called()
+                self.w.log.flush()
+                self.assertIn("build caches: {\"error\"", (self.w.directory / "private.log").read_text())
 
     def test_build_caches_are_not_trimmed_while_another_holder_has_the_lock(self):
         import fcntl
